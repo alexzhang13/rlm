@@ -1,0 +1,16 @@
+[project]
+name = "rlm"
+version = "0.1.0"
+description = "A simple framework for running Recursive Language Models."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=2.14.0",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.1",
+    "ruff>=0.14.10",
+    "ty>=0.0.7",
+]

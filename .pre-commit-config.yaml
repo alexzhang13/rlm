@@ -1,0 +1,26 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.3
+    hooks:
+      # Run the linter.
+      - id: ruff
+        args: [--fix, --config=pyproject.toml]
+
+      # Run the formatter.
+      - id: ruff-format
+        args: [--config=pyproject.toml]
+
+  - repo: local
+    hooks:
+      - id: ty
+        name: ty
+        entry: ty
+        args:
+          - check
+          - --exit-zero
+          - --output-format=concise
+        language: python
+        additional_dependencies:
+          - ty==0.0.1a21
+        types_or: [python, pyi]
+
