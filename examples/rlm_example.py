@@ -1,5 +1,5 @@
-from rlm.logger.rlm_logger import RLMLogger
-from rlm.core.rlm import RLM
+from rlm.logger import RLMLogger
+from rlm import RLM
 
 import os
 from dotenv import load_dotenv
