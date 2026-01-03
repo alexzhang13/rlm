@@ -71,7 +71,9 @@ class RLM:
         self.backend = backend
         self.backend_kwargs = backend_kwargs
         self.environment_type = environment
-        self.environment_kwargs = environment_kwargs.copy()
+        self.environment_kwargs = (
+            environment_kwargs.copy() if environment_kwargs is not None else {}
+        )
         self.other_backends = other_backends
         self.other_backend_kwargs = other_backend_kwargs
 
@@ -85,13 +87,17 @@ class RLM:
         # Log metadata if logger is provided
         if self.logger or verbose:
             metadata = RLMMetadata(
-                root_model=backend_kwargs.get("model_name", "unknown"),
+                root_model=backend_kwargs.get("model_name", "unknown")
+                if backend_kwargs
+                else "unknown",
                 max_depth=max_depth,
                 max_iterations=max_iterations,
                 backend=backend,
-                backend_kwargs=filter_sensitive_keys(backend_kwargs),
+                backend_kwargs=filter_sensitive_keys(backend_kwargs) if backend_kwargs else {},
                 environment_type=environment,
-                environment_kwargs=filter_sensitive_keys(environment_kwargs),
+                environment_kwargs=filter_sensitive_keys(environment_kwargs)
+                if environment_kwargs
+                else {},
                 other_backends=other_backends,
             )
             if self.logger:
@@ -196,7 +202,9 @@ class RLM:
                     self.verbose.print_final_answer(final_answer)
                     self.verbose.print_summary(i + 1, time_end - time_start, usage.to_dict())
                     return RLMChatCompletion(
-                        root_model=self.backend_kwargs.get("model_name", "unknown"),
+                        root_model=self.backend_kwargs.get("model_name", "unknown")
+                        if self.backend_kwargs
+                        else "unknown",
                         prompt=prompt,
                         response=final_answer,
                         usage_summary=usage,
@@ -216,7 +224,9 @@ class RLM:
             self.verbose.print_final_answer(final_answer)
             self.verbose.print_summary(self.max_iterations, time_end - time_start, usage.to_dict())
             return RLMChatCompletion(
-                root_model=self.backend_kwargs.get("model_name", "unknown"),
+                root_model=self.backend_kwargs.get("model_name", "unknown")
+                if self.backend_kwargs
+                else "unknown",
                 prompt=prompt,
                 response=final_answer,
                 usage_summary=usage,
