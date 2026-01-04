@@ -306,13 +306,17 @@ class PrimeREPL(IsolatedEnv):
         self._loop: asyncio.AbstractEventLoop | None = None
         self._loop_thread: threading.Thread | None = None
 
-        self.setup()
+        try:
+            self.setup()
 
-        if context_payload is not None:
-            self.load_context(context_payload)
+            if context_payload is not None:
+                self.load_context(context_payload)
 
-        if setup_code:
-            self.execute_code(setup_code)
+            if setup_code:
+                self.execute_code(setup_code)
+        except Exception:
+            self.cleanup()
+            raise
 
     def _get_loop(self) -> asyncio.AbstractEventLoop:
         """Get or create an event loop running in a background thread."""
