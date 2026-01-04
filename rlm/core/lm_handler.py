@@ -54,7 +54,7 @@ class LMRequestHandler(StreamRequestHandler):
         usage_summary = client.get_last_usage()
         return LMResponse.success_response(
             chat_completion=RLMChatCompletion(
-                root_model=request.model,
+                root_model=request.model or client.model_name,
                 prompt=request.prompt,
                 response=content,
                 usage_summary=usage_summary,
@@ -80,7 +80,7 @@ class LMRequestHandler(StreamRequestHandler):
 
         chat_completions = [
             RLMChatCompletion(
-                root_model=request.model,
+                root_model=request.model or client.model_name,
                 prompt=prompt,
                 response=content,
                 usage_summary=usage_summary,
