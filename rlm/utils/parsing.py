@@ -106,7 +106,7 @@ def format_execution_result(result: REPLResult) -> str:
             "__doc__",
         ]:
             # Only show simple types or short representations
-            if isinstance(value, str | int | float | bool | list | dict | tuple):
+            if isinstance(value, (str, int, float, bool, list, dict, tuple)):
                 important_vars[key] = ""
 
     if important_vars:
