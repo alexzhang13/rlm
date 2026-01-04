@@ -13,6 +13,7 @@ load_dotenv()
 # Load API keys from environment variables
 DEFAULT_OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DEFAULT_OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+DEFAULT_VERCEL_API_KEY = os.getenv("AI_GATEWAY_API_KEY")
 
 
 class OpenAIClient(BaseLM):
@@ -34,6 +35,8 @@ class OpenAIClient(BaseLM):
                 api_key = DEFAULT_OPENAI_API_KEY
             elif base_url == "https://openrouter.ai/api/v1":
                 api_key = DEFAULT_OPENROUTER_API_KEY
+            elif base_url == "https://ai-gateway.vercel.sh/v1":
+                api_key = DEFAULT_VERCEL_API_KEY
 
         # For vLLM, set base_url to local vLLM server address.
         self.client = openai.OpenAI(api_key=api_key, base_url=base_url)
