@@ -47,7 +47,7 @@ pip install git+https://github.com/alexzhang13/rlm.git
 
 ## Quick Setup
 Set up the dependencies with `uv` (or your virtual environment of choice):
-```
+```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv init && uv venv --python 3.12  # change version as needed
 uv pip install -e .
@@ -56,9 +56,6 @@ uv pip install -e .
 To run a quick test, make sure your `OPENAI_API_KEY` is set properly and run the following:
 ```bash
 cd examples/
-```
-
-```bash
 uv run quickstart.py
 ```
 
