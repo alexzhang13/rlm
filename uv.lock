@@ -463,17 +463,6 @@ wheels = [
 ]
 
 [[package]]
-name = "dotenv"
-version = "0.9.9"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "python-dotenv" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b2/b7/545d2c10c1fc15e48653c91efde329a790f2eecfbbf2bd16003b5db2bab0/dotenv-0.9.9-py2.py3-none-any.whl", hash = "sha256:29cf74a087b31dafdb5a446b6d7e11cbce8ed2741540e2339c69fbef92c94ce9", size = 1892 },
-]
-
-[[package]]
 name = "filelock"
 version = "3.20.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1395,9 +1384,9 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
-    { name = "dotenv" },
     { name = "openai" },
     { name = "portkey-ai" },
+    { name = "python-dotenv" },
     { name = "requests" },
     { name = "rich" },
 ]
@@ -1424,10 +1413,10 @@ test = [
 requires-dist = [
     { name = "anthropic", specifier = ">=0.75.0" },
     { name = "dill", marker = "extra == 'modal'", specifier = ">=0.3.7" },
-    { name = "dotenv", specifier = ">=0.9.9" },
     { name = "modal", marker = "extra == 'modal'", specifier = ">=0.73.0" },
     { name = "openai", specifier = ">=2.14.0" },
     { name = "portkey-ai", specifier = ">=2.1.0" },
+    { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "requests", specifier = ">=2.32.5" },
     { name = "rich", specifier = ">=13.0.0" },
 ]

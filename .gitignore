@@ -23,6 +23,7 @@ eggs/
 lib/
 lib64/
 !docs/src/lib/
+!visualizer/src/lib/
 parts/
 sdist/
 var/

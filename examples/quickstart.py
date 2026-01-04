@@ -8,18 +8,20 @@ from rlm.logger import RLMLogger
 load_dotenv()
 
 logger = RLMLogger(log_dir="./logs")
+
 rlm = RLM(
-    backend="portkey",
+    backend="openai",  # or "portkey", etc.
     backend_kwargs={
-        "api_key": os.getenv("PORTKEY_API_KEY"),
-        "model_name": "@openai/gpt-5-nano",
+        "model_name": "gpt-5-nano",
+        "api_key": os.getenv("OPENAI_API_KEY"),
     },
     environment="local",
     environment_kwargs={},
     max_depth=1,
     logger=logger,
-    verbose=True,
+    verbose=True,  # For printing to console with rich, disabled by default.
 )
 
-result = rlm.completion("Using your code, solve 2^(2^(2^(2))). Show your work in Python.")
+result = rlm.completion("Print me the first 100 powers of two, each on a newline.")
+
 print(result)
