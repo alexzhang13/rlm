@@ -47,12 +47,11 @@ def main():
         print(f"LM Handler started at {handler.address}")
 
         # Create Prime REPL with handler connection
-        # Note: Sandbox creation may take 30-60 seconds
-        print("\nCreating Prime sandbox (this may take a minute)...")
+        print("\nCreating Prime sandbox...")
         with PrimeREPL(
             name="rlm-lm-demo",
             docker_image="python:3.11-slim",
-            timeout_minutes=30,
+            timeout_minutes=1,
             lm_handler_address=handler.address,
             context_payload=context_payload,
             setup_code=setup_code,
