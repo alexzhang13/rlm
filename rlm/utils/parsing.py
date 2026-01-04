@@ -26,15 +26,17 @@ def find_final_answer(text: str) -> tuple[str, str] | None:
     """
     Find FINAL(...) or FINAL_VAR(...) statement in response and return (type, content).
     Returns None if neither pattern is found.
+
+    Handles various model formats including special tokens like <|begin_of_box|>FINAL(...)<|end_of_box|>
     """
-    # Check for FINAL_VAR pattern first - must be at start of line
-    final_var_pattern = r"^\s*FINAL_VAR\((.*?)\)"
+    # Check for FINAL_VAR pattern - allow special tokens before it
+    final_var_pattern = r"(?:^|\s|<\|[^|]+\|>)\s*FINAL_VAR\((.*?)\)"
     match = re.search(final_var_pattern, text, re.MULTILINE | re.DOTALL)
     if match:
         return ("FINAL_VAR", match.group(1).strip())
 
-    # Check for FINAL pattern - must be at start of line
-    final_pattern = r"^\s*FINAL\((.*?)\)"
+    # Check for FINAL pattern - allow special tokens before it
+    final_pattern = r"(?:^|\s|<\|[^|]+\|>)\s*FINAL\((.*?)\)"
     match = re.search(final_pattern, text, re.MULTILINE | re.DOTALL)
     if match:
         return ("FINAL", match.group(1).strip())
