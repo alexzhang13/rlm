@@ -55,7 +55,9 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
         if not self.lm_handler_address:
             return {"error": "No LM handler configured"}
 
-        request = LMRequest(prompt=body.get("prompt"), model=body.get("model"))
+        request = LMRequest(
+            prompt=body.get("prompt"), model=body.get("model"), kwargs=body.get("kwargs")
+        )
         response = send_lm_request(self.lm_handler_address, request)
 
         if not response.success:
@@ -72,7 +74,10 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
 
         prompts = body.get("prompts", [])
         responses = send_lm_request_batched(
-            self.lm_handler_address, prompts, model=body.get("model")
+            self.lm_handler_address,
+            prompts,
+            model=body.get("model"),
+            kwargs=body.get("kwargs"),
         )
 
         results = []
@@ -102,17 +107,23 @@ except ImportError:
 PROXY = "http://host.docker.internal:{proxy_port}"
 STATE = "/workspace/state.dill"
 
-def llm_query(prompt, model=None):
+def llm_query(prompt, model=None, **kwargs):
     try:
-        r = requests.post(f"{{PROXY}}/llm_query", json={{"prompt": prompt, "model": model}}, timeout=300)
+        payload = {{"prompt": prompt, "model": model}}
+        if kwargs:
+            payload["kwargs"] = kwargs
+        r = requests.post(f"{{PROXY}}/llm_query", json=payload, timeout=300)
         d = r.json()
         return d.get("response") or f"Error: {{d.get('error')}}"
     except Exception as e:
         return f"Error: {{e}}"
 
-def llm_query_batched(prompts, model=None):
+def llm_query_batched(prompts, model=None, **kwargs):
     try:
-        r = requests.post(f"{{PROXY}}/llm_query_batched", json={{"prompts": prompts, "model": model}}, timeout=300)
+        payload = {{"prompts": prompts, "model": model}}
+        if kwargs:
+            payload["kwargs"] = kwargs
+        r = requests.post(f"{{PROXY}}/llm_query_batched", json=payload, timeout=300)
         d = r.json()
         return d.get("responses") or [f"Error: {{d.get('error')}}"] * len(prompts)
     except Exception as e:

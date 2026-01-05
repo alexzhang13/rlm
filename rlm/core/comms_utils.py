@@ -28,6 +28,7 @@ class LMRequest:
     prompt: str | dict[str, Any] | None = None
     prompts: list[str | dict[str, Any]] | None = None
     model: str | None = None
+    kwargs: dict[str, Any] | None = None
 
     @property
     def is_batched(self) -> bool:
@@ -43,6 +44,8 @@ class LMRequest:
             d["prompts"] = self.prompts
         if self.model is not None:
             d["model"] = self.model
+        if self.kwargs is not None:
+            d["kwargs"] = self.kwargs
         return d
 
     @classmethod
@@ -52,6 +55,7 @@ class LMRequest:
             prompt=data.get("prompt"),
             prompts=data.get("prompts"),
             model=data.get("model"),
+            kwargs=data.get("kwargs"),
         )
 
 
@@ -220,6 +224,7 @@ def send_lm_request_batched(
     address: tuple[str, int],
     prompts: list[str | dict[str, Any]],
     model: str | None = None,
+    kwargs: dict[str, Any] | None = None,
     timeout: int = 300,
 ) -> list[LMResponse]:
     """Send a batched LM request and return a list of typed responses.
@@ -228,13 +233,14 @@ def send_lm_request_batched(
         address: (host, port) tuple of LM Handler server.
         prompts: List of prompts to send.
         model: Optional model name to use.
+        kwargs: Optional kwargs to pass to completion calls.
         timeout: Socket timeout in seconds.
 
     Returns:
         List of LMResponse objects, one per prompt, in the same order.
     """
     try:
-        request = LMRequest(prompts=prompts, model=model)
+        request = LMRequest(prompts=prompts, model=model, kwargs=kwargs)
         response_data = socket_request(address, request.to_dict(), timeout)
         response = LMResponse.from_dict(response_data)
 

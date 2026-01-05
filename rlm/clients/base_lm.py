@@ -15,11 +15,11 @@ class BaseLM(ABC):
         self.kwargs = kwargs
 
     @abstractmethod
-    def completion(self, prompt: str | dict[str, Any]) -> str:
+    def completion(self, prompt: str | dict[str, Any], model: str | None = None, **kwargs) -> str:
         raise NotImplementedError
 
     @abstractmethod
-    async def acompletion(self, prompt: str | dict[str, Any]) -> str:
+    async def acompletion(self, prompt: str | dict[str, Any], model: str | None = None, **kwargs) -> str:
         raise NotImplementedError
 
     @abstractmethod

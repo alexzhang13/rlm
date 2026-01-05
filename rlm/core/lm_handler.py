@@ -48,7 +48,8 @@ class LMRequestHandler(StreamRequestHandler):
         client = handler.get_client(request.model)
 
         start_time = time.perf_counter()
-        content = client.completion(request.prompt)
+        kwargs = request.kwargs or {}
+        content = client.completion(request.prompt, model=request.model, **kwargs)
         end_time = time.perf_counter()
 
         usage_summary = client.get_last_usage()
@@ -67,9 +68,13 @@ class LMRequestHandler(StreamRequestHandler):
         client = handler.get_client(request.model)
 
         start_time = time.perf_counter()
+        kwargs = request.kwargs or {}
 
         async def run_all():
-            tasks = [client.acompletion(prompt) for prompt in request.prompts]
+            tasks = [
+                client.acompletion(prompt, model=request.model, **kwargs)
+                for prompt in request.prompts
+            ]
             return await asyncio.gather(*tasks)
 
         results = asyncio.run(run_all())
@@ -164,9 +169,9 @@ class LMHandler:
             self._server = None
             self._thread = None
 
-    def completion(self, prompt: str, model: str | None = None) -> str:
+    def completion(self, prompt: str, model: str | None = None, **kwargs) -> str:
         """Direct completion call (for main process use)."""
-        return self.get_client(model).completion(prompt)
+        return self.get_client(model).completion(prompt, model=model, **kwargs)
 
     def __enter__(self):
         self.start()

@@ -151,7 +151,7 @@ class RLM:
         return message_history
 
     def completion(
-        self, prompt: str | dict[str, Any], root_prompt: str | None = None
+        self, prompt: str | dict[str, Any], root_prompt: str | None = None, **kwargs
     ) -> RLMChatCompletion:
         """
         Recursive Language Model completion call. This is the main entry point for querying an RLM, and
@@ -163,6 +163,7 @@ class RLM:
             prompt: A single string or dictionary of messages to pass as context to the model.
             root_prompt: We allow the RLM's root LM to see a (small) prompt that the user specifies. A common example of this
             is if the user is asking the RLM to answer a question, we can pass the question as the root prompt.
+            **kwargs: Optional kwargs to pass to root LM completion calls (e.g., max_tokens, temperature).
         Returns:
             A final answer as a string.
         """
@@ -170,7 +171,7 @@ class RLM:
 
         # If we're at max depth, the RLM is an LM, so we fallback to the regular LM.
         if self.depth >= self.max_depth:
-            return self._fallback_answer(prompt)
+            return self._fallback_answer(prompt, **kwargs)
 
         with self._spawn_completion_context(prompt) as (lm_handler, environment):
             message_history = self._setup_prompt(prompt)
@@ -183,6 +184,7 @@ class RLM:
                     prompt=current_prompt,
                     lm_handler=lm_handler,
                     environment=environment,
+                    **kwargs,
                 )
 
                 # Check if RLM is done and has a final answer.
@@ -219,7 +221,7 @@ class RLM:
 
             # Default behavior: we run out of iterations, provide one final answer
             time_end = time.perf_counter()
-            final_answer = self._default_answer(message_history, lm_handler)
+            final_answer = self._default_answer(message_history, lm_handler, **kwargs)
             usage = lm_handler.get_usage_summary()
             self.verbose.print_final_answer(final_answer)
             self.verbose.print_summary(self.max_iterations, time_end - time_start, usage.to_dict())
@@ -238,13 +240,14 @@ class RLM:
         prompt: str | dict[str, Any],
         lm_handler: LMHandler,
         environment: BaseEnv,
+        **kwargs,
     ) -> RLMIteration:
         """
         Perform a single iteration of the RLM, including prompting the model
         and code execution + tool execution.
         """
         iter_start = time.perf_counter()
-        response = lm_handler.completion(prompt)
+        response = lm_handler.completion(prompt, **kwargs)
         code_block_strs = find_code_blocks(response)
         code_blocks = []
 
@@ -260,7 +263,9 @@ class RLM:
             iteration_time=iteration_time,
         )
 
-    def _default_answer(self, message_history: list[dict[str, Any]], lm_handler: LMHandler) -> str:
+    def _default_answer(
+        self, message_history: list[dict[str, Any]], lm_handler: LMHandler, **kwargs
+    ) -> str:
         """
         Default behavior if the RLM runs out of iterations and does not find a final answer.
         It will take the message history, and try to generate a final answer from it.
@@ -271,7 +276,7 @@ class RLM:
                 "content": "Please provide a final answer to the user's question based on the information provided.",
             }
         ]
-        response = lm_handler.completion(current_prompt)
+        response = lm_handler.completion(current_prompt, **kwargs)
 
         if self.logger:
             self.logger.log(
@@ -285,10 +290,10 @@ class RLM:
 
         return response
 
-    def _fallback_answer(self, message: str | dict[str, Any]) -> str:
+    def _fallback_answer(self, message: str | dict[str, Any], **kwargs) -> str:
         """
         Fallback behavior if the RLM is actually at max depth, and should be treated as an LM.
         """
         client: BaseLM = get_client(self.backend, self.backend_kwargs)
-        response = client.completion(message)
+        response = client.completion(message, **kwargs)
         return response

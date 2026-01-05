@@ -166,12 +166,15 @@ except ImportError:
 
 BROKER_URL = "http://127.0.0.1:{broker_port}"
 
-def llm_query(prompt, model=None):
+def llm_query(prompt, model=None, **kwargs):
     """Query the LM via the broker."""
     try:
+        payload = {{"type": "single", "prompt": prompt, "model": model}}
+        if kwargs:
+            payload["kwargs"] = kwargs
         response = requests.post(
             f"{{BROKER_URL}}/enqueue",
-            json={{"type": "single", "prompt": prompt, "model": model}},
+            json=payload,
             timeout=300,
         )
         data = response.json()
@@ -182,12 +185,15 @@ def llm_query(prompt, model=None):
         return f"Error: LM query failed - {{e}}"
 
 
-def llm_query_batched(prompts, model=None):
+def llm_query_batched(prompts, model=None, **kwargs):
     """Query the LM with multiple prompts."""
     try:
+        payload = {{"type": "batched", "prompts": prompts, "model": model}}
+        if kwargs:
+            payload["kwargs"] = kwargs
         response = requests.post(
             f"{{BROKER_URL}}/enqueue",
-            json={{"type": "batched", "prompts": prompts, "model": model}},
+            json=payload,
             timeout=300,
         )
         data = response.json()
@@ -405,10 +411,11 @@ class ModalREPL(IsolatedEnv):
         """Handle an LLM request from the sandbox."""
         req_type = req_data.get("type")
         model = req_data.get("model")
+        kwargs = req_data.get("kwargs")
 
         if req_type == "single":
             prompt = req_data.get("prompt")
-            request = LMRequest(prompt=prompt, model=model)
+            request = LMRequest(prompt=prompt, model=model, kwargs=kwargs)
             response = send_lm_request(self.lm_handler_address, request)
 
             if not response.success:
@@ -422,7 +429,9 @@ class ModalREPL(IsolatedEnv):
 
         elif req_type == "batched":
             prompts = req_data.get("prompts", [])
-            responses = send_lm_request_batched(self.lm_handler_address, prompts, model=model)
+            responses = send_lm_request_batched(
+                self.lm_handler_address, prompts, model=model, kwargs=kwargs
+            )
 
             results = []
             for resp in responses:

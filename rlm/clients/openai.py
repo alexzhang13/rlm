@@ -46,24 +46,8 @@ class OpenAIClient(BaseLM):
         self.model_output_tokens: dict[str, int] = defaultdict(int)
         self.model_total_tokens: dict[str, int] = defaultdict(int)
 
-    def completion(self, prompt: str | list[dict[str, Any]], model: str | None = None) -> str:
-        if isinstance(prompt, str):
-            messages = [{"role": "user", "content": prompt}]
-        elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
-            messages = prompt
-        else:
-            raise ValueError(f"Invalid prompt type: {type(prompt)}")
-
-        model = model or self.model_name
-        if not model:
-            raise ValueError("Model name is required for OpenAI client.")
-
-        response = self.client.chat.completions.create(model=model, messages=messages)
-        self._track_cost(response, model)
-        return response.choices[0].message.content
-
-    async def acompletion(
-        self, prompt: str | list[dict[str, Any]], model: str | None = None
+    def completion(
+        self, prompt: str | list[dict[str, Any]], model: str | None = None, **kwargs
     ) -> str:
         if isinstance(prompt, str):
             messages = [{"role": "user", "content": prompt}]
@@ -76,19 +60,45 @@ class OpenAIClient(BaseLM):
         if not model:
             raise ValueError("Model name is required for OpenAI client.")
 
-        response = await self.async_client.chat.completions.create(model=model, messages=messages)
+        api_kwargs = {"model": model, "messages": messages, **kwargs}
+        response = self.client.chat.completions.create(**api_kwargs)
+        self._track_cost(response, model)
+        return response.choices[0].message.content
+
+    async def acompletion(
+        self, prompt: str | list[dict[str, Any]], model: str | None = None, **kwargs
+    ) -> str:
+        if isinstance(prompt, str):
+            messages = [{"role": "user", "content": prompt}]
+        elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
+            messages = prompt
+        else:
+            raise ValueError(f"Invalid prompt type: {type(prompt)}")
+
+        model = model or self.model_name
+        if not model:
+            raise ValueError("Model name is required for OpenAI client.")
+
+        api_kwargs = {"model": model, "messages": messages, **kwargs}
+        response = await self.async_client.chat.completions.create(**api_kwargs)
         self._track_cost(response, model)
         return response.choices[0].message.content
 
     def _track_cost(self, response: openai.ChatCompletion, model: str):
         self.model_call_counts[model] += 1
-        self.model_input_tokens[model] += response.usage.prompt_tokens
-        self.model_output_tokens[model] += response.usage.completion_tokens
-        self.model_total_tokens[model] += response.usage.total_tokens
+
+        usage = getattr(response, "usage", None)
+        prompt_tokens = getattr(usage, "prompt_tokens", 0) if usage else 0
+        completion_tokens = getattr(usage, "completion_tokens", 0) if usage else 0
+        total_tokens = getattr(usage, "total_tokens", 0) if usage else 0
+
+        self.model_input_tokens[model] += prompt_tokens
+        self.model_output_tokens[model] += completion_tokens
+        self.model_total_tokens[model] += total_tokens
 
         # Track last call for handler to read
-        self.last_prompt_tokens = response.usage.prompt_tokens
-        self.last_completion_tokens = response.usage.completion_tokens
+        self.last_prompt_tokens = prompt_tokens
+        self.last_completion_tokens = completion_tokens
 
     def get_usage_summary(self) -> UsageSummary:
         model_summaries = {}

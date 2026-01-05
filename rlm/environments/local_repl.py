@@ -166,18 +166,19 @@ class LocalREPL(NonIsolatedEnv):
             return str(self.locals[variable_name])
         return f"Error: Variable '{variable_name}' not found"
 
-    def _llm_query(self, prompt: str, model: str | None = None) -> str:
+    def _llm_query(self, prompt: str, model: str | None = None, **kwargs) -> str:
         """Query the LM via socket connection to the handler.
 
         Args:
             prompt: The prompt to send to the LM.
             model: Optional model name to use (if handler has multiple clients).
+            **kwargs: Optional kwargs to pass to the completion call (e.g., max_tokens, temperature).
         """
         if not self.lm_handler_address:
             return "Error: No LM handler configured"
 
         try:
-            request = LMRequest(prompt=prompt, model=model)
+            request = LMRequest(prompt=prompt, model=model, kwargs=kwargs if kwargs else None)
             response = send_lm_request(self.lm_handler_address, request)
 
             if not response.success:
@@ -192,12 +193,13 @@ class LocalREPL(NonIsolatedEnv):
         except Exception as e:
             return f"Error: LM query failed - {e}"
 
-    def _llm_query_batched(self, prompts: list[str], model: str | None = None) -> list[str]:
+    def _llm_query_batched(self, prompts: list[str], model: str | None = None, **kwargs) -> list[str]:
         """Query the LM with multiple prompts concurrently.
 
         Args:
             prompts: List of prompts to send to the LM.
             model: Optional model name to use (if handler has multiple clients).
+            **kwargs: Optional kwargs to pass to the completion calls (e.g., max_tokens, temperature).
 
         Returns:
             List of responses in the same order as input prompts.
@@ -206,7 +208,7 @@ class LocalREPL(NonIsolatedEnv):
             return ["Error: No LM handler configured"] * len(prompts)
 
         try:
-            responses = send_lm_request_batched(self.lm_handler_address, prompts, model=model)
+            responses = send_lm_request_batched(self.lm_handler_address, prompts, model=model, kwargs=kwargs if kwargs else None)
 
             results = []
             for response in responses:
