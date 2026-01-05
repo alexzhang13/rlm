@@ -173,6 +173,12 @@ class DockerREPL(NonIsolatedEnv):
     Docker REPL - runs Python in a Docker container with LLM support.
 
     Requires: Docker with a Python 3.11+ image (default: python:3.11-slim).
+
+    Security features:
+        - Runs as non-root user (--user 1000:1000)
+        - Read-only filesystem (--read-only) with writable /tmp and /workspace
+        - Optional network isolation (--network=none)
+        - Static analysis before execution
     """
 
     def __init__(
@@ -181,8 +187,19 @@ class DockerREPL(NonIsolatedEnv):
         lm_handler_address: tuple[str, int] | None = None,
         context_payload: dict | list | str | None = None,
         setup_code: str | None = None,
+        network_disabled: bool = False,
         **kwargs,
     ):
+        """Initialize DockerREPL with security controls.
+
+        Args:
+            image: Docker image to use (default: python:3.11-slim).
+            lm_handler_address: Optional (host, port) tuple for LM handler.
+            context_payload: Optional context to load into environment.
+            setup_code: Optional code to run during setup.
+            network_disabled: If True, disable all network access in container.
+                Note: This also disables llm_query() calls to the host.
+        """
         super().__init__(**kwargs)
 
         self.image = image
@@ -194,6 +211,7 @@ class DockerREPL(NonIsolatedEnv):
         self.temp_dir = tempfile.mkdtemp(prefix="docker_repl_")
         self.pending_calls: list[RLMChatCompletion] = []
         self._calls_lock = threading.Lock()
+        self.network_disabled = network_disabled
 
         self.setup()
 
@@ -203,7 +221,7 @@ class DockerREPL(NonIsolatedEnv):
             self.execute_code(setup_code)
 
     def setup(self):
-        """Start the proxy server and Docker container."""
+        """Start the proxy server and Docker container with security hardening."""
         # Start LLM proxy server
         handler = type(
             "Handler",
@@ -219,35 +237,52 @@ class DockerREPL(NonIsolatedEnv):
         self.proxy_thread = threading.Thread(target=self.proxy_server.serve_forever, daemon=True)
         self.proxy_thread.start()
 
+        # Ensure workspace directory has proper permissions for non-root user
+        os.chmod(self.temp_dir, 0o777)
+
+        # Build docker run command with security flags
+        docker_cmd = [
+            "docker",
+            "run",
+            "-d",
+            "--rm",
+            # Security: Run as non-root user (uid:gid 1000:1000)
+            "--user",
+            "1000:1000",
+            # Security: Read-only root filesystem
+            "--read-only",
+            # Writable temp directories (required for Python and pip)
+            "--tmpfs",
+            "/tmp:rw,noexec,nosuid,size=256m",
+            "--tmpfs",
+            "/root/.cache:rw,noexec,nosuid,size=256m",
+            # Mount workspace as writable
+            "-v",
+            f"{self.temp_dir}:/workspace:rw",
+            "--add-host",
+            "host.docker.internal:host-gateway",
+        ]
+
+        # Add network isolation if requested
+        if self.network_disabled:
+            docker_cmd.extend(["--network", "none"])
+
+        # Add image and command
+        docker_cmd.extend([self.image, "tail", "-f", "/dev/null"])
+
         # Start Docker container
-        result = subprocess.run(
-            [
-                "docker",
-                "run",
-                "-d",
-                "--rm",
-                "-v",
-                f"{self.temp_dir}:/workspace",
-                "--add-host",
-                "host.docker.internal:host-gateway",
-                self.image,
-                "tail",
-                "-f",
-                "/dev/null",
-            ],
-            capture_output=True,
-            text=True,
-        )
+        result = subprocess.run(docker_cmd, capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(f"Failed to start container: {result.stderr}")
 
         self.container_id = result.stdout.strip()
 
-        # Install dependencies
-        subprocess.run(
-            ["docker", "exec", self.container_id, "pip", "install", "-q", "dill", "requests"],
-            capture_output=True,
-        )
+        # Install dependencies (skip if network is disabled - image must have deps pre-installed)
+        if not self.network_disabled:
+            subprocess.run(
+                ["docker", "exec", self.container_id, "pip", "install", "-q", "dill", "requests"],
+                capture_output=True,
+            )
 
     def load_context(self, context_payload: dict | list | str):
         if isinstance(context_payload, str):

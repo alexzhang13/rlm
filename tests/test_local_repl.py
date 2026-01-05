@@ -193,3 +193,159 @@ class TestLocalREPLCleanup:
         assert os.path.exists(temp_dir)
         repl.cleanup()
         assert not os.path.exists(temp_dir)
+
+
+class TestLocalREPLSecuritySafeImport:
+    """Tests for _safe_import security control."""
+
+    def test_safe_import_blocks_os(self):
+        """Test that importing os is blocked at runtime."""
+        repl = LocalREPL()
+        result = repl.execute_code("import os")
+        # Should fail at static analysis
+        assert "Security" in result.stderr or "ImportError" in result.stderr
+        repl.cleanup()
+
+    def test_safe_import_blocks_subprocess(self):
+        """Test that importing subprocess is blocked."""
+        repl = LocalREPL()
+        result = repl.execute_code("import subprocess")
+        assert "Security" in result.stderr or "ImportError" in result.stderr
+        repl.cleanup()
+
+    def test_safe_import_blocks_socket(self):
+        """Test that importing socket is blocked."""
+        repl = LocalREPL()
+        result = repl.execute_code("import socket")
+        assert "Security" in result.stderr or "ImportError" in result.stderr
+        repl.cleanup()
+
+    def test_safe_import_allows_math(self):
+        """Test that safe modules like math are allowed."""
+        repl = LocalREPL()
+        result = repl.execute_code("import math\nx = math.pi")
+        assert result.stderr == ""
+        assert abs(repl.locals["x"] - 3.14159) < 0.001
+        repl.cleanup()
+
+    def test_safe_import_allows_json(self):
+        """Test that safe modules like json are allowed."""
+        repl = LocalREPL()
+        result = repl.execute_code("import json\nx = json.dumps({'a': 1})")
+        assert result.stderr == ""
+        assert repl.locals["x"] == '{"a": 1}'
+        repl.cleanup()
+
+    def test_safe_import_blocks_from_import(self):
+        """Test that from imports of dangerous modules are blocked."""
+        repl = LocalREPL()
+        result = repl.execute_code("from os import path")
+        assert "Security" in result.stderr or "ImportError" in result.stderr
+        repl.cleanup()
+
+
+class TestLocalREPLSecuritySafeOpen:
+    """Tests for _safe_open security control."""
+
+    def test_safe_open_allows_temp_dir_access(self):
+        """Test that files in temp_dir can be accessed."""
+        repl = LocalREPL()
+        # Write a file in temp_dir and read it back
+        result = repl.execute_code("""
+with open('test_file.txt', 'w') as f:
+    f.write('hello')
+with open('test_file.txt', 'r') as f:
+    content = f.read()
+""")
+        assert result.stderr == ""
+        assert repl.locals["content"] == "hello"
+        repl.cleanup()
+
+    def test_safe_open_blocks_parent_directory(self):
+        """Test that accessing files outside temp_dir is blocked."""
+        repl = LocalREPL()
+        result = repl.execute_code("with open('../../../etc/passwd', 'r') as f: pass")
+        assert "PermissionError" in result.stderr or "denied" in result.stderr.lower()
+        repl.cleanup()
+
+    def test_safe_open_blocks_absolute_path(self):
+        """Test that absolute paths outside temp_dir are blocked."""
+        repl = LocalREPL()
+        # Try to access a file outside the temp directory
+        if os.name == "nt":  # Windows
+            result = repl.execute_code(
+                "with open('C:\\\\Windows\\\\System32\\\\config\\\\sam', 'r') as f: pass"
+            )
+        else:  # Unix-like
+            result = repl.execute_code("with open('/etc/passwd', 'r') as f: pass")
+        assert "PermissionError" in result.stderr or "denied" in result.stderr.lower()
+        repl.cleanup()
+
+    def test_safe_open_blocks_path_traversal(self):
+        """Test that path traversal attacks are blocked."""
+        repl = LocalREPL()
+        result = repl.execute_code(
+            "with open('./subdir/../../../../../../etc/passwd', 'r') as f: pass"
+        )
+        assert "PermissionError" in result.stderr or "denied" in result.stderr.lower()
+        repl.cleanup()
+
+
+class TestLocalREPLSecurityTimeout:
+    """Tests for execution timeout security control."""
+
+    def test_timeout_configured_correctly(self):
+        """Test that timeout is configured with default value."""
+        repl = LocalREPL()
+        assert repl.execution_timeout == 30
+        repl.cleanup()
+
+    def test_custom_timeout_value(self):
+        """Test that custom timeout can be set."""
+        repl = LocalREPL(execution_timeout=60)
+        assert repl.execution_timeout == 60
+        repl.cleanup()
+
+    def test_timeout_disabled_with_zero(self):
+        """Test that timeout can be disabled with 0."""
+        repl = LocalREPL(execution_timeout=0)
+        assert repl.execution_timeout == 0
+        repl.cleanup()
+
+    def test_short_timeout_catches_infinite_loop(self):
+        """Test that infinite loops are caught by timeout."""
+        # Use a very short timeout for testing
+        repl = LocalREPL(execution_timeout=1)
+        result = repl.execute_code("while True: pass")
+        assert "ExecutionTimeoutError" in result.stderr or "timeout" in result.stderr.lower()
+        repl.cleanup()
+
+    def test_fast_code_completes_within_timeout(self):
+        """Test that fast code completes successfully."""
+        repl = LocalREPL(execution_timeout=5)
+        result = repl.execute_code("x = sum(range(1000))")
+        assert result.stderr == ""
+        assert repl.locals["x"] == 499500
+        repl.cleanup()
+
+
+class TestLocalREPLSecurityMemoryLimit:
+    """Tests for memory limit security control."""
+
+    def test_memory_limit_configured_correctly(self):
+        """Test that memory limit is configured with default value."""
+        repl = LocalREPL()
+        assert repl.memory_limit_mb == 512
+        repl.cleanup()
+
+    def test_custom_memory_limit(self):
+        """Test that custom memory limit can be set."""
+        repl = LocalREPL(memory_limit_mb=256)
+        assert repl.memory_limit_mb == 256
+        repl.cleanup()
+
+    def test_memory_limit_disabled_with_zero(self):
+        """Test that memory limit can be disabled with 0."""
+        repl = LocalREPL(memory_limit_mb=0)
+        assert repl.memory_limit_mb == 0
+        repl.cleanup()
