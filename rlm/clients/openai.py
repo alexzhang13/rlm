@@ -81,7 +81,6 @@ class OpenAIClient(BaseLM):
 
         api_kwargs = {"model": model, "messages": messages, **kwargs}
         response = await self.async_client.chat.completions.create(**api_kwargs)
-        print(response)
         self._track_cost(response, model)
         return response.choices[0].message.content
 
