@@ -169,6 +169,12 @@ class TestEnvironmentImports:
 
         assert ModalREPL is not None
 
+    def test_cloudflare_repl_import(self):
+        """Test CloudflareREPL import."""
+        from rlm.environments.cloudflare_repl import CloudflareREPL
+
+        assert CloudflareREPL is not None
+
     def test_docker_repl_import(self):
         """Test DockerREPL import."""
         from rlm.environments.docker_repl import DockerREPL
