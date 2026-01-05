@@ -18,11 +18,11 @@ class MockLM(BaseLM):
     def __init__(self):
         super().__init__(model_name="mock")
 
-    def completion(self, prompt):
+    def completion(self, prompt, model=None, **kwargs):
         return f"Mock: {str(prompt)[:50]}"
 
-    async def acompletion(self, prompt):
-        return self.completion(prompt)
+    async def acompletion(self, prompt, model=None, **kwargs):
+        return self.completion(prompt, model=model, **kwargs)
 
     def get_usage_summary(self):
         return UsageSummary({"mock": ModelUsageSummary(1, 10, 10)})
