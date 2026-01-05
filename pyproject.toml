@@ -9,6 +9,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "anthropic>=0.75.0",
+    "google-genai>=1.56.0",
     "openai>=2.14.0",
     "portkey-ai>=2.1.0",
     "pytest>=9.0.2",

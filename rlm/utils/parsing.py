@@ -3,8 +3,12 @@ Parsing utilities for RLM trjaectories.
 """
 
 import re
+from typing import TYPE_CHECKING
 
 from rlm.core.types import REPLResult, RLMIteration
+
+if TYPE_CHECKING:
+    from rlm.environments.base_env import BaseEnv
 
 
 def find_code_blocks(text: str) -> list[str]:
@@ -22,22 +26,38 @@ def find_code_blocks(text: str) -> list[str]:
     return results
 
 
-def find_final_answer(text: str) -> tuple[str, str] | None:
+def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | None:
     """
-    Find FINAL(...) or FINAL_VAR(...) statement in response and return (type, content).
+    Find FINAL(...) or FINAL_VAR(...) statement in response and return the final answer string.
+
+    If FINAL_VAR is found and an environment is provided, executes code to retrieve the variable value.
     Returns None if neither pattern is found.
+
+    Args:
+        text: The response text to parse
+        environment: Optional environment to execute code for FINAL_VAR retrieval
+
+    Returns:
+        The final answer string, or None if no final answer pattern is found
     """
     # Check for FINAL_VAR pattern first - must be at start of line
     final_var_pattern = r"^\s*FINAL_VAR\((.*?)\)"
     match = re.search(final_var_pattern, text, re.MULTILINE | re.DOTALL)
     if match:
-        return ("FINAL_VAR", match.group(1).strip())
+        variable_name = match.group(1).strip().strip('"').strip("'")
+        if environment is not None:
+            result = environment.execute_code(f"print(FINAL_VAR({variable_name!r}))")
+            final_answer = result.stdout.strip()
+            if final_answer == "":
+                final_answer = result.stderr.strip() or ""
+            return final_answer
+        return None
 
     # Check for FINAL pattern - must be at start of line
     final_pattern = r"^\s*FINAL\((.*?)\)"
     match = re.search(final_pattern, text, re.MULTILINE | re.DOTALL)
     if match:
-        return ("FINAL", match.group(1).strip())
+        return match.group(1).strip()
 
     return None
 
@@ -106,7 +126,7 @@ def format_execution_result(result: REPLResult) -> str:
             "__doc__",
         ]:
             # Only show simple types or short representations
-            if isinstance(value, str | int | float | bool | list | dict | tuple):
+            if isinstance(value, (str, int, float, bool, list, dict, tuple)):
                 important_vars[key] = ""
 
     if important_vars:
@@ -117,35 +137,8 @@ def format_execution_result(result: REPLResult) -> str:
 
 def check_for_final_answer(response: str, repl_env, logger) -> str | None:
     """Check if response contains a final answer."""
-    result = find_final_answer(response)
-    if result is None:
-        return None
-
-    answer_type, content = result
-
-    if answer_type == "FINAL":
-        return content
-    elif answer_type == "FINAL_VAR":
-        # Get the variable directly from the REPL environment
-        try:
-            # Strip spaces, quotes, and newlines from variable name
-            variable_name = content.strip().strip('"').strip("'").strip("\n").strip("\r")
-
-            # Check if variable exists in the REPL environment's locals
-            if variable_name in repl_env.locals:
-                variable_value = repl_env.locals[variable_name]
-                return str(variable_value)
-            else:
-                error_msg = f"Variable '{variable_name}' not found in REPL environment"
-                logger.log_tool_execution("FINAL_VAR", error_msg)
-                return None
-        except Exception as e:
-            error_msg = f"Error retrieving variable '{variable_name}': {str(e)}"
-            print("ERROR MESSAGE", error_msg)
-            logger.log_tool_execution("FINAL_VAR", error_msg)
-            return None
-
-    return None
+    # Use the new find_final_answer function which handles both FINAL and FINAL_VAR
+    return find_final_answer(response, environment=repl_env)
 
 
 def convert_context_for_repl(context):

@@ -1,6 +1,9 @@
 """Tests for parsing utilities."""
 
+from unittest.mock import Mock
+
 from rlm.core.types import CodeBlock, REPLResult, RLMIteration
+from rlm.environments.local_repl import LocalREPL
 from rlm.utils.parsing import (
     convert_context_for_repl,
     find_code_blocks,
@@ -81,12 +84,25 @@ class TestFindFinalAnswer:
     def test_final_answer(self):
         text = "The answer is:\nFINAL(42)"
         result = find_final_answer(text)
-        assert result == ("FINAL", "42")
+        assert result == "42"
 
     def test_final_var_answer(self):
         text = "Check the variable:\nFINAL_VAR(result)"
+        # Create a mock environment that returns the variable value
+        mock_env = Mock()
+        mock_env.execute_code.return_value = REPLResult(stdout="42", stderr="", locals={})
+        result = find_final_answer(text, environment=mock_env)
+        assert result == "42"
+        # Verify execute_code was called with the correct code
+        mock_env.execute_code.assert_called_once()
+        call_args = mock_env.execute_code.call_args[0][0]
+        assert "FINAL_VAR('result')" in call_args or 'FINAL_VAR("result")' in call_args
+
+    def test_final_var_without_environment(self):
+        text = "Check the variable:\nFINAL_VAR(result)"
+        # Without environment, FINAL_VAR should return None
         result = find_final_answer(text)
-        assert result == ("FINAL_VAR", "result")
+        assert result is None
 
     def test_no_final_answer(self):
         text = "Still working on the problem..."
@@ -98,8 +114,8 @@ class TestFindFinalAnswer:
 multiline answer)"""
         result = find_final_answer(text)
         assert result is not None
-        assert result[0] == "FINAL"
-        assert "multiline" in result[1]
+        assert "multiline" in result
+        assert "This is a" in result
 
     def test_final_must_be_at_start_of_line(self):
         # FINAL not at start of line should not match
@@ -110,7 +126,118 @@ multiline answer)"""
     def test_final_with_whitespace(self):
         text = "   FINAL(answer with spaces)"
         result = find_final_answer(text)
-        assert result == ("FINAL", "answer with spaces")
+        assert result == "answer with spaces"
+
+    def test_final_and_final_var_parsing(self):
+        """Test that both FINAL and FINAL_VAR patterns are parsed correctly."""
+        # Test FINAL with various content types
+        test_cases_final = [
+            ("FINAL(42)", "42"),
+            ("FINAL('hello world')", "'hello world'"),
+            ('FINAL("test")', '"test"'),
+            ("FINAL(123.45)", "123.45"),
+            ("FINAL([1, 2, 3])", "[1, 2, 3]"),
+        ]
+
+        for text, expected in test_cases_final:
+            result = find_final_answer(text)
+            assert result == expected, f"Failed for text: {text}"
+
+        # Test FINAL_VAR with environment
+        mock_env = Mock()
+        mock_env.execute_code.return_value = REPLResult(
+            stdout="computed_result", stderr="", locals={}
+        )
+
+        test_cases_final_var = [
+            ("FINAL_VAR(result)", "result"),
+            ("FINAL_VAR('my_var')", "my_var"),
+            ('FINAL_VAR("another_var")', "another_var"),
+            ("FINAL_VAR(answer)", "answer"),
+        ]
+
+        for text, var_name in test_cases_final_var:
+            result = find_final_answer(text, environment=mock_env)
+            assert result == "computed_result", f"Failed for text: {text}"
+            # Verify the variable name was extracted correctly
+            call_args = mock_env.execute_code.call_args[0][0]
+            assert (
+                var_name in call_args
+                or f"'{var_name}'" in call_args
+                or f'"{var_name}"' in call_args
+            )
+
+    def test_final_var_takes_precedence_over_final(self):
+        """Test that FINAL_VAR is checked first and takes precedence over FINAL."""
+        mock_env = Mock()
+        mock_env.execute_code.return_value = REPLResult(stdout="var_value", stderr="", locals={})
+
+        # If both appear, FINAL_VAR should be found first (checked first in the function)
+        text = "FINAL_VAR(result)\nFINAL(direct_answer)"
+        result = find_final_answer(text, environment=mock_env)
+        assert result == "var_value"  # FINAL_VAR should be returned
+
+        # Without environment, FINAL_VAR pattern is found but returns None (no fallback to FINAL)
+        # This is expected behavior - FINAL_VAR takes precedence when found
+        result = find_final_answer(text)
+        assert result is None  # FINAL_VAR found but no environment, so returns None
+
+        # Test that FINAL alone works when FINAL_VAR is not present
+        text_final_only = "FINAL(direct_answer)"
+        result = find_final_answer(text_final_only)
+        assert result == "direct_answer"
+
+    def test_final_var_retrieves_actual_variables_from_environment(self):
+        """Test that FINAL_VAR actually retrieves variables from a real code environment."""
+        # Create a real LocalREPL environment
+        env = LocalREPL()
+
+        try:
+            # Execute code to create variables with different types
+            env.execute_code("x = 42")
+            env.execute_code("result = 'hello world'")
+            env.execute_code("answer = [1, 2, 3, 4, 5]")
+            env.execute_code("computed = 10 * 5 + 2")
+            env.execute_code("nested = {'key': 'value', 'num': 123}")
+
+            # Test retrieving integer variable
+            text = "FINAL_VAR(x)"
+            result = find_final_answer(text, environment=env)
+            assert result == "42", f"Expected '42', got '{result}'"
+
+            # Test retrieving string variable
+            text = "FINAL_VAR(result)"
+            result = find_final_answer(text, environment=env)
+            assert result == "hello world", f"Expected 'hello world', got '{result}'"
+
+            # Test retrieving list variable
+            text = "FINAL_VAR(answer)"
+            result = find_final_answer(text, environment=env)
+            assert result == "[1, 2, 3, 4, 5]", f"Expected '[1, 2, 3, 4, 5]', got '{result}'"
+
+            # Test retrieving computed variable
+            text = "FINAL_VAR(computed)"
+            result = find_final_answer(text, environment=env)
+            assert result == "52", f"Expected '52', got '{result}'"
+
+            # Test retrieving dictionary variable
+            text = "FINAL_VAR(nested)"
+            result = find_final_answer(text, environment=env)
+            assert "'key': 'value'" in result or '"key": "value"' in result
+            assert "'num': 123" in result or '"num": 123' in result
+
+            # Test that variable updates are reflected
+            env.execute_code("x = 100")
+            text = "FINAL_VAR(x)"
+            result = find_final_answer(text, environment=env)
+            assert result == "100", f"Expected '100', got '{result}'"
+
+            # Test that non-existent variable returns error message
+            text = "FINAL_VAR(nonexistent)"
+            result = find_final_answer(text, environment=env)
+            assert "Error" in result or "not found" in result.lower()
+        finally:
+            env.cleanup()
 
 
 class TestFormatExecutionResult:

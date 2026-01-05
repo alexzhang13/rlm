@@ -13,6 +13,7 @@ from typing import Any
 from rlm.core.comms_utils import LMRequest, send_lm_request, send_lm_request_batched
 from rlm.core.types import REPLResult, RLMChatCompletion
 from rlm.environments.base_env import NonIsolatedEnv
+from rlm.utils.code_safety import check_code_safety
 
 # =============================================================================
 # Safe Builtins
@@ -261,6 +262,17 @@ class LocalREPL(NonIsolatedEnv):
     def execute_code(self, code: str) -> REPLResult:
         """Execute code in the persistent namespace and return result."""
         start_time = time.perf_counter()
+
+        # Static analysis security check
+        safety_result = check_code_safety(code)
+        if not safety_result.is_safe:
+            return REPLResult(
+                stdout="",
+                stderr=f"Security: {safety_result.reason}",
+                locals=self.locals.copy(),
+                execution_time=time.perf_counter() - start_time,
+                rlm_calls=[],
+            )
 
         # Clear pending LLM calls from previous execution
         self._pending_llm_calls = []
