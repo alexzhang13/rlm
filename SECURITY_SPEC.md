@@ -170,6 +170,7 @@ if not is_safe:
     return REPLResult(stdout="", stderr=f"Security: {reason}", ...)
 ```
 
+
 ---
 
 ## Production Security Improvements
