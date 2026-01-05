@@ -11,6 +11,7 @@ dependencies = [
     "anthropic>=0.75.0",
     "openai>=2.14.0",
     "portkey-ai>=2.1.0",
+    "pytest>=9.0.2",
     "python-dotenv>=1.2.1",
     "requests>=2.32.5",
     "rich>=13.0.0",

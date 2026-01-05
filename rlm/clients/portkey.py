@@ -1,7 +1,7 @@
 from collections import defaultdict
 from typing import Any
 
-from portkey_ai import Portkey
+from portkey_ai import AsyncPortkey, Portkey
 from portkey_ai.api_resources.types.chat_complete_type import ChatCompletions
 
 from rlm.clients.base_lm import BaseLM
@@ -22,6 +22,7 @@ class PortkeyClient(BaseLM):
     ):
         super().__init__(model_name=model_name, **kwargs)
         self.client = Portkey(api_key=api_key, base_url=base_url)
+        self.async_client = AsyncPortkey(api_key=api_key, base_url=base_url)
         self.model_name = model_name
 
         # Per-model usage tracking
@@ -61,7 +62,7 @@ class PortkeyClient(BaseLM):
         if not model:
             raise ValueError("Model name is required for Portkey client.")
 
-        response = await self.client.chat.completions.create(model=model, messages=messages)
+        response = await self.async_client.chat.completions.create(model=model, messages=messages)
         self._track_cost(response, model)
         return response.choices[0].message.content
 
