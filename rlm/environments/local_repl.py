@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import platform
 import shutil
 import sys
 import tempfile
@@ -13,7 +14,92 @@ from typing import Any
 from rlm.core.comms_utils import LMRequest, send_lm_request, send_lm_request_batched
 from rlm.core.types import REPLResult, RLMChatCompletion
 from rlm.environments.base_env import NonIsolatedEnv
-from rlm.utils.code_safety import check_code_safety
+from rlm.utils.code_safety import DANGEROUS_MODULES, check_code_safety
+
+# =============================================================================
+# Execution Timeout Error
+# =============================================================================
+
+
+class ExecutionTimeoutError(Exception):
+    """Raised when code execution exceeds the timeout limit."""
+
+    pass
+
+
+# =============================================================================
+# Security Helpers
+# =============================================================================
+
+
+def _create_safe_import(blocked_modules: frozenset[str]):
+    """Create a restricted import function that blocks dangerous modules.
+
+    Args:
+        blocked_modules: Set of module names to block.
+
+    Returns:
+        A wrapped __import__ function that raises ImportError for blocked modules.
+    """
+
+    def _safe_import(
+        name: str,
+        globals_: dict | None = None,
+        locals_: dict | None = None,
+        fromlist: tuple = (),
+        level: int = 0,
+    ):
+        # Check the root module name
+        root_module = name.split(".")[0]
+        if root_module in blocked_modules:
+            raise ImportError(f"Import of '{name}' is blocked for security reasons")
+
+        # Also check fromlist entries if importing submodules
+        if fromlist:
+            for item in fromlist:
+                if item in blocked_modules:
+                    raise ImportError(f"Import of '{item}' is blocked for security reasons")
+
+        return __import__(name, globals_, locals_, fromlist, level)
+
+    return _safe_import
+
+
+def _create_safe_open(allowed_base_path: str):
+    """Create a restricted open function that only allows file access within a directory.
+
+    Args:
+        allowed_base_path: The base directory path within which file access is allowed.
+
+    Returns:
+        A wrapped open function that raises PermissionError for paths outside base.
+    """
+
+    def _safe_open(file, mode: str = "r", *args, **kwargs):
+        # Resolve the absolute path
+        if isinstance(file, (str, bytes)):
+            file_str = file.decode() if isinstance(file, bytes) else file
+            abs_path = os.path.abspath(file_str)
+            base_path = os.path.abspath(allowed_base_path)
+
+            # Ensure the path is within the allowed base path
+            # Use os.path.commonpath to prevent path traversal attacks
+            try:
+                common = os.path.commonpath([abs_path, base_path])
+                if common != base_path:
+                    raise PermissionError(
+                        f"File access denied: path '{file_str}' is outside allowed directory"
+                    )
+            except ValueError as e:
+                # Different drives on Windows
+                raise PermissionError(
+                    f"File access denied: path '{file_str}' is outside allowed directory"
+                ) from e
+
+        return open(file, mode, *args, **kwargs)
+
+    return _safe_open
+
 
 # =============================================================================
 # Safe Builtins
@@ -116,21 +202,51 @@ class LocalREPL(NonIsolatedEnv):
     """
     Local REPL environment with persistent Python namespace.
     Executes code in a sandboxed namespace with access to context data.
+
+    Security features:
+        - Blocked dangerous imports via _safe_import
+        - File access restricted to temp_dir via _safe_open
+        - Configurable execution timeout (default 30s)
+        - Memory limits on Linux/Mac via resource.setrlimit()
     """
+
+    DEFAULT_TIMEOUT: int = 30
+    DEFAULT_MEMORY_LIMIT_MB: int = 512
 
     def __init__(
         self,
         lm_handler_address: tuple[str, int] | None = None,
         context_payload: dict | list | str | None = None,
         setup_code: str | None = None,
+        execution_timeout: int | None = None,
+        memory_limit_mb: int | None = None,
         **kwargs,
     ):
+        """Initialize LocalREPL with security controls.
+
+        Args:
+            lm_handler_address: Optional (host, port) tuple for LM handler.
+            context_payload: Optional context to load into environment.
+            setup_code: Optional code to run during setup.
+            execution_timeout: Timeout in seconds for code execution (default 30s).
+                Set to None or 0 to disable timeout.
+            memory_limit_mb: Memory limit in MB for code execution (default 512MB).
+                Only enforced on Linux/Mac. Set to None or 0 to disable.
+        """
         super().__init__(**kwargs)
 
         self.lm_handler_address = lm_handler_address
         self.original_cwd = os.getcwd()
         self.temp_dir = tempfile.mkdtemp(prefix=f"repl_env_{uuid.uuid4()}_")
         self._lock = threading.Lock()
+
+        # Security configuration
+        self.execution_timeout = (
+            execution_timeout if execution_timeout is not None else self.DEFAULT_TIMEOUT
+        )
+        self.memory_limit_mb = (
+            memory_limit_mb if memory_limit_mb is not None else self.DEFAULT_MEMORY_LIMIT_MB
+        )
 
         # Setup globals, locals, and modules in environment.
         self.setup()
@@ -144,10 +260,19 @@ class LocalREPL(NonIsolatedEnv):
             self.execute_code(setup_code)
 
     def setup(self):
-        """Setup the environment."""
+        """Setup the environment with security-hardened builtins."""
+        # Create safe versions of import and open
+        safe_import = _create_safe_import(DANGEROUS_MODULES)
+        safe_open = _create_safe_open(self.temp_dir)
+
+        # Create hardened builtins with safe import/open
+        safe_builtins = _SAFE_BUILTINS.copy()
+        safe_builtins["__import__"] = safe_import
+        safe_builtins["open"] = safe_open
+
         # Create sandboxed globals
         self.globals: dict[str, Any] = {
-            "__builtins__": _SAFE_BUILTINS.copy(),
+            "__builtins__": safe_builtins,
             "__name__": "__main__",
         }
         self.locals: dict[str, Any] = {}
@@ -259,8 +384,98 @@ class LocalREPL(NonIsolatedEnv):
         finally:
             os.chdir(old_cwd)
 
+    def _apply_memory_limit(self):
+        """Apply memory limits using resource.setrlimit() on Linux/Mac."""
+        if self.memory_limit_mb <= 0:
+            return
+
+        current_platform = platform.system()
+        if current_platform in ("Linux", "Darwin"):
+            try:
+                import resource
+
+                # Convert MB to bytes
+                limit_bytes = self.memory_limit_mb * 1024 * 1024
+                # Set soft and hard limits for address space
+                resource.setrlimit(resource.RLIMIT_AS, (limit_bytes, limit_bytes))
+            except (ImportError, ValueError, OSError):
+                # resource module not available or limits not supported
+                pass
+
+    def _execute_with_timeout(
+        self, code: str, combined: dict, stdout_buf: io.StringIO, stderr_buf: io.StringIO
+    ) -> tuple[str, str, dict, Exception | None]:
+        """Execute code with timeout using threading.
+
+        Returns:
+            Tuple of (stdout, stderr, updated_locals, exception_or_none)
+        """
+        result: dict[str, Any] = {
+            "stdout": "",
+            "stderr": "",
+            "locals": {},
+            "exception": None,
+            "completed": False,
+        }
+
+        def run_code():
+            try:
+                # Apply memory limits (only affects this thread's children on some platforms)
+                self._apply_memory_limit()
+
+                exec(code, combined, combined)
+
+                # Update locals with new variables
+                new_locals = {}
+                for key, value in combined.items():
+                    if key not in self.globals and not key.startswith("_"):
+                        new_locals[key] = value
+
+                result["stdout"] = stdout_buf.getvalue()
+                result["stderr"] = stderr_buf.getvalue()
+                result["locals"] = new_locals
+                result["completed"] = True
+            except Exception as e:
+                result["stdout"] = stdout_buf.getvalue()
+                result["stderr"] = stderr_buf.getvalue() + f"\n{type(e).__name__}: {e}"
+                result["exception"] = e
+                result["completed"] = True
+
+        exec_thread = threading.Thread(target=run_code, daemon=True)
+        exec_thread.start()
+
+        # Wait for timeout (0 means no timeout)
+        timeout = self.execution_timeout if self.execution_timeout > 0 else None
+        exec_thread.join(timeout=timeout)
+
+        if exec_thread.is_alive():
+            # Thread is still running - execution timed out
+            # Note: We can't forcefully kill the thread in Python, but it's a daemon
+            # so it will be cleaned up when the process exits
+            return (
+                stdout_buf.getvalue(),
+                f"ExecutionTimeoutError: Code execution exceeded {self.execution_timeout}s timeout",
+                {},
+                ExecutionTimeoutError(f"Execution exceeded {self.execution_timeout}s"),
+            )
+
+        return (
+            result["stdout"],
+            result["stderr"],
+            result["locals"],
+            result["exception"],
+        )
+
     def execute_code(self, code: str) -> REPLResult:
-        """Execute code in the persistent namespace and return result."""
+        """Execute code in the persistent namespace and return result.
+
+        Security features:
+            - Static analysis blocks dangerous patterns before execution
+            - Restricted imports via _safe_import (blocks os, subprocess, etc.)
+            - File access restricted to temp_dir via _safe_open
+            - Execution timeout (configurable, default 30s)
+            - Memory limits on Linux/Mac (configurable, default 512MB)
+        """
         start_time = time.perf_counter()
 
         # Static analysis security check
@@ -279,20 +494,16 @@ class LocalREPL(NonIsolatedEnv):
 
         with self._capture_output() as (stdout_buf, stderr_buf):
             with self._temp_cwd():
-                try:
-                    combined = {**self.globals, **self.locals}
-                    exec(code, combined, combined)
+                combined = {**self.globals, **self.locals}
 
-                    # Update locals with new variables
-                    for key, value in combined.items():
-                        if key not in self.globals and not key.startswith("_"):
-                            self.locals[key] = value
+                # Execute with timeout
+                stdout, stderr, new_locals, _ = self._execute_with_timeout(
+                    code, combined, stdout_buf, stderr_buf
+                )
 
-                    stdout = stdout_buf.getvalue()
-                    stderr = stderr_buf.getvalue()
-                except Exception as e:
-                    stdout = stdout_buf.getvalue()
-                    stderr = stderr_buf.getvalue() + f"\n{type(e).__name__}: {e}"
+                # Update locals with new variables (only if execution completed)
+                for key, value in new_locals.items():
+                    self.locals[key] = value
 
         return REPLResult(
             stdout=stdout,
