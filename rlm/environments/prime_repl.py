@@ -499,8 +499,7 @@ class PrimeREPL(IsolatedEnv):
 
         # Execute the script
         result = self.client.execute_command(
-            self.sandbox_id,
-            "python /tmp/exec_script.py",
+            self.sandbox_id, "python /tmp/exec_script.py", timeout=60 * 10
         )
         stdout = result.stdout
         stderr = result.stderr
