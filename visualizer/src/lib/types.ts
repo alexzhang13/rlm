@@ -30,6 +30,7 @@ export interface RLMIteration {
   code_blocks: CodeBlock[];
   final_answer: string | [string, string] | null;
   iteration_time: number | null;
+  turn_id?: number;
 }
 
 // Metadata saved at the start of a log file about RLM configuration

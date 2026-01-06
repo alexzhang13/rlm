@@ -43,7 +43,7 @@ class RLMLogger:
 
         self._metadata_logged = True
 
-    def log(self, iteration: RLMIteration):
+    def log(self, iteration: RLMIteration, turn_id: int | None = None):
         """Log an RLMIteration to the file."""
         self._iteration_count += 1
 
@@ -53,6 +53,9 @@ class RLMLogger:
             "timestamp": datetime.now().isoformat(),
             **iteration.to_dict(),
         }
+
+        if turn_id is not None:
+            entry["turn_id"] = turn_id
 
         with open(self.log_file_path, "a") as f:
             json.dump(entry, f)

@@ -8,10 +8,12 @@ from rlm.core.types import (
     ClientBackend,
     CodeBlock,
     EnvironmentType,
+    IterationRecord,
     REPLResult,
     RLMChatCompletion,
     RLMIteration,
     RLMMetadata,
+    TaskHistoryEntry,
 )
 from rlm.environments import BaseEnv, get_environment
 from rlm.logger import RLMLogger, VerbosePrinter
@@ -22,6 +24,7 @@ from rlm.utils.parsing import (
 )
 from rlm.utils.prompts import (
     RLM_SYSTEM_PROMPT,
+    RLM_PERSISTENT_SYSTEM_PROMPT,
     QueryMetadata,
     build_rlm_system_prompt,
     build_user_prompt,
@@ -51,6 +54,8 @@ class RLM:
         other_backend_kwargs: list[dict[str, Any]] | None = None,
         logger: RLMLogger | None = None,
         verbose: bool = False,
+        persistent: bool = False,
+        persist_repl_state: bool = False,
     ):
         """
         Args:
@@ -66,6 +71,11 @@ class RLM:
             other_backend_kwargs: The kwargs to pass to the other client backends (ordered to match other_backends).
             logger: The logger to use for the RLM.
             verbose: Whether to print verbose output in rich to console.
+            persistent: Enable multi-turn persistence mode. When True, the RLM maintains
+                conversation/task history across multiple completion() calls, storing
+                previous tasks and answers in the context variable (not the model's context window).
+            persist_repl_state: When persistent=True, also preserve REPL local variables across turns.
+                This allows subsequent tasks to reference variables created in previous turns.
         """
         # Store config for spawning per-completion
         self.backend = backend
@@ -80,9 +90,23 @@ class RLM:
         self.depth = depth
         self.max_depth = max_depth
         self.max_iterations = max_iterations
-        self.system_prompt = custom_system_prompt if custom_system_prompt else RLM_SYSTEM_PROMPT
         self.logger = logger
         self.verbose = VerbosePrinter(enabled=verbose)
+
+        # Multi-turn persistence state
+        self.persistent = persistent
+        self.persist_repl_state = persist_repl_state
+        self.turn_count = 0
+        self.task_history: list[TaskHistoryEntry] = []
+        self.persistent_locals: dict[str, Any] = {}  # REPL state across turns
+
+        # Choose system prompt based on persistence mode
+        if custom_system_prompt:
+            self.system_prompt = custom_system_prompt
+        elif persistent:
+            self.system_prompt = RLM_PERSISTENT_SYSTEM_PROMPT
+        else:
+            self.system_prompt = RLM_SYSTEM_PROMPT
 
         # Log metadata if logger is provided
         if self.logger or verbose:
@@ -122,21 +146,63 @@ class RLM:
 
         lm_handler.start()
 
+        # Build context payload - in persistent mode, wrap with turn info
+        context_payload = self._build_context_payload(prompt)
+
         # Pass handler address to environment so it can make llm_query() calls
         env_kwargs = self.environment_kwargs.copy()
         env_kwargs["lm_handler_address"] = (lm_handler.host, lm_handler.port)
-        env_kwargs["context_payload"] = prompt
+        env_kwargs["context_payload"] = context_payload
 
         # Initialize the environment
         environment: BaseEnv = get_environment(self.environment_type, env_kwargs)
 
+        # Restore persistent REPL state if enabled
+        if self.persistent and self.persist_repl_state and self.persistent_locals:
+            if hasattr(environment, "locals"):
+                environment.locals.update(self.persistent_locals)
+
         try:
             yield lm_handler, environment
         finally:
+            # Save REPL state before cleanup if persistence is enabled
+            if self.persistent and self.persist_repl_state:
+                if hasattr(environment, "locals"):
+                    # Save non-internal variables for next turn
+                    self.persistent_locals = {
+                        k: v
+                        for k, v in environment.locals.items()
+                        if not k.startswith("_") and k != "context"
+                    }
+
             # Cleanup
             lm_handler.stop()
             if hasattr(environment, "cleanup"):
                 environment.cleanup()
+
+    def _build_context_payload(self, prompt: str | dict[str, Any]) -> dict[str, Any]:
+        """
+        Build the context payload for the REPL environment.
+
+        In persistent mode, structures the context to include:
+        - task_history: List of previous tasks and their answers
+        - context_{turn_id}: The current turn's input context
+
+        This keeps conversation history in the context variable (RLM philosophy)
+        rather than the model's context window.
+        """
+        if not self.persistent:
+            # Non-persistent mode: pass prompt directly
+            return prompt
+
+        # Persistent mode: structure context with history and versioned contexts
+        context_data = {
+            "turn_id": self.turn_count,
+            "task_history": [entry.to_dict() for entry in self.task_history],
+            f"context_{self.turn_count}": prompt,
+        }
+
+        return context_data
 
     def _setup_prompt(self, prompt: str | dict[str, Any]) -> list[dict[str, Any]]:
         """
@@ -159,6 +225,8 @@ class RLM:
 
         Spawns its own environment and LM handler for the duration of this call.
 
+        In persistent mode, tracks task history across calls and includes it in the context variable.
+
         Args:
             prompt: A single string or dictionary of messages to pass as context to the model.
             root_prompt: We allow the RLM's root LM to see a (small) prompt that the user specifies. A common example of this
@@ -174,10 +242,19 @@ class RLM:
 
         with self._spawn_completion_context(prompt) as (lm_handler, environment):
             message_history = self._setup_prompt(prompt)
+            iterations_list: list[RLMIteration] = []
 
             for i in range(self.max_iterations):
                 # Current prompt = message history + additional prompt suffix
-                current_prompt = message_history + [build_user_prompt(root_prompt, i)]
+                # In persistent mode, pass turn info for context-aware prompting
+                current_prompt = message_history + [
+                    build_user_prompt(
+                        root_prompt,
+                        i,
+                        turn_id=self.turn_count if self.persistent else None,
+                        has_history=len(self.task_history) > 0 if self.persistent else False,
+                    )
+                ]
 
                 iteration: RLMIteration = self._completion_turn(
                     prompt=current_prompt,
@@ -189,18 +266,30 @@ class RLM:
                 final_answer = find_final_answer(iteration.response, environment=environment)
                 iteration.final_answer = final_answer
 
+                # Collect iteration for history
+                iterations_list.append(iteration)
+
                 # If logger is used, log the iteration.
                 if self.logger:
-                    self.logger.log(iteration)
+                    self.logger.log(
+                        iteration,
+                        turn_id=self.turn_count if self.persistent else None,
+                    )
 
                 # Verbose output for this iteration
                 self.verbose.print_iteration(iteration, i + 1)
 
                 if final_answer is not None:
                     time_end = time.perf_counter()
+                    execution_time = time_end - time_start
                     usage = lm_handler.get_usage_summary()
                     self.verbose.print_final_answer(final_answer)
-                    self.verbose.print_summary(i + 1, time_end - time_start, usage.to_dict())
+                    self.verbose.print_summary(i + 1, execution_time, usage.to_dict())
+
+                    # In persistent mode, save this turn to history
+                    if self.persistent:
+                        self._save_to_history(prompt, final_answer, iterations_list, execution_time, usage)
+
                     return RLMChatCompletion(
                         root_model=self.backend_kwargs.get("model_name", "unknown")
                         if self.backend_kwargs
@@ -208,7 +297,7 @@ class RLM:
                         prompt=prompt,
                         response=final_answer,
                         usage_summary=usage,
-                        execution_time=time_end - time_start,
+                        execution_time=execution_time,
                     )
 
                 # Format the iteration for the next prompt.
@@ -219,10 +308,16 @@ class RLM:
 
             # Default behavior: we run out of iterations, provide one final answer
             time_end = time.perf_counter()
+            execution_time = time_end - time_start
             final_answer = self._default_answer(message_history, lm_handler)
             usage = lm_handler.get_usage_summary()
             self.verbose.print_final_answer(final_answer)
-            self.verbose.print_summary(self.max_iterations, time_end - time_start, usage.to_dict())
+            self.verbose.print_summary(self.max_iterations, execution_time, usage.to_dict())
+
+            # In persistent mode, save this turn to history
+            if self.persistent:
+                self._save_to_history(prompt, final_answer, iterations_list, execution_time, usage)
+
             return RLMChatCompletion(
                 root_model=self.backend_kwargs.get("model_name", "unknown")
                 if self.backend_kwargs
@@ -230,8 +325,46 @@ class RLM:
                 prompt=prompt,
                 response=final_answer,
                 usage_summary=usage,
-                execution_time=time_end - time_start,
+                execution_time=execution_time,
             )
+
+    def _save_to_history(
+        self,
+        prompt: str | dict[str, Any],
+        answer: str,
+        iterations: list[RLMIteration],
+        execution_time: float,
+        usage: Any,
+    ):
+        """Save a completed turn to the task history for multi-turn persistence."""
+        # Extract task description from prompt
+        if isinstance(prompt, str):
+            task = prompt
+        elif isinstance(prompt, dict):
+            # Try to get a meaningful task description
+            task = str(prompt.get("task", prompt.get("query", str(prompt))))
+        else:
+            task = str(prompt)
+
+        # Truncate very long tasks for history (keep first 1000 chars)
+        if len(task) > 1000:
+            task = task[:1000] + "..."
+
+        # Convert RLMIterations to lightweight IterationRecords
+        iteration_records = [
+            IterationRecord.from_rlm_iteration(it) for it in iterations
+        ]
+
+        entry = TaskHistoryEntry(
+            turn_id=self.turn_count,
+            task=task,
+            answer=answer,
+            iterations=iteration_records,
+            execution_time=execution_time,
+            usage_summary=usage,
+        )
+        self.task_history.append(entry)
+        self.turn_count += 1
 
     def _completion_turn(
         self,
@@ -280,7 +413,8 @@ class RLM:
                     response=response,
                     final_answer=response,
                     code_blocks=[],
-                )
+                ),
+                turn_id=self.turn_count if self.persistent else None,
             )
 
         return response
@@ -292,3 +426,65 @@ class RLM:
         client: BaseLM = get_client(self.backend, self.backend_kwargs)
         response = client.completion(message)
         return response
+
+    # =========================================================================
+    # Multi-Turn Persistence API
+    # =========================================================================
+
+    def get_task_history(self) -> list[TaskHistoryEntry]:
+        """
+        Get the full task history for this persistent RLM session.
+
+        Returns:
+            List of TaskHistoryEntry objects, one per completed turn.
+        """
+        return self.task_history.copy()
+
+    def get_history_summary(self) -> str:
+        """
+        Get a human-readable summary of the conversation history.
+
+        Returns:
+            Formatted string summarizing all previous turns.
+        """
+        if not self.task_history:
+            return "No conversation history yet."
+
+        lines = [f"=== Conversation History ({len(self.task_history)} turns) ===\n"]
+        for entry in self.task_history:
+            lines.append(entry.to_context_summary())
+            lines.append("")  # Blank line between entries
+        return "\n".join(lines)
+
+    def clear_history(self):
+        """
+        Clear the conversation history and reset turn count.
+
+        Useful for starting a fresh conversation while keeping the same RLM instance.
+        """
+        self.task_history = []
+        self.turn_count = 0
+        self.persistent_locals = {}
+
+    def get_turn_count(self) -> int:
+        """Get the current turn number (0-indexed, incremented after each completion)."""
+        return self.turn_count
+
+    def get_persistent_locals(self) -> dict[str, Any]:
+        """
+        Get the persistent REPL local variables (only meaningful if persist_repl_state=True).
+
+        Returns:
+            Dictionary of variable names to their values from previous turns.
+        """
+        return self.persistent_locals.copy()
+
+    def set_persistent_local(self, name: str, value: Any):
+        """
+        Manually set a persistent REPL variable that will be available in subsequent turns.
+
+        Args:
+            name: Variable name
+            value: Variable value
+        """
+        self.persistent_locals[name] = value

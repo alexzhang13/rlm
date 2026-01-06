@@ -205,6 +205,93 @@ class RLMMetadata:
 
 
 ########################################################
+########   Types for Multi-Turn Persistence   #########
+########################################################
+
+
+@dataclass
+class IterationRecord:
+    """A record of a single iteration within a turn, for history preservation."""
+
+    response: str  # The model's reasoning/response text
+    code_blocks: list[dict]  # List of {"code": str, "stdout": str, "stderr": str}
+    final_answer: str | None = None
+
+    def to_dict(self):
+        return {
+            "response": self.response,
+            "code_blocks": self.code_blocks,
+            "final_answer": self.final_answer,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "IterationRecord":
+        return cls(
+            response=data.get("response", ""),
+            code_blocks=data.get("code_blocks", []),
+            final_answer=data.get("final_answer"),
+        )
+
+    @classmethod
+    def from_rlm_iteration(cls, iteration: "RLMIteration") -> "IterationRecord":
+        """Convert an RLMIteration to a lightweight IterationRecord for history."""
+        code_blocks = []
+        for cb in iteration.code_blocks:
+            code_blocks.append({
+                "code": cb.code,
+                "stdout": cb.result.stdout,
+                "stderr": cb.result.stderr,
+            })
+        return cls(
+            response=iteration.response,
+            code_blocks=code_blocks,
+            final_answer=iteration.final_answer,
+        )
+
+
+@dataclass
+class TaskHistoryEntry:
+    """A single entry in the conversation/task history for multi-turn persistence."""
+
+    turn_id: int
+    task: str  # The original task/prompt for this turn
+    answer: str  # The final answer produced by the RLM
+    iterations: list[IterationRecord]  # Full iteration details
+    execution_time: float
+    usage_summary: UsageSummary | None = None
+
+    def to_dict(self):
+        return {
+            "turn_id": self.turn_id,
+            "task": self.task,
+            "answer": self.answer,
+            "iterations": [it.to_dict() for it in self.iterations],
+            "execution_time": self.execution_time,
+            "usage_summary": self.usage_summary.to_dict() if self.usage_summary else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "TaskHistoryEntry":
+        iterations = [
+            IterationRecord.from_dict(it) for it in data.get("iterations", [])
+        ]
+        return cls(
+            turn_id=data.get("turn_id"),
+            task=data.get("task"),
+            answer=data.get("answer"),
+            iterations=iterations,
+            execution_time=data.get("execution_time"),
+            usage_summary=UsageSummary.from_dict(data.get("usage_summary"))
+            if data.get("usage_summary")
+            else None,
+        )
+
+    def to_context_summary(self) -> str:
+        """Format this entry for inclusion in context."""
+        return f"[Turn {self.turn_id}] Task: {self.task}\nAnswer: {self.answer}"
+
+
+########################################################
 ########   Types for RLM Prompting   #########
 ########################################################
 

@@ -46,20 +46,24 @@ function getIterationStats(iteration: RLMIteration) {
   };
 }
 
-export function IterationTimeline({ 
-  iterations, 
-  selectedIteration, 
-  onSelectIteration 
+export function IterationTimeline({
+  iterations,
+  selectedIteration,
+  onSelectIteration
 }: IterationTimelineProps) {
   const selectedRef = useRef<HTMLDivElement>(null);
-  
+
+  // Check if this is a multi-turn session
+  const hasMultipleTurns = iterations.some(it => it.turn_id !== undefined) &&
+    new Set(iterations.map(it => it.turn_id)).size > 1;
+
   // Auto-scroll to selected iteration
   useEffect(() => {
     if (selectedRef.current) {
-      selectedRef.current.scrollIntoView({ 
-        behavior: 'smooth', 
+      selectedRef.current.scrollIntoView({
+        behavior: 'smooth',
         block: 'nearest',
-        inline: 'center' 
+        inline: 'center'
       });
     }
   }, [selectedIteration]);
@@ -90,23 +94,39 @@ export function IterationTimeline({
             const isSelected = idx === selectedIteration;
             const finalAnswer = extractFinalAnswer(iteration.final_answer);
             const responseSnippet = iteration.response.slice(0, 60).replace(/\n/g, ' ');
-            
+
+            // Check if we need a turn separator
+            const prevTurnId = idx > 0 ? iterations[idx - 1].turn_id : undefined;
+            const showTurnSeparator = hasMultipleTurns &&
+              iteration.turn_id !== undefined &&
+              prevTurnId !== undefined &&
+              iteration.turn_id !== prevTurnId;
+
             return (
-              <div
-                key={idx}
-                ref={isSelected ? selectedRef : null}
-                onClick={() => onSelectIteration(idx)}
-                className={cn(
-                  'flex-shrink-0 w-72 cursor-pointer transition-all duration-150 rounded-lg border',
-                  isSelected
-                    ? 'border-primary bg-primary/10 shadow-md shadow-primary/15'
-                    : stats.hasFinal
-                      ? 'border-emerald-500/40 bg-emerald-500/5 hover:border-emerald-500/60 dark:border-emerald-400/40 dark:bg-emerald-400/5'
-                      : stats.hasError
-                        ? 'border-red-500/40 bg-red-500/5 hover:border-red-500/60 dark:border-red-400/40 dark:bg-red-400/5'
-                        : 'border-border hover:border-primary/40 hover:bg-muted/50'
+              <div key={idx} className="flex gap-2">
+                {showTurnSeparator && (
+                  <div className="flex flex-col items-center justify-center px-1">
+                    <div className="h-full w-px bg-border" />
+                    <span className="text-[9px] text-muted-foreground py-1 whitespace-nowrap">
+                      Turn {iteration.turn_id}
+                    </span>
+                    <div className="h-full w-px bg-border" />
+                  </div>
                 )}
-              >
+                <div
+                  ref={isSelected ? selectedRef : null}
+                  onClick={() => onSelectIteration(idx)}
+                  className={cn(
+                    'flex-shrink-0 w-72 cursor-pointer transition-all duration-150 rounded-lg border',
+                    isSelected
+                      ? 'border-primary bg-primary/10 shadow-md shadow-primary/15'
+                      : stats.hasFinal
+                        ? 'border-emerald-500/40 bg-emerald-500/5 hover:border-emerald-500/60 dark:border-emerald-400/40 dark:bg-emerald-400/5'
+                        : stats.hasError
+                          ? 'border-red-500/40 bg-red-500/5 hover:border-red-500/60 dark:border-red-400/40 dark:bg-red-400/5'
+                          : 'border-border hover:border-primary/40 hover:bg-muted/50'
+                  )}
+                >
                 {/* Compact single-row layout */}
                 <div className="p-2.5 flex items-start gap-3">
                   {/* Iteration number */}
@@ -174,6 +194,7 @@ export function IterationTimeline({
                       )}
                     </div>
                   </div>
+                </div>
                 </div>
               </div>
             );

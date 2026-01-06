@@ -72,11 +72,80 @@ final_answer = llm_query(f"Based on these summaries, answer the original query: 
 ```
 In the next step, we can return FINAL_VAR(final_answer).
 
-IMPORTANT: When you are done with the iterative process, you MUST provide a final answer inside a FINAL function when you have completed your task, NOT in code. Do not use these tags unless you have completed your task. You have two options:
-1. Use FINAL(your final answer here) to provide the answer directly
-2. Use FINAL_VAR(variable_name) to return a variable you have created in the REPL environment as your final output
+IMPORTANT: When you are done with the iterative process, you MUST provide a final answer using one of these methods. Do not use these unless you have completed your task:
+1. FINAL(your answer) - Returns the LITERAL text inside the parentheses. Does NOT evaluate code or f-strings. Use this only for simple text like FINAL(42) or FINAL(The answer is yes).
+2. FINAL_VAR(variable_name) - Evaluates and returns the value of a REPL variable. Use this when your answer is stored in a variable. For example, if you computed `result = 15 * 2` in the REPL, use FINAL_VAR(result) to return 30.
+
+NEVER use FINAL(f"...") or FINAL(some_variable) - these will NOT be evaluated. Always use FINAL_VAR() for variables.
 
 Think step by step carefully, plan, and execute this plan immediately in your response -- do not just say "I will do this" or "I will do that". Output to the REPL environment and recursive LLMs as much as possible. Remember to explicitly answer the original query in your final answer.
+"""
+)
+
+# System prompt for persistent multi-turn mode
+RLM_PERSISTENT_SYSTEM_PROMPT = textwrap.dedent(
+    """You are tasked with answering queries in a multi-turn conversation. You have access to a REPL environment that maintains state across conversation turns. The context variable now contains structured information about the conversation history and current task.
+
+The REPL environment is initialized with a `context` variable that is a dictionary containing:
+1. `turn_id`: The current turn number (0-indexed)
+2. `task_history`: A list of previous tasks with FULL iteration details from earlier turns. Each entry has:
+   - `turn_id`: The turn number
+   - `task`: What was asked
+   - `answer`: The final answer that was provided
+   - `iterations`: A list of all iterations, each containing:
+     - `response`: The model's reasoning text
+     - `code_blocks`: List of code executed and their outputs (stdout/stderr)
+     - `final_answer`: The final answer if this iteration produced one
+3. `context_{N}`: The input context for turn N (e.g., `context_0`, `context_1`, etc.)
+
+You also have access to:
+- `llm_query(prompt)`: Query a sub-LLM that can handle ~500K characters
+- `llm_query_batched(prompts)`: Query multiple prompts concurrently for faster processing
+- `print()`: View output and continue reasoning
+
+IMPORTANT: In multi-turn mode, you can reference previous turns' full work:
+- Check `context["task_history"]` to see what was discussed before
+- Access `context["task_history"][N]["iterations"]` to see exactly what code was run and what outputs were produced in turn N
+- Access `context["context_0"]`, `context["context_1"]`, etc. to see previous inputs
+- Variables you create may persist across turns (if enabled), so you can build on previous work
+
+Example of checking conversation history with full details:
+```repl
+# First, understand what has happened in previous turns
+if context["task_history"]:
+    print(f"Previous turns: {len(context['task_history'])}")
+    for entry in context["task_history"]:
+        print(f"\\nTurn {entry['turn_id']}: {entry['task'][:100]}...")
+        print(f"  Answer: {entry['answer'][:200]}...")
+        print(f"  Iterations: {len(entry['iterations'])}")
+        # Look at what code was run
+        for i, iteration in enumerate(entry['iterations']):
+            for cb in iteration['code_blocks']:
+                print(f"    Iter {i} code: {cb['code'][:100]}...")
+                print(f"    Iter {i} output: {cb['stdout'][:100]}...")
+else:
+    print("This is the first turn - no history yet")
+```
+
+Example of building on previous work:
+```repl
+# If a previous turn computed something useful, reference it
+if context["task_history"]:
+    last_turn = context["task_history"][-1]
+    # Look at what code produced the answer
+    for iteration in last_turn["iterations"]:
+        for cb in iteration["code_blocks"]:
+            print(f"Previous code: {cb['code']}")
+            print(f"Previous output: {cb['stdout']}")
+```
+
+When you are done, provide your final answer using:
+1. FINAL(your answer) - Returns LITERAL text only. Does NOT evaluate f-strings or variables.
+2. FINAL_VAR(variable_name) - Evaluates and returns a REPL variable's value. Use this for computed results.
+
+NEVER use FINAL(f"...") or FINAL(some_var) - always use FINAL_VAR() for variables.
+
+Think step by step, consider the conversation history, and execute your plan immediately. Remember to explicitly answer the current query in your final answer.
 """
 )
 
@@ -104,27 +173,93 @@ def build_rlm_system_prompt(
         others = len(context_lengths) - 100
         context_lengths = str(context_lengths[:100]) + "... [" + str(others) + " others]"
 
-    metadata_prompt = f"Your context is a {context_type} with {context_total_length} total characters, and is broken up into chunks of char lengths: {context_lengths}."
+    metadata_prompt = f"The `context` variable is a {context_type} with {context_total_length} total characters, broken up into chunks of char lengths: {context_lengths}."
 
     return [
-        {"role": "system", "content": system_prompt},
-        {"role": "assistant", "content": metadata_prompt},
+        {"role": "system", "content": system_prompt + "\n\n" + metadata_prompt},
     ]
 
 
 USER_PROMPT = """Think step-by-step on what to do using the REPL environment (which contains the context) to answer the prompt.\n\nContinue using the REPL environment, which has the `context` variable, and querying sub-LLMs by writing to ```repl``` tags, and determine your answer. Your next action:"""
 USER_PROMPT_WITH_ROOT = """Think step-by-step on what to do using the REPL environment (which contains the context) to answer the original prompt: \"{root_prompt}\".\n\nContinue using the REPL environment, which has the `context` variable, and querying sub-LLMs by writing to ```repl``` tags, and determine your answer. Your next action:"""
 
+# Multi-turn specific prompts
+USER_PROMPT_PERSISTENT = """Think step-by-step on what to do using the REPL environment to answer the current task.
 
-def build_user_prompt(root_prompt: str | None = None, iteration: int = 0) -> dict[str, str]:
-    if iteration == 0:
-        safeguard = "You have not interacted with the REPL environment or seen your prompt / context yet. Your next action should be to look through and figure out how to answer the prompt, so don't just provide a final answer yet.\n\n"
-        prompt = safeguard + (
-            USER_PROMPT_WITH_ROOT.format(root_prompt=root_prompt) if root_prompt else USER_PROMPT
-        )
-        return {"role": "user", "content": prompt}
+This is turn {turn_id} of an ongoing conversation. The `context` variable contains:
+- `task_history`: Previous tasks and their full iteration details from earlier turns
+- `context_{turn_id}`: The current input for this turn
+
+{history_note}
+
+Continue using the REPL environment, querying sub-LLMs by writing to ```repl``` tags, and determine your answer. Your next action:"""
+
+USER_PROMPT_PERSISTENT_WITH_ROOT = """Think step-by-step on what to do using the REPL environment to answer the original prompt: \"{root_prompt}\".
+
+This is turn {turn_id} of an ongoing conversation. The `context` variable contains:
+- `task_history`: Previous tasks and their full iteration details from earlier turns
+- `context_{turn_id}`: The current input for this turn
+
+{history_note}
+
+Continue using the REPL environment, querying sub-LLMs by writing to ```repl``` tags, and determine your answer. Your next action:"""
+
+
+def build_user_prompt(
+    root_prompt: str | None = None,
+    iteration: int = 0,
+    turn_id: int | None = None,
+    has_history: bool = False,
+) -> dict[str, str]:
+    """
+    Build the user prompt for each iteration of the RLM.
+
+    Args:
+        root_prompt: Optional high-level prompt to show the model.
+        iteration: Current iteration within this completion call (0-indexed).
+        turn_id: For persistent mode, the current conversation turn number.
+        has_history: For persistent mode, whether there's previous conversation history.
+    """
+    # Check if we're in persistent mode
+    is_persistent = turn_id is not None
+
+    if is_persistent:
+        # Build history note
+        if has_history:
+            history_note = "You have conversation history from previous turns - check `context['task_history']` to understand what was discussed before."
+        else:
+            history_note = "This is the first turn - no previous conversation history."
+
+        if iteration == 0:
+            safeguard = "You have not interacted with the REPL environment or seen your context yet. Your next action should be to examine the context (including any conversation history) and figure out how to answer the current task.\n\n"
+            if root_prompt:
+                prompt = safeguard + USER_PROMPT_PERSISTENT_WITH_ROOT.format(
+                    root_prompt=root_prompt, turn_id=turn_id, history_note=history_note
+                )
+            else:
+                prompt = safeguard + USER_PROMPT_PERSISTENT.format(
+                    turn_id=turn_id, history_note=history_note
+                )
+        else:
+            prefix = "The history before is your previous interactions with the REPL environment in this turn. "
+            if root_prompt:
+                prompt = prefix + USER_PROMPT_PERSISTENT_WITH_ROOT.format(
+                    root_prompt=root_prompt, turn_id=turn_id, history_note=history_note
+                )
+            else:
+                prompt = prefix + USER_PROMPT_PERSISTENT.format(
+                    turn_id=turn_id, history_note=history_note
+                )
     else:
-        prompt = "The history before is your previous interactions with the REPL environment. " + (
-            USER_PROMPT_WITH_ROOT.format(root_prompt=root_prompt) if root_prompt else USER_PROMPT
-        )
-        return {"role": "user", "content": prompt}
+        # Non-persistent mode (original behavior)
+        if iteration == 0:
+            safeguard = "You have not interacted with the REPL environment or seen your prompt / context yet. Your next action should be to look through and figure out how to answer the prompt, so don't just provide a final answer yet.\n\n"
+            prompt = safeguard + (
+                USER_PROMPT_WITH_ROOT.format(root_prompt=root_prompt) if root_prompt else USER_PROMPT
+            )
+        else:
+            prompt = "The history before is your previous interactions with the REPL environment. " + (
+                USER_PROMPT_WITH_ROOT.format(root_prompt=root_prompt) if root_prompt else USER_PROMPT
+            )
+
+    return {"role": "user", "content": prompt}

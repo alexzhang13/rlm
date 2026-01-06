@@ -17,11 +17,22 @@ class AnthropicClient(BaseLM):
         api_key: str,
         model_name: str | None = None,
         max_tokens: int = 32768,
+        base_url: str | None = None,
+        timeout: float | None = None,
+        auth_token: str | None = None,
         **kwargs,
     ):
         super().__init__(model_name=model_name, **kwargs)
-        self.client = anthropic.Anthropic(api_key=api_key)
-        self.async_client = anthropic.AsyncAnthropic(api_key=api_key)
+        client_kwargs = {"api_key": api_key}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        if timeout:
+            client_kwargs["timeout"] = timeout
+        if auth_token:
+            client_kwargs["auth_token"] = auth_token
+
+        self.client = anthropic.Anthropic(**client_kwargs)
+        self.async_client = anthropic.AsyncAnthropic(**client_kwargs)
         self.model_name = model_name
         self.max_tokens = max_tokens
 
@@ -44,7 +55,7 @@ class AnthropicClient(BaseLM):
 
         response = self.client.messages.create(**kwargs)
         self._track_cost(response, model)
-        return response.content[0].text
+        return self._extract_text(response)
 
     async def acompletion(
         self, prompt: str | list[dict[str, Any]], model: str | None = None
@@ -61,7 +72,16 @@ class AnthropicClient(BaseLM):
 
         response = await self.async_client.messages.create(**kwargs)
         self._track_cost(response, model)
-        return response.content[0].text
+        return self._extract_text(response)
+
+    def _extract_text(self, response: anthropic.types.Message) -> str:
+        """Extract text content from response, handling ThinkingBlock and TextBlock."""
+        for block in response.content:
+            if hasattr(block, "text"):
+                return block.text
+        if response.content:
+            return str(response.content[0])
+        return ""
 
     def _prepare_messages(
         self, prompt: str | list[dict[str, Any]]
