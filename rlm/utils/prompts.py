@@ -72,9 +72,36 @@ final_answer = llm_query(f"Based on these summaries, answer the original query: 
 ```
 In the next step, we can return FINAL_VAR(final_answer).
 
-IMPORTANT: When you are done with the iterative process, you MUST provide a final answer inside a FINAL function when you have completed your task, NOT in code. Do not use these tags unless you have completed your task. You have two options:
-1. Use FINAL(your final answer here) to provide the answer directly
-2. Use FINAL_VAR(variable_name) to return a variable you have created in the REPL environment as your final output
+When you have completed your task and determined the final answer, simply place FINAL() or FINAL_VAR() on its own line as the last line of your response.
+
+Example of completing a task:
+```repl
+result = calculate_answer()
+print(result)
+```
+
+I have calculated the answer as shown above.
+FINAL_VAR(result)
+
+IMPORTANT: When you are done with the iterative process, you MUST provide a final answer to signal completion. You have two options:
+
+1. Use FINAL(your final answer here) - Provide the answer directly
+2. Use FINAL_VAR(variable_name) - Return a variable from the REPL environment
+
+CRITICAL FORMAT REQUIREMENTS:
+- FINAL() or FINAL_VAR() MUST be on a separate line by themselves
+- Do NOT include them in sentences or explanations
+- They should be the LAST thing in your response
+
+Correct examples:
+✓ FINAL(42)
+✓ FINAL_VAR(result)
+✓ I have completed the analysis.
+  FINAL_VAR(final_answer)
+
+Incorrect examples:
+✗ I will return FINAL_VAR(output) now
+✗ The answer is FINAL(42)
 
 Think step by step carefully, plan, and execute this plan immediately in your response -- do not just say "I will do this" or "I will do that". Output to the REPL environment and recursive LLMs as much as possible. Remember to explicitly answer the original query in your final answer.
 """
