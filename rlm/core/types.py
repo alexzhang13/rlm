@@ -3,7 +3,16 @@ from types import ModuleType
 from typing import Any, Literal
 
 ClientBackend = Literal[
-    "openai", "portkey", "openrouter", "vercel", "vllm", "litellm", "anthropic", "azure_openai", "gemini"
+    "openai",
+    "portkey",
+    "openrouter",
+    "vercel",
+    "vllm",
+    "litellm",
+    "anthropic",
+    "azure_openai",
+    "gemini",
+]
 EnvironmentType = Literal["local", "prime", "modal"]
 
 
