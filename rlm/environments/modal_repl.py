@@ -283,9 +283,14 @@ class ModalREPL(IsolatedEnv):
         lm_handler_address: tuple[str, int] | None = None,
         context_payload: dict | list | str | None = None,
         setup_code: str | None = None,
+        persistent: bool = False,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        if persistent:
+            raise NotImplementedError(
+                "Persistent REPLs are currently not supported for environment: ModalREPL"
+            )
+        super().__init__(persistent=persistent, **kwargs)
 
         self.app_name = app_name
         self.timeout = timeout

@@ -1,3 +1,4 @@
+import copy
 import io
 import json
 import os
@@ -122,14 +123,17 @@ class LocalREPL(NonIsolatedEnv):
         lm_handler_address: tuple[str, int] | None = None,
         context_payload: dict | list | str | None = None,
         setup_code: str | None = None,
+        persistent: bool = False,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__(persistent=persistent, **kwargs)
 
         self.lm_handler_address = lm_handler_address
         self.original_cwd = os.getcwd()
         self.temp_dir = tempfile.mkdtemp(prefix=f"repl_env_{uuid.uuid4()}_")
         self._lock = threading.Lock()
+        self._context_count: int = 0
+        self._history_count: int = 0
 
         # Setup globals, locals, and modules in environment.
         self.setup()
@@ -222,19 +226,86 @@ class LocalREPL(NonIsolatedEnv):
             return [f"Error: LM query failed - {e}"] * len(prompts)
 
     def load_context(self, context_payload: dict | list | str):
-        """Load context into the environment."""
+        """Load context into the environment as context_0 (and 'context' alias)."""
+        self.add_context(context_payload, 0)
+
+    def add_context(
+        self, context_payload: dict | list | str, context_index: int | None = None
+    ) -> int:
+        """
+        Add a context with versioned variable name.
+
+        Args:
+            context_payload: The context data to add
+            context_index: Optional explicit index. If None, auto-increments.
+
+        Returns:
+            The context index used.
+        """
+        if context_index is None:
+            context_index = self._context_count
+
+        var_name = f"context_{context_index}"
+
         if isinstance(context_payload, str):
-            context_path = os.path.join(self.temp_dir, "context.txt")
+            context_path = os.path.join(self.temp_dir, f"context_{context_index}.txt")
             with open(context_path, "w") as f:
                 f.write(context_payload)
-            self.execute_code(f"with open(r'{context_path}', 'r') as f:\n    context = f.read()")
+            self.execute_code(f"with open(r'{context_path}', 'r') as f:\n    {var_name} = f.read()")
         else:
-            context_path = os.path.join(self.temp_dir, "context.json")
+            context_path = os.path.join(self.temp_dir, f"context_{context_index}.json")
             with open(context_path, "w") as f:
                 json.dump(context_payload, f)
             self.execute_code(
-                f"import json\nwith open(r'{context_path}', 'r') as f:\n    context = json.load(f)"
+                f"import json\nwith open(r'{context_path}', 'r') as f:\n    {var_name} = json.load(f)"
             )
+
+        # Alias context_0 as 'context' for backward compatibility
+        if context_index == 0:
+            self.execute_code(f"context = {var_name}")
+
+        self._context_count = max(self._context_count, context_index + 1)
+        return context_index
+
+    def update_handler_address(self, address: tuple[str, int]) -> None:
+        """Update the LM handler address for a new completion call."""
+        self.lm_handler_address = address
+
+    def get_context_count(self) -> int:
+        """Return the number of contexts loaded."""
+        return self._context_count
+
+    def add_history(
+        self, message_history: list[dict[str, Any]], history_index: int | None = None
+    ) -> int:
+        """
+        Store a conversation's message history as a versioned variable.
+
+        Args:
+            message_history: The list of message dicts from a completion call
+            history_index: Optional explicit index. If None, auto-increments.
+
+        Returns:
+            The history index used.
+        """
+        if history_index is None:
+            history_index = self._history_count
+
+        var_name = f"history_{history_index}"
+
+        # Store deep copy to avoid reference issues with nested dicts
+        self.locals[var_name] = copy.deepcopy(message_history)
+
+        # Alias history_0 as 'history' for convenience
+        if history_index == 0:
+            self.locals["history"] = self.locals[var_name]
+
+        self._history_count = max(self._history_count, history_index + 1)
+        return history_index
+
+    def get_history_count(self) -> int:
+        """Return the number of conversation histories stored."""
+        return self._history_count
 
     @contextmanager
     def _capture_output(self):
@@ -265,22 +336,21 @@ class LocalREPL(NonIsolatedEnv):
         # Clear pending LLM calls from previous execution
         self._pending_llm_calls = []
 
-        with self._capture_output() as (stdout_buf, stderr_buf):
-            with self._temp_cwd():
-                try:
-                    combined = {**self.globals, **self.locals}
-                    exec(code, combined, combined)
+        with self._capture_output() as (stdout_buf, stderr_buf), self._temp_cwd():
+            try:
+                combined = {**self.globals, **self.locals}
+                exec(code, combined, combined)
 
-                    # Update locals with new variables
-                    for key, value in combined.items():
-                        if key not in self.globals and not key.startswith("_"):
-                            self.locals[key] = value
+                # Update locals with new variables
+                for key, value in combined.items():
+                    if key not in self.globals and not key.startswith("_"):
+                        self.locals[key] = value
 
-                    stdout = stdout_buf.getvalue()
-                    stderr = stderr_buf.getvalue()
-                except Exception as e:
-                    stdout = stdout_buf.getvalue()
-                    stderr = stderr_buf.getvalue() + f"\n{type(e).__name__}: {e}"
+                stdout = stdout_buf.getvalue()
+                stderr = stderr_buf.getvalue()
+            except Exception as e:
+                stdout = stdout_buf.getvalue()
+                stderr = stderr_buf.getvalue() + f"\n{type(e).__name__}: {e}"
 
         return REPLResult(
             stdout=stdout,

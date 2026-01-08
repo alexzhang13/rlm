@@ -1,7 +1,9 @@
 from typing import Any, Literal
 
-from rlm.environments.base_env import BaseEnv
+from rlm.environments.base_env import BaseEnv, SupportsPersistence
 from rlm.environments.local_repl import LocalREPL
+
+__all__ = ["BaseEnv", "LocalREPL", "SupportsPersistence", "get_environment"]
 
 
 def get_environment(

@@ -180,9 +180,14 @@ class DockerREPL(NonIsolatedEnv):
         lm_handler_address: tuple[str, int] | None = None,
         context_payload: dict | list | str | None = None,
         setup_code: str | None = None,
+        persistent: bool = False,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        if persistent:
+            raise NotImplementedError(
+                "Persistent REPLs are currently not supported for environment: DockerREPL"
+            )
+        super().__init__(persistent=persistent, **kwargs)
 
         self.image = image
         self.lm_handler_address = lm_handler_address
@@ -292,13 +297,13 @@ class DockerREPL(NonIsolatedEnv):
             )
 
     def cleanup(self):
-        if self.container_id:
+        if hasattr(self, "container_id") and self.container_id:
             subprocess.run(["docker", "stop", self.container_id], capture_output=True)
             self.container_id = None
-        if self.proxy_server:
+        if hasattr(self, "proxy_server") and self.proxy_server:
             self.proxy_server.shutdown()
             self.proxy_server = None
-        if os.path.exists(self.temp_dir):
+        if hasattr(self, "temp_dir") and os.path.exists(self.temp_dir):
             import shutil
 
             shutil.rmtree(self.temp_dir, ignore_errors=True)

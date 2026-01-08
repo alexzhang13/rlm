@@ -280,9 +280,16 @@ class PrimeREPL(IsolatedEnv):
         context_payload: dict | list | str | None = None,
         setup_code: str | None = None,
         network_access: bool = True,
+        api_key: str | None = None,
+        persistent: bool = False,
         **kwargs: Any,
     ):
-        super().__init__(**kwargs)
+        super().__init__(persistent=persistent, **kwargs)
+        
+        if persistent:
+            raise NotImplementedError(
+                "Persistent REPLs are currently not supported for environment: PrimeREPL"
+            )
 
         self.name = name
         self.docker_image = docker_image
