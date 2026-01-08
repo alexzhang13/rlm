@@ -1,0 +1,19 @@
+{
+  "name": "rlm-sandbox",
+  "version": "0.1.0",
+  "description": "Cloudflare Worker providing Python sandbox for RLM CloudflareREPL",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "@cloudflare/sandbox": "^0.6.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250109.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^4.0.0"
+  }
+}

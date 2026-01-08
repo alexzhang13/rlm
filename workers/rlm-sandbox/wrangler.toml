@@ -1,0 +1,32 @@
+# RLM Sandbox Worker
+# Provides Python execution sandbox for CloudflareREPL
+name = "rlm-sandbox"
+main = "src/index.ts"
+compatibility_date = "2025-01-05"
+compatibility_flags = ["nodejs_compat"]
+
+# Local development - enable containers for Docker testing
+[dev]
+enable_containers = true
+
+# Observability
+[observability]
+[observability.logs]
+enabled = true
+
+# Container configuration for Sandbox SDK
+[[containers]]
+class_name = "Sandbox"
+image = "./Dockerfile"
+instance_type = "basic"  # 1/4 vCPU, 1 GiB RAM
+max_instances = 10
+
+# Durable Objects binding for Sandbox
+[[durable_objects.bindings]]
+class_name = "Sandbox"
+name = "Sandbox"
+
+# Migration for Sandbox Durable Object
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Sandbox"]
