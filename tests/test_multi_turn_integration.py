@@ -8,12 +8,13 @@ Tests that multiple LM completion calls in one RLM session:
 5. Properly inform the model about available contexts/histories
 """
 
-import pytest
-from unittest.mock import patch, Mock
+from unittest.mock import Mock, patch
 
-from rlm import RLM
-from rlm.core.types import UsageSummary, ModelUsageSummary
+import pytest
+
 import rlm.core.rlm as rlm_module
+from rlm import RLM
+from rlm.core.types import ModelUsageSummary, UsageSummary
 
 
 def create_mock_lm(responses: list[str]) -> Mock:
@@ -22,9 +23,7 @@ def create_mock_lm(responses: list[str]) -> Mock:
     mock.completion.side_effect = list(responses)
     mock.get_usage_summary.return_value = UsageSummary(
         model_usage_summaries={
-            "mock": ModelUsageSummary(
-                total_calls=1, total_input_tokens=100, total_output_tokens=50
-            )
+            "mock": ModelUsageSummary(total_calls=1, total_input_tokens=100, total_output_tokens=50)
         }
     )
     mock.get_last_usage.return_value = mock.get_usage_summary.return_value
