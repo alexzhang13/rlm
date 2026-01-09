@@ -62,6 +62,18 @@ export interface LogMetadata {
   hasErrors: boolean;
 }
 
+export interface LiveLogState {
+  status: 'idle' | 'connecting' | 'streaming' | 'complete' | 'error' | 'cancelled';
+  config: RLMConfigMetadata | null;
+  iterations: RLMIteration[];
+  error: string | null;
+  finalResult: {
+    response: string | null;
+    execution_time: number | null;
+    usage_summary: Record<string, any> | null;
+  } | null;
+}
+
 export function extractFinalAnswer(answer: string | [string, string] | null): string | null {
   if (!answer) return null;
   if (Array.isArray(answer)) {

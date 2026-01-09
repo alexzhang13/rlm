@@ -9,6 +9,7 @@ interface StatsCardProps {
   icon: React.ReactNode;
   variant?: 'cyan' | 'magenta' | 'yellow' | 'green' | 'red';
   subtext?: string;
+  compact?: boolean;
 }
 
 const variantStyles = {
@@ -27,7 +28,19 @@ const textStyles = {
   red: 'text-red-600 dark:text-red-400',
 };
 
-export function StatsCard({ label, value, icon, variant = 'cyan', subtext }: StatsCardProps) {
+export function StatsCard({ label, value, icon, variant = 'cyan', subtext, compact = false }: StatsCardProps) {
+  if (compact) {
+    return (
+      <div className={cn(
+        'flex flex-col items-center justify-center px-3 py-1.5 rounded-md border min-w-[70px]',
+        variantStyles[variant],
+        textStyles[variant]
+      )}>
+        <span className="text-[9px] font-mono uppercase opacity-70 leading-none mb-0.5 whitespace-nowrap">{label}</span>
+        <span className="text-xs font-mono font-bold leading-none">{value}</span>
+      </div>
+    );
+  }
   return (
     <Card className={cn(
       'border transition-all duration-300 hover:scale-[1.02]',

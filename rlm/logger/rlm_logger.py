@@ -7,6 +7,7 @@ Writes RLMIteration data to JSON-lines files for analysis and debugging.
 import json
 import os
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 
 from rlm.core.types import RLMIteration, RLMMetadata
@@ -15,8 +16,11 @@ from rlm.core.types import RLMIteration, RLMMetadata
 class RLMLogger:
     """Logger that writes RLMIteration data to a JSON-lines file."""
 
-    def __init__(self, log_dir: str, file_name: str = "rlm"):
+    def __init__(
+        self, log_dir: str, file_name: str = "rlm", on_log: Callable[[dict], None] | None = None
+    ):
         self.log_dir = log_dir
+        self.on_log = on_log
         os.makedirs(log_dir, exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -42,6 +46,8 @@ class RLMLogger:
             f.write("\n")
 
         self._metadata_logged = True
+        if self.on_log:
+            self.on_log(entry)
 
     def log(self, iteration: RLMIteration):
         """Log an RLMIteration to the file."""
@@ -57,6 +63,9 @@ class RLMLogger:
         with open(self.log_file_path, "a") as f:
             json.dump(entry, f)
             f.write("\n")
+
+        if self.on_log:
+            self.on_log(entry)
 
     @property
     def iteration_count(self) -> int:

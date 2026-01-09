@@ -8,6 +8,7 @@ import { FileUploader } from './FileUploader';
 import { LogViewer } from './LogViewer';
 import { AsciiRLM } from './AsciiGlobe';
 import { ThemeToggle } from './ThemeToggle';
+import Link from 'next/link';
 import { parseLogFile, extractContextVariable } from '@/lib/parse-logs';
 import { RLMLogFile } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -123,6 +124,12 @@ export function Dashboard() {
               </div>
               <div className="flex items-center gap-4">
                 <ThemeToggle />
+                <Link 
+                  href="/playground"
+                  className="px-3 py-1.5 rounded-md border border-primary/30 bg-primary/5 hover:bg-primary/10 text-[11px] font-mono text-primary transition-colors flex items-center gap-2"
+                >
+                  <span className="text-xs">▶</span> PLAYGROUND
+                </Link>
                 <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-mono">
                   <span className="flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
