@@ -277,7 +277,7 @@ class VerbosePrinter:
         header = Text()
         header.append("  ↳ ", style=STYLE_SECONDARY)
         header.append("Sub-call: ", style=STYLE_SECONDARY)
-        header.append(model, style=STYLE_ACCENT)
+        header.append(_to_str(model), style=STYLE_ACCENT)
         if execution_time:
             header.append(f"  ({execution_time:.2f}s)", style=STYLE_MUTED)
 

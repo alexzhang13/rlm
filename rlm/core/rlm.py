@@ -13,7 +13,7 @@ from rlm.core.types import (
     RLMIteration,
     RLMMetadata,
 )
-from rlm.environments import BaseEnv, get_environment
+from rlm.environments import BaseEnv, SupportsPersistence, get_environment
 from rlm.logger import RLMLogger, VerbosePrinter
 from rlm.utils.parsing import (
     find_code_blocks,
@@ -51,6 +51,7 @@ class RLM:
         other_backend_kwargs: list[dict[str, Any]] | None = None,
         logger: RLMLogger | None = None,
         verbose: bool = False,
+        persistent: bool = False,
     ):
         """
         Args:
@@ -66,12 +67,23 @@ class RLM:
             other_backend_kwargs: The kwargs to pass to the other client backends (ordered to match other_backends).
             logger: The logger to use for the RLM.
             verbose: Whether to print verbose output in rich to console.
+            persistent: If True, reuse the environment across completion() calls for multi-turn conversations.
         """
         # Store config for spawning per-completion
         self.backend = backend
         self.backend_kwargs = backend_kwargs
         self.environment_type = environment
-        self.environment_kwargs = environment_kwargs.copy()
+        self.environment_kwargs = (
+            environment_kwargs.copy() if environment_kwargs is not None else {}
+        )
+        # Validate other_backends: currently only support one additional backend
+        if other_backends is not None:
+            if len(other_backends) != 1:
+                raise ValueError(
+                    "We currently only support one additional backend for the recursive sub-calls! "
+                    "This model will be the model used for recursive sub-calls, but this will change in the future"
+                )
+
         self.other_backends = other_backends
         self.other_backend_kwargs = other_backend_kwargs
 
@@ -82,16 +94,28 @@ class RLM:
         self.logger = logger
         self.verbose = VerbosePrinter(enabled=verbose)
 
+        # Persistence support
+        self.persistent = persistent
+        self._persistent_env: SupportsPersistence | None = None
+
+        # Validate persistence support at initialization
+        if self.persistent:
+            self._validate_persistent_environment_support()
+
         # Log metadata if logger is provided
         if self.logger or verbose:
             metadata = RLMMetadata(
-                root_model=backend_kwargs.get("model_name", "unknown"),
+                root_model=backend_kwargs.get("model_name", "unknown")
+                if backend_kwargs
+                else "unknown",
                 max_depth=max_depth,
                 max_iterations=max_iterations,
                 backend=backend,
-                backend_kwargs=filter_sensitive_keys(backend_kwargs),
+                backend_kwargs=filter_sensitive_keys(backend_kwargs) if backend_kwargs else {},
                 environment_type=environment,
-                environment_kwargs=filter_sensitive_keys(environment_kwargs),
+                environment_kwargs=filter_sensitive_keys(environment_kwargs)
+                if environment_kwargs
+                else {},
                 other_backends=other_backends,
             )
             if self.logger:
@@ -102,13 +126,21 @@ class RLM:
     def _spawn_completion_context(self, prompt: str | dict[str, Any]):
         """
         Spawn an LM handler and environment for a single completion call.
-        Cleans up both when the context exits.
+
+        When persistent=True, the environment is reused across calls.
+        When persistent=False (default), creates fresh environment each call.
         """
         # Create client and wrap in handler
         client: BaseLM = get_client(self.backend, self.backend_kwargs)
-        lm_handler = LMHandler(client)
 
-        # Register other clients to be available as sub-call options
+        # Create other_backend_client if provided (for depth=1 routing)
+        other_backend_client: BaseLM | None = None
+        if self.other_backends and self.other_backend_kwargs:
+            other_backend_client = get_client(self.other_backends[0], self.other_backend_kwargs[0])
+
+        lm_handler = LMHandler(client, other_backend_client=other_backend_client)
+
+        # Register other clients to be available as sub-call options (by model name)
         if self.other_backends and self.other_backend_kwargs:
             for backend, kwargs in zip(self.other_backends, self.other_backend_kwargs, strict=True):
                 other_client: BaseLM = get_client(backend, kwargs)
@@ -116,20 +148,33 @@ class RLM:
 
         lm_handler.start()
 
-        # Pass handler address to environment so it can make llm_query() calls
-        env_kwargs = self.environment_kwargs.copy()
-        env_kwargs["lm_handler_address"] = (lm_handler.host, lm_handler.port)
-        env_kwargs["context_payload"] = prompt
+        # Environment: reuse if persistent, otherwise create fresh
+        if self.persistent and self._persistent_env is not None:
+            environment = self._persistent_env
+            # Defensive check: ensure environment supports persistence methods
+            if not self._env_supports_persistence(environment):
+                raise RuntimeError(
+                    f"Persistent environment of type '{type(environment).__name__}' does not "
+                    f"implement required methods (update_handler_address, add_context, get_context_count). "
+                    f"This should have been caught at initialization."
+                )
+            environment.update_handler_address((lm_handler.host, lm_handler.port))
+            environment.add_context(prompt)
+        else:
+            env_kwargs = self.environment_kwargs.copy()
+            env_kwargs["lm_handler_address"] = (lm_handler.host, lm_handler.port)
+            env_kwargs["context_payload"] = prompt
+            env_kwargs["depth"] = self.depth + 1  # Environment depth is RLM depth + 1
+            environment: BaseEnv = get_environment(self.environment_type, env_kwargs)
 
-        # Initialize the environment
-        environment: BaseEnv = get_environment(self.environment_type, env_kwargs)
+            if self.persistent:
+                self._persistent_env = environment
 
         try:
             yield lm_handler, environment
         finally:
-            # Cleanup
             lm_handler.stop()
-            if hasattr(environment, "cleanup"):
+            if not self.persistent and hasattr(environment, "cleanup"):
                 environment.cleanup()
 
     def _setup_prompt(self, prompt: str | dict[str, Any]) -> list[dict[str, Any]]:
@@ -171,7 +216,19 @@ class RLM:
 
             for i in range(self.max_iterations):
                 # Current prompt = message history + additional prompt suffix
-                current_prompt = message_history + [build_user_prompt(root_prompt, i)]
+                context_count = (
+                    environment.get_context_count()
+                    if isinstance(environment, SupportsPersistence)
+                    else 1
+                )
+                history_count = (
+                    environment.get_history_count()
+                    if isinstance(environment, SupportsPersistence)
+                    else 0
+                )
+                current_prompt = message_history + [
+                    build_user_prompt(root_prompt, i, context_count, history_count)
+                ]
 
                 iteration: RLMIteration = self._completion_turn(
                     prompt=current_prompt,
@@ -180,7 +237,7 @@ class RLM:
                 )
 
                 # Check if RLM is done and has a final answer.
-                final_answer = find_final_answer(iteration.response)
+                final_answer = find_final_answer(iteration.response, environment=environment)
                 iteration.final_answer = final_answer
 
                 # If logger is used, log the iteration.
@@ -190,13 +247,20 @@ class RLM:
                 # Verbose output for this iteration
                 self.verbose.print_iteration(iteration, i + 1)
 
-                if final_answer:
+                if final_answer is not None:
                     time_end = time.perf_counter()
                     usage = lm_handler.get_usage_summary()
                     self.verbose.print_final_answer(final_answer)
                     self.verbose.print_summary(i + 1, time_end - time_start, usage.to_dict())
+
+                    # Store message history in persistent environment
+                    if self.persistent and isinstance(environment, SupportsPersistence):
+                        environment.add_history(message_history)
+
                     return RLMChatCompletion(
-                        root_model=self.backend_kwargs.get("model_name", "unknown"),
+                        root_model=self.backend_kwargs.get("model_name", "unknown")
+                        if self.backend_kwargs
+                        else "unknown",
                         prompt=prompt,
                         response=final_answer,
                         usage_summary=usage,
@@ -215,8 +279,15 @@ class RLM:
             usage = lm_handler.get_usage_summary()
             self.verbose.print_final_answer(final_answer)
             self.verbose.print_summary(self.max_iterations, time_end - time_start, usage.to_dict())
+
+            # Store message history in persistent environment
+            if self.persistent and isinstance(environment, SupportsPersistence):
+                environment.add_history(message_history)
+
             return RLMChatCompletion(
-                root_model=self.backend_kwargs.get("model_name", "unknown"),
+                root_model=self.backend_kwargs.get("model_name", "unknown")
+                if self.backend_kwargs
+                else "unknown",
                 prompt=prompt,
                 response=final_answer,
                 usage_summary=usage,
@@ -282,3 +353,47 @@ class RLM:
         client: BaseLM = get_client(self.backend, self.backend_kwargs)
         response = client.completion(message)
         return response
+
+    def _validate_persistent_environment_support(self) -> None:
+        """
+        Validate that the configured environment type supports persistent mode.
+
+        Persistent mode requires environments to implement:
+        - update_handler_address(address): Update LM handler address between calls
+        - add_context(payload, index): Add new context for multi-turn conversations
+        - get_context_count(): Return the number of loaded contexts
+
+        Currently only 'local' (LocalREPL) supports these methods.
+
+        Raises:
+            ValueError: If the environment type does not support persistent mode.
+        """
+        # Known environments that support persistence
+        persistent_supported_environments = {"local"}
+
+        if self.environment_type not in persistent_supported_environments:
+            raise ValueError(
+                f"persistent=True is not supported for environment type '{self.environment_type}'. "
+                f"Persistent mode requires environments that implement update_handler_address(), "
+                f"add_context(), and get_context_count(). "
+                f"Supported environments: {sorted(persistent_supported_environments)}"
+            )
+
+    @staticmethod
+    def _env_supports_persistence(env: BaseEnv) -> bool:
+        """Check if an environment instance supports persistent mode methods."""
+        return isinstance(env, SupportsPersistence)
+
+    def close(self) -> None:
+        """Clean up persistent environment. Call when done with multi-turn conversations."""
+        if self._persistent_env is not None:
+            if hasattr(self._persistent_env, "cleanup"):
+                self._persistent_env.cleanup()
+            self._persistent_env = None
+
+    def __enter__(self) -> "RLM":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        self.close()
+        return False

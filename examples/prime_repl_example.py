@@ -8,18 +8,23 @@ from rlm.logger import RLMLogger
 load_dotenv()
 
 logger = RLMLogger(log_dir="./logs")
+
 rlm = RLM(
-    backend="portkey",
+    backend="openai",
     backend_kwargs={
-        "api_key": os.getenv("PORTKEY_API_KEY"),
-        "model_name": "@openai/gpt-5-nano",
+        "api_key": os.getenv("OPENAI_API_KEY"),
+        "model_name": "gpt-5-nano",
     },
-    environment="local",
-    environment_kwargs={},
+    environment="prime",
+    environment_kwargs={
+        "name": "rlm-prime-demo",
+        "docker_image": "python:3.11-slim",
+        "timeout_minutes": 30,
+    },
     max_depth=1,
     logger=logger,
     verbose=True,
 )
 
 result = rlm.completion("Using your code, solve 2^(2^(2^(2))). Show your work in Python.")
-print(result)
+print(result.response)

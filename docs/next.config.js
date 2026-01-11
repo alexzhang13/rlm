@@ -2,6 +2,7 @@
 const nextConfig = {
   output: 'export',
   basePath: '/rlm',
+  trailingSlash: true,
   images: { unoptimized: true },
 };
 

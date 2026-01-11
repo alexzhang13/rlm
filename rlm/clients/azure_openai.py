@@ -1,29 +1,67 @@
+import os
 from collections import defaultdict
 from typing import Any
 
-from portkey_ai import AsyncPortkey, Portkey
-from portkey_ai.api_resources.types.chat_complete_type import ChatCompletions
+import openai
+from dotenv import load_dotenv
 
 from rlm.clients.base_lm import BaseLM
 from rlm.core.types import ModelUsageSummary, UsageSummary
 
+load_dotenv()
 
-class PortkeyClient(BaseLM):
+# Load API key from environment variable
+DEFAULT_AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
+
+
+class AzureOpenAIClient(BaseLM):
     """
-    LM Client for running models with the Portkey API.
+    LM Client for running models with the Azure OpenAI API.
     """
 
     def __init__(
         self,
-        api_key: str,
+        api_key: str | None = None,
         model_name: str | None = None,
-        base_url: str | None = "https://api.portkey.ai/v1",
+        azure_endpoint: str | None = None,
+        api_version: str | None = None,
+        azure_deployment: str | None = None,
         **kwargs,
     ):
         super().__init__(model_name=model_name, **kwargs)
-        self.client = Portkey(api_key=api_key, base_url=base_url)
-        self.async_client = AsyncPortkey(api_key=api_key, base_url=base_url)
+
+        if api_key is None:
+            api_key = DEFAULT_AZURE_OPENAI_API_KEY
+
+        if azure_endpoint is None:
+            azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+
+        if api_version is None:
+            api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
+
+        if azure_deployment is None:
+            azure_deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+
+        if azure_endpoint is None:
+            raise ValueError(
+                "azure_endpoint is required for Azure OpenAI client. "
+                "Set it via argument or AZURE_OPENAI_ENDPOINT environment variable."
+            )
+
+        self.client = openai.AzureOpenAI(
+            api_key=api_key,
+            azure_endpoint=azure_endpoint,
+            api_version=api_version,
+            azure_deployment=azure_deployment,
+        )
+        self.async_client = openai.AsyncAzureOpenAI(
+            api_key=api_key,
+            azure_endpoint=azure_endpoint,
+            api_version=api_version,
+            azure_deployment=azure_deployment,
+        )
         self.model_name = model_name
+        self.azure_deployment = azure_deployment
 
         # Per-model usage tracking
         self.model_call_counts: dict[str, int] = defaultdict(int)
@@ -41,7 +79,7 @@ class PortkeyClient(BaseLM):
 
         model = model or self.model_name
         if not model:
-            raise ValueError("Model name is required for Portkey client.")
+            raise ValueError("Model name is required for Azure OpenAI client.")
 
         response = self.client.chat.completions.create(
             model=model,
@@ -50,7 +88,9 @@ class PortkeyClient(BaseLM):
         self._track_cost(response, model)
         return response.choices[0].message.content
 
-    async def acompletion(self, prompt: str | dict[str, Any], model: str | None = None) -> str:
+    async def acompletion(
+        self, prompt: str | list[dict[str, Any]], model: str | None = None
+    ) -> str:
         if isinstance(prompt, str):
             messages = [{"role": "user", "content": prompt}]
         elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
@@ -60,21 +100,29 @@ class PortkeyClient(BaseLM):
 
         model = model or self.model_name
         if not model:
-            raise ValueError("Model name is required for Portkey client.")
+            raise ValueError("Model name is required for Azure OpenAI client.")
 
-        response = await self.async_client.chat.completions.create(model=model, messages=messages)
+        response = await self.async_client.chat.completions.create(
+            model=model,
+            messages=messages,
+        )
         self._track_cost(response, model)
         return response.choices[0].message.content
 
-    def _track_cost(self, response: ChatCompletions, model: str):
+    def _track_cost(self, response: openai.ChatCompletion, model: str):
         self.model_call_counts[model] += 1
-        self.model_input_tokens[model] += response.usage.prompt_tokens
-        self.model_output_tokens[model] += response.usage.completion_tokens
-        self.model_total_tokens[model] += response.usage.total_tokens
+
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            raise ValueError("No usage data received. Tracking tokens not possible.")
+
+        self.model_input_tokens[model] += usage.prompt_tokens
+        self.model_output_tokens[model] += usage.completion_tokens
+        self.model_total_tokens[model] += usage.total_tokens
 
         # Track last call for handler to read
-        self.last_prompt_tokens = response.usage.prompt_tokens
-        self.last_completion_tokens = response.usage.completion_tokens
+        self.last_prompt_tokens = usage.prompt_tokens
+        self.last_completion_tokens = usage.completion_tokens
 
     def get_usage_summary(self) -> UsageSummary:
         model_summaries = {}

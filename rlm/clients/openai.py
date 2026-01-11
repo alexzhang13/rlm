@@ -13,6 +13,8 @@ load_dotenv()
 # Load API keys from environment variables
 DEFAULT_OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DEFAULT_OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+DEFAULT_VERCEL_API_KEY = os.getenv("AI_GATEWAY_API_KEY")
+DEFAULT_PRIME_INTELLECT_BASE_URL = "https://api.pinference.ai/api/v1/"
 
 
 class OpenAIClient(BaseLM):
@@ -34,9 +36,12 @@ class OpenAIClient(BaseLM):
                 api_key = DEFAULT_OPENAI_API_KEY
             elif base_url == "https://openrouter.ai/api/v1":
                 api_key = DEFAULT_OPENROUTER_API_KEY
+            elif base_url == "https://ai-gateway.vercel.sh/v1":
+                api_key = DEFAULT_VERCEL_API_KEY
 
         # For vLLM, set base_url to local vLLM server address.
         self.client = openai.OpenAI(api_key=api_key, base_url=base_url)
+        self.async_client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
 
         # Per-model usage tracking
@@ -57,7 +62,13 @@ class OpenAIClient(BaseLM):
         if not model:
             raise ValueError("Model name is required for OpenAI client.")
 
-        response = self.client.chat.completions.create(model=model, messages=messages)
+        extra_body = {}
+        if self.client.base_url == DEFAULT_PRIME_INTELLECT_BASE_URL:
+            extra_body["usage"] = {"include": True}
+
+        response = self.client.chat.completions.create(
+            model=model, messages=messages, extra_body=extra_body
+        )
         self._track_cost(response, model)
         return response.choices[0].message.content
 
@@ -75,19 +86,30 @@ class OpenAIClient(BaseLM):
         if not model:
             raise ValueError("Model name is required for OpenAI client.")
 
-        response = await self.client.chat.completions.create(model=model, messages=messages)
+        extra_body = {}
+        if self.client.base_url == DEFAULT_PRIME_INTELLECT_BASE_URL:
+            extra_body["usage"] = {"include": True}
+
+        response = await self.async_client.chat.completions.create(
+            model=model, messages=messages, extra_body=extra_body
+        )
         self._track_cost(response, model)
         return response.choices[0].message.content
 
     def _track_cost(self, response: openai.ChatCompletion, model: str):
         self.model_call_counts[model] += 1
-        self.model_input_tokens[model] += response.usage.prompt_tokens
-        self.model_output_tokens[model] += response.usage.completion_tokens
-        self.model_total_tokens[model] += response.usage.total_tokens
+
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            raise ValueError("No usage data received. Tracking tokens not possible.")
+
+        self.model_input_tokens[model] += usage.prompt_tokens
+        self.model_output_tokens[model] += usage.completion_tokens
+        self.model_total_tokens[model] += usage.total_tokens
 
         # Track last call for handler to read
-        self.last_prompt_tokens = response.usage.prompt_tokens
-        self.last_completion_tokens = response.usage.completion_tokens
+        self.last_prompt_tokens = usage.prompt_tokens
+        self.last_completion_tokens = usage.completion_tokens
 
     def get_usage_summary(self) -> UsageSummary:
         model_summaries = {}
