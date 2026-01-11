@@ -33,6 +33,7 @@ def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | 
     If FINAL_VAR is found and an environment is provided, executes code to retrieve the variable value.
     Returns None if neither pattern is found.
 
+    Handles various model formats including special tokens like <|begin_of_box|>FINAL(...)<|end_of_box|>
     Args:
         text: The response text to parse
         environment: Optional environment to execute code for FINAL_VAR retrieval
@@ -40,8 +41,8 @@ def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | 
     Returns:
         The final answer string, or None if no final answer pattern is found
     """
-    # Check for FINAL_VAR pattern first - must be at start of line
-    final_var_pattern = r"^\s*FINAL_VAR\((.*?)\)"
+    # Check for FINAL_VAR pattern - allow special tokens before it
+    final_var_pattern = r"(?:^|\s|<\|[^|]+\|>)\s*FINAL_VAR\((.*?)\)"
     match = re.search(final_var_pattern, text, re.MULTILINE | re.DOTALL)
     if match:
         variable_name = match.group(1).strip().strip('"').strip("'")
@@ -53,8 +54,8 @@ def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | 
             return final_answer
         return None
 
-    # Check for FINAL pattern - must be at start of line
-    final_pattern = r"^\s*FINAL\((.*?)\)"
+    # Check for FINAL pattern - allow special tokens before it
+    final_pattern = r"(?:^|\s|<\|[^|]+\|>)\s*FINAL\((.*?)\)"
     match = re.search(final_pattern, text, re.MULTILINE | re.DOTALL)
     if match:
         return match.group(1).strip()
