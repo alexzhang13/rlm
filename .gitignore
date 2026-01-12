@@ -1,6 +1,9 @@
 # MacOS
 .DS_Store
 
+# Local agent instructions
+AGENTS.md
+
 # Logs
 logs/
 !visualizer/src/app/api/logs/

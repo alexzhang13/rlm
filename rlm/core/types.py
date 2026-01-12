@@ -13,16 +13,16 @@ ClientBackend = Literal[
     "azure_openai",
     "gemini",
 ]
-EnvironmentType = Literal["local", "docker", "modal", "prime"]
+EnvironmentType = Literal["local", "docker", "modal", "prime", "jupyter"]
 
 
 def _serialize_value(value: Any) -> Any:
     """Convert a value to a JSON-serializable representation."""
-    if value is None or isinstance(value, (bool, int, float, str)):
+    if value is None or isinstance(value, bool | int | float | str):
         return value
     if isinstance(value, ModuleType):
         return f"<module '{value.__name__}'>"
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return [_serialize_value(v) for v in value]
     if isinstance(value, dict):
         return {str(k): _serialize_value(v) for k, v in value.items()}
@@ -245,40 +245,20 @@ class QueryMetadata:
     context_total_length: int
     context_type: str
 
-    def __init__(self, prompt: str | list[str] | dict[Any, Any] | list[dict[Any, Any]]):
+    def __init__(self, prompt: str | list[str] | dict | list[dict]):
         if isinstance(prompt, str):
             self.context_lengths = [len(prompt)]
             self.context_type = "str"
         elif isinstance(prompt, dict):
-            self.context_type = "dict"
-            self.context_lengths = []
-            for chunk in prompt.values():
-                if isinstance(chunk, str):
-                    self.context_lengths.append(len(chunk))
-                    continue
-                try:
-                    import json
-
-                    self.context_lengths.append(len(json.dumps(chunk, default=str)))
-                except Exception:
-                    self.context_lengths.append(len(repr(chunk)))
+            self.context_lengths = [len(str(chunk)) for chunk in prompt.values()]
             self.context_type = "dict"
         elif isinstance(prompt, list):
             self.context_type = "list"
-            if len(prompt) == 0:
-                self.context_lengths = [0]
-            elif isinstance(prompt[0], dict):
+            if isinstance(prompt[0], dict):
                 if "content" in prompt[0]:
-                    self.context_lengths = [len(str(chunk.get("content", ""))) for chunk in prompt]
+                    self.context_lengths = [len(chunk["content"]) for chunk in prompt]
                 else:
-                    self.context_lengths = []
-                    for chunk in prompt:
-                        try:
-                            import json
-
-                            self.context_lengths.append(len(json.dumps(chunk, default=str)))
-                        except Exception:
-                            self.context_lengths.append(len(repr(chunk)))
+                    self.context_lengths = [len(str(chunk)) for chunk in prompt]
             else:
                 self.context_lengths = [len(chunk) for chunk in prompt]
         else:
