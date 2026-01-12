@@ -54,10 +54,34 @@ def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | 
         return None
 
     # Check for FINAL pattern - must be at start of line
-    final_pattern = r"^\s*FINAL\((.*?)\)"
-    match = re.search(final_pattern, text, re.MULTILINE | re.DOTALL)
-    if match:
-        return match.group(1).strip()
+    final_start = re.search(r"^\s*FINAL\b", text, re.MULTILINE)
+    if final_start:
+        idx = final_start.end()
+        while idx < len(text) and text[idx].isspace():
+            idx += 1
+
+        if idx < len(text) and text[idx] == "(":
+            start = idx + 1
+            depth = 1
+            i = start
+            while i < len(text):
+                ch = text[i]
+                if ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                    if depth == 0:
+                        return text[start:i].strip()
+                i += 1
+            return None
+
+        if text[idx : idx + 3] == "```":
+            end = text.find("```", idx + 3)
+            if end != -1:
+                return text[idx : end + 3].strip()
+            return None
+
+        return text[idx:].strip()
 
     return None
 

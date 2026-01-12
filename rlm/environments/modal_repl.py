@@ -282,6 +282,7 @@ class ModalREPL(IsolatedEnv):
         timeout: int = 600,
         lm_handler_address: tuple[str, int] | None = None,
         context_payload: dict | list | str | None = None,
+        context_scope: str = "completion",
         setup_code: str | None = None,
         persistent: bool = False,
         depth: int = 1,
@@ -293,9 +294,13 @@ class ModalREPL(IsolatedEnv):
             )
         super().__init__(persistent=persistent, depth=depth, **kwargs)
 
+        if context_scope not in {"completion", "session"}:
+            raise ValueError("context_scope must be 'completion' or 'session'")
+
         self.app_name = app_name
         self.timeout = timeout
         self.lm_handler_address = lm_handler_address
+        self.context_scope = context_scope
 
         self.image = image or get_default_image()
 
@@ -421,13 +426,16 @@ class ModalREPL(IsolatedEnv):
 
     def load_context(self, context_payload: dict | list | str):
         """Load context into the sandbox environment."""
+        var_name = (
+            "session_context_0" if self.context_scope == "session" else "completion_context"
+        )
         if isinstance(context_payload, str):
             escaped = context_payload.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
-            context_code = f'context = """{escaped}"""'
+            context_code = f'{var_name} = """{escaped}"""'
         else:
             context_json = json.dumps(context_payload)
             escaped_json = context_json.replace("\\", "\\\\").replace("'", "\\'")
-            context_code = f"import json; context = json.loads('{escaped_json}')"
+            context_code = f"import json; {var_name} = json.loads('{escaped_json}')"
 
         self.execute_code(context_code)
 

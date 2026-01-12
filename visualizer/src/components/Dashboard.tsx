@@ -32,7 +32,8 @@ export function Dashboard() {
         // Fetch list of log files from API
         const listResponse = await fetch('/api/logs');
         if (!listResponse.ok) {
-          throw new Error('Failed to fetch log list');
+          console.warn('Failed to fetch log list');
+          return;
         }
         const { files } = await listResponse.json();
         
@@ -40,7 +41,7 @@ export function Dashboard() {
         
         for (const fileName of files) {
           try {
-            const response = await fetch(`/logs/${fileName}`);
+            const response = await fetch(`/api/logs?file=${encodeURIComponent(fileName)}`);
             if (!response.ok) continue;
             const content = await response.text();
             const parsed = parseLogFile(fileName, content);
@@ -81,7 +82,7 @@ export function Dashboard() {
 
   const loadDemoLog = useCallback(async (fileName: string) => {
     try {
-      const response = await fetch(`/logs/${fileName}`);
+      const response = await fetch(`/api/logs?file=${encodeURIComponent(fileName)}`);
       if (!response.ok) throw new Error('Failed to load demo log');
       const content = await response.text();
       handleFileLoaded(fileName, content);

@@ -15,9 +15,9 @@ class TestLocalREPLMultiContext:
         repl = LocalREPL()
         repl.add_context("First", 0)
         repl.add_context("Second", 1)
-        assert repl.locals["context_0"] == "First"
-        assert repl.locals["context_1"] == "Second"
-        assert repl.locals["context"] == "First"
+        assert repl.locals["session_context_0"] == "First"
+        assert repl.locals["session_context_1"] == "Second"
+        assert repl.locals["context_history"] == ["First", "Second"]
         assert repl.get_context_count() == 2
         repl.cleanup()
 
@@ -35,8 +35,9 @@ class TestLocalREPLMultiContext:
         idx2 = repl.add_context("Second")
         assert idx1 == 0
         assert idx2 == 1
-        assert repl.locals["context_0"] == "First"
-        assert repl.locals["context_1"] == "Second"
+        assert repl.locals["session_context_0"] == "First"
+        assert repl.locals["session_context_1"] == "Second"
+        assert repl.locals["context_history"] == ["First", "Second"]
         assert repl.get_context_count() == 2
         repl.cleanup()
 
@@ -46,21 +47,19 @@ class TestLocalREPLMultiContext:
         repl.add_context("Document A content")
         repl.add_context("Document B content")
 
-        result = repl.execute_code("combined = f'{context_0} + {context_1}'")
+        result = repl.execute_code("combined = f'{session_context_0} + {session_context_1}'")
         assert result.stderr == ""
         assert repl.locals["combined"] == "Document A content + Document B content"
         repl.cleanup()
 
-    def test_context_alias_points_to_first(self):
-        """Test that 'context' always aliases context_0."""
+    def test_context_history_tracks_latest(self):
+        """Test that context_history always reflects the latest context."""
         repl = LocalREPL()
         repl.add_context("First")
         repl.add_context("Second")
         repl.add_context("Third")
 
-        result = repl.execute_code("is_first = context == context_0")
-        assert result.stderr == ""
-        assert repl.locals["is_first"] is True
+        assert repl.locals["context_history"] == ["First", "Second", "Third"]
         repl.cleanup()
 
 
@@ -80,10 +79,8 @@ class TestLocalREPLHistory:
         index = repl.add_history(history)
 
         assert index == 0
-        assert "history_0" in repl.locals
-        assert "history" in repl.locals  # alias
-        assert repl.locals["history_0"] == history
-        assert repl.locals["history"] == history
+        assert "session_history" in repl.locals
+        assert repl.locals["session_history"] == [history]
         assert repl.get_history_count() == 1
 
         repl.cleanup()
@@ -99,9 +96,7 @@ class TestLocalREPLHistory:
         repl.add_history(history2)
 
         assert repl.get_history_count() == 2
-        assert repl.locals["history_0"] == history1
-        assert repl.locals["history_1"] == history2
-        assert repl.locals["history"] == history1  # alias stays on first
+        assert repl.locals["session_history"] == [history1, history2]
 
         repl.cleanup()
 
@@ -112,7 +107,7 @@ class TestLocalREPLHistory:
         history = [{"role": "user", "content": "Test message"}]
         repl.add_history(history)
 
-        result = repl.execute_code("msg = history[0]['content']")
+        result = repl.execute_code("msg = session_history[0][0]['content']")
         assert result.stderr == ""
         assert repl.locals["msg"] == "Test message"
 
@@ -127,7 +122,7 @@ class TestLocalREPLHistory:
 
         history[0]["content"] = "Modified"
 
-        assert repl.locals["history_0"][0]["content"] == "Original"
+        assert repl.locals["session_history"][0][0]["content"] == "Original"
 
         repl.cleanup()
 
@@ -140,11 +135,7 @@ class TestLocalREPLHistory:
         repl.add_history([{"role": "user", "content": "Query 3"}])
 
         code = """
-all_contents = [
-    history_0[0]['content'],
-    history_1[0]['content'],
-    history_2[0]['content'],
-]
+all_contents = [entry[0]['content'] for entry in session_history]
 """
         result = repl.execute_code(code)
         assert result.stderr == ""
@@ -161,13 +152,13 @@ class TestLocalREPLPersistentState:
         repl = LocalREPL()
 
         repl.add_context("My context data")
-        repl.execute_code("summary = context.upper()")
+        repl.execute_code("summary = session_context_0.upper()")
         assert repl.locals["summary"] == "MY CONTEXT DATA"
 
         repl.add_context("New context")
 
         assert repl.locals["summary"] == "MY CONTEXT DATA"
-        assert repl.locals["context_1"] == "New context"
+        assert repl.locals["session_context_1"] == "New context"
 
         repl.cleanup()
 
@@ -176,13 +167,13 @@ class TestLocalREPLPersistentState:
         repl = LocalREPL()
 
         repl.add_history([{"role": "user", "content": "Hello"}])
-        repl.execute_code("extracted = history[0]['content']")
+        repl.execute_code("extracted = session_history[0][0]['content']")
         assert repl.locals["extracted"] == "Hello"
 
         repl.add_history([{"role": "user", "content": "World"}])
 
         assert repl.locals["extracted"] == "Hello"
-        assert repl.locals["history_1"][0]["content"] == "World"
+        assert repl.locals["session_history"][1][0]["content"] == "World"
 
         repl.cleanup()
 
@@ -206,8 +197,8 @@ class TestLocalREPLPersistentState:
         )
 
         code = """
-summary = f"Sales: {context_0}, Costs: {context_1}, Profit: {profit}"
-prev_question = history_0[0]['content']
+summary = f"Sales: {session_context_0}, Costs: {session_context_1}, Profit: {profit}"
+prev_question = session_history[0][0]['content']
 """
         result = repl.execute_code(code)
         assert result.stderr == ""

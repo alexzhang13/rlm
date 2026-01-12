@@ -3,11 +3,11 @@ import textwrap
 from rlm.core.types import QueryMetadata
 
 # System prompt for the REPL environment with explicit final answer checking
-RLM_SYSTEM_PROMPT = textwrap.dedent(
+RLM_SYSTEM_PROMPT_TEMPLATE = textwrap.dedent(
     """You are tasked with answering a query with associated context. You can access, transform, and analyze this context interactively in a REPL environment that can recursively query sub-LLMs, which you are strongly encouraged to use as much as possible. You will be queried iteratively until you provide a final answer.
 
 The REPL environment is initialized with:
-1. A `context` variable that contains extremely important information about your query. You should check the content of the `context` variable to understand what you are working with. Make sure you look through it sufficiently as you answer your query.
+1. {context_instructions}
 2. A `llm_query` function that allows you to query an LLM (that can handle around 500K chars) inside your REPL environment.
 3. A `llm_query_batched` function that allows you to query multiple prompts concurrently: `llm_query_batched(prompts: List[str]) -> List[str]`. This is much faster than sequential `llm_query` calls when you have multiple independent queries. Results are returned in the same order as the input prompts.
 4. The ability to use `print()` statements to view the output of your REPL code and continue your reasoning.
@@ -19,7 +19,7 @@ You can use the REPL environment to help you understand your context, especially
 
 When you want to execute Python code in the REPL environment, wrap it in triple backticks with 'repl' language identifier. For example, say we want our recursive model to search for the magic number in the context (assuming the context is a string), and the context is very long, so we want to chunk it:
 ```repl
-chunk = context[:10000]
+chunk = {context_var}[:10000]
 answer = llm_query(f"What is the magic number in the context? Here is the chunk: {{chunk}}")
 print(answer)
 ```
@@ -27,26 +27,26 @@ print(answer)
 As an example, suppose you're trying to answer a question about a book. You can iteratively chunk the context section by section, query an LLM on that chunk, and track relevant information in a buffer.
 ```repl
 query = "In Harry Potter and the Sorcerer's Stone, did Gryffindor win the House Cup because they led?"
-for i, section in enumerate(context):
-    if i == len(context) - 1:
+for i, section in enumerate({context_var}):
+    if i == len({context_var}) - 1:
         buffer = llm_query(f"You are on the last section of the book. So far you know that: {{buffers}}. Gather from this last section to answer {{query}}. Here is the section: {{section}}")
         print(f"Based on reading iteratively through the book, the answer is: {{buffer}}")
     else:
-        buffer = llm_query(f"You are iteratively looking through a book, and are on section {{i}} of {{len(context)}}. Gather information to help answer {{query}}. Here is the section: {{section}}")
-        print(f"After section {{i}} of {{len(context)}}, you have tracked: {{buffer}}")
+        buffer = llm_query(f"You are iteratively looking through a book, and are on section {{i}} of {{len({context_var})}}. Gather information to help answer {{query}}. Here is the section: {{section}}")
+        print(f"After section {{i}} of {{len({context_var})}}, you have tracked: {{buffer}}")
 ```
 
 As another example, when the context isn't that long (e.g. >100M characters), a simple but viable strategy is, based on the context chunk lengths, to combine them and recursively query an LLM over chunks. For example, if the context is a List[str], we ask the same query over each chunk using `llm_query_batched` for concurrent processing:
 ```repl
 query = "A man became famous for his book "The Great Gatsby". How many jobs did he have?"
 # Suppose our context is ~1M chars, and we want each sub-LLM query to be ~0.1M chars so we split it into 10 chunks
-chunk_size = len(context) // 10
+chunk_size = len({context_var}) // 10
 chunks = []
 for i in range(10):
     if i < 9:
-        chunk_str = "\n".join(context[i*chunk_size:(i+1)*chunk_size])
+        chunk_str = "\n".join({context_var}[i*chunk_size:(i+1)*chunk_size])
     else:
-        chunk_str = "\n".join(context[i*chunk_size:])
+        chunk_str = "\n".join({context_var}[i*chunk_size:])
     chunks.append(chunk_str)
 
 # Use batched query for concurrent processing - much faster than sequential calls!
@@ -61,7 +61,7 @@ As a final example, after analyzing the context and realizing its separated by M
 ```repl
 # After finding out the context is separated by Markdown headers, we can chunk, summarize, and answer
 import re
-sections = re.split(r'### (.+)', context["content"])
+sections = re.split(r'### (.+)', {context_var}["content"])
 buffers = []
 for i in range(1, len(sections), 2):
     header = sections[i]
@@ -79,6 +79,27 @@ IMPORTANT: When you are done with the iterative process, you MUST provide a fina
 Think step by step carefully, plan, and execute this plan immediately in your response -- do not just say "I will do this" or "I will do that". Output to the REPL environment and recursive LLMs as much as possible. Remember to explicitly answer the original query in your final answer.
 """
 )
+
+RLM_SYSTEM_PROMPT_SESSION = RLM_SYSTEM_PROMPT_TEMPLATE.format(
+    context_instructions=(
+        "Session context payloads are available as `session_context_0`, `session_context_1`, ... . "
+        "The current prompt is stored in the most recent `session_context_{n}`; replace "
+        "`session_context_0` in the examples below with the current `session_context_{n}`. "
+        "A `context_history` list contains all session contexts and is overwritten each call. "
+        "A `session_history` list contains per-call message histories (each entry is a list of messages)."
+    ),
+    context_var="session_context_0",
+)
+
+RLM_SYSTEM_PROMPT_COMPLETION = RLM_SYSTEM_PROMPT_TEMPLATE.format(
+    context_instructions=(
+        "A `completion_context` variable that contains the prompt payload. You should check the "
+        "content of `completion_context` to understand what you are working with."
+    ),
+    context_var="completion_context",
+)
+
+RLM_SYSTEM_PROMPT = RLM_SYSTEM_PROMPT_SESSION
 
 
 def build_rlm_system_prompt(
@@ -112,8 +133,11 @@ def build_rlm_system_prompt(
     ]
 
 
-USER_PROMPT = """Think step-by-step on what to do using the REPL environment (which contains the context) to answer the prompt.\n\nContinue using the REPL environment, which has the `context` variable, and querying sub-LLMs by writing to ```repl``` tags, and determine your answer. Your next action:"""
-USER_PROMPT_WITH_ROOT = """Think step-by-step on what to do using the REPL environment (which contains the context) to answer the original prompt: \"{root_prompt}\".\n\nContinue using the REPL environment, which has the `context` variable, and querying sub-LLMs by writing to ```repl``` tags, and determine your answer. Your next action:"""
+USER_PROMPT_COMPLETION = """Think step-by-step on what to do using the REPL environment (which contains the completion context) to answer the prompt.\n\nContinue using the REPL environment, which has the `completion_context` variable, and querying sub-LLMs by writing to ```repl``` tags, and determine your answer. Avoid dumping large contexts unless necessary; only inspect what you need. For straightforward tasks, after a single REPL execution, respond with FINAL(...) right away. Your next action:"""
+USER_PROMPT_WITH_ROOT_COMPLETION = """Think step-by-step on what to do using the REPL environment (which contains the completion context) to answer the original prompt: \"{root_prompt}\".\n\nContinue using the REPL environment, which has the `completion_context` variable, and querying sub-LLMs by writing to ```repl``` tags, and determine your answer. Avoid dumping large contexts unless necessary; only inspect what you need. For straightforward tasks, after a single REPL execution, respond with FINAL(...) right away. Your next action:"""
+
+USER_PROMPT_SESSION = """Think step-by-step on what to do using the REPL environment (which contains the session context) to answer the prompt.\n\nContinue using the REPL environment and determine your answer. Avoid dumping large contexts unless necessary; only inspect what you need. For straightforward tasks, after a single REPL execution, respond with FINAL(...) right away. Your next action:"""
+USER_PROMPT_WITH_ROOT_SESSION = """Think step-by-step on what to do using the REPL environment (which contains the session context) to answer the original prompt: \"{root_prompt}\".\n\nContinue using the REPL environment and determine your answer. Avoid dumping large contexts unless necessary; only inspect what you need. For straightforward tasks, after a single REPL execution, respond with FINAL(...) right away. Your next action:"""
 
 
 def build_user_prompt(
@@ -121,26 +145,48 @@ def build_user_prompt(
     iteration: int = 0,
     context_count: int = 1,
     history_count: int = 0,
+    session_mode: bool = False,
 ) -> dict[str, str]:
-    if iteration == 0:
-        safeguard = "You have not interacted with the REPL environment or seen your prompt / context yet. Your next action should be to look through and figure out how to answer the prompt, so don't just provide a final answer yet.\n\n"
-        prompt = safeguard + (
-            USER_PROMPT_WITH_ROOT.format(root_prompt=root_prompt) if root_prompt else USER_PROMPT
+    if session_mode:
+        base_prompt = (
+            USER_PROMPT_WITH_ROOT_SESSION.format(root_prompt=root_prompt)
+            if root_prompt
+            else USER_PROMPT_SESSION
         )
     else:
-        prompt = "The history before is your previous interactions with the REPL environment. " + (
-            USER_PROMPT_WITH_ROOT.format(root_prompt=root_prompt) if root_prompt else USER_PROMPT
+        base_prompt = (
+            USER_PROMPT_WITH_ROOT_COMPLETION.format(root_prompt=root_prompt)
+            if root_prompt
+            else USER_PROMPT_COMPLETION
         )
-
-    # Inform model about multiple contexts if present
-    if context_count > 1:
-        prompt += f"\n\nNote: You have {context_count} contexts available (context_0 through context_{context_count - 1})."
-
-    # Inform model about prior conversation histories if present
-    if history_count > 0:
-        if history_count == 1:
-            prompt += "\n\nNote: You have 1 prior conversation history available in the `history` variable."
+    if iteration == 0:
+        safeguard = "You have not interacted with the REPL environment or seen your prompt / context yet. Your next action should be to look through and figure out how to answer the prompt, so don't just provide a final answer yet.\n\n"
+        prompt = safeguard + base_prompt
+    else:
+        if session_mode:
+            prefix = "The history before is your previous interactions with the REPL environment. "
         else:
-            prompt += f"\n\nNote: You have {history_count} prior conversation histories available (history_0 through history_{history_count - 1})."
+            prefix = "You have prior REPL outputs above from this run. "
+        prompt = prefix + base_prompt
+    if session_mode:
+        latest_index = max(context_count - 1, 0)
+        prompt += f"\n\nNote: The current prompt is session_context_{latest_index}."
+        if context_count > 1:
+            prompt += (
+                " Previous session contexts (session_context_0 through "
+                f"session_context_{latest_index - 1}) are historical."
+            )
+        prompt += "\n\nNote: context_history contains all session contexts and is overwritten each call."
+
+        if history_count > 0:
+            if history_count == 1:
+                prompt += (
+                    "\n\nNote: session_history has 1 entry (a full message history list)."
+                )
+            else:
+                prompt += (
+                    f"\n\nNote: session_history has {history_count} entries "
+                    "(each entry is a full message history list)."
+                )
 
     return {"role": "user", "content": prompt}

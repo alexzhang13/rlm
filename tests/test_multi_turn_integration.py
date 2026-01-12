@@ -1,11 +1,13 @@
 """Integration tests for multi-turn persistent REPL sessions.
 
-Tests that multiple LM completion calls in one RLM session:
+Tests that session calls:
 1. Share the same environment
-2. Accumulate contexts (context_0, context_1, ...)
-3. Accumulate histories (history_0, history_1, ...)
+2. Accumulate session contexts (session_context_0, session_context_1, ...)
+3. Accumulate session histories (session_history entries per call)
 4. Preserve variables across calls
-5. Properly inform the model about available contexts/histories
+5. Properly inform the model about available session contexts/histories
+
+Completion calls use a single completion_context and do not advertise session history.
 """
 
 from unittest.mock import Mock, patch
@@ -58,7 +60,7 @@ class TestMultiTurnPersistentEnvironment:
                 assert first_env is not None
 
     def test_context_accumulation_across_calls(self):
-        """Verify contexts accumulate: context_0, context_1, etc."""
+        """Verify session contexts accumulate: session_context_0, session_context_1, etc."""
         responses = ["FINAL(got it)"]
 
         with patch.object(rlm_module, "get_client") as mock_get_client:
@@ -70,21 +72,26 @@ class TestMultiTurnPersistentEnvironment:
                 backend_kwargs={"model_name": "test"},
                 persistent=True,
             ) as rlm:
-                rlm.completion("First document")
+                session = rlm.start_session()
+                session.chat("First document")
                 mock_lm.completion.side_effect = list(responses)
-                rlm.completion("Second document")
+                session.chat("Second document")
                 mock_lm.completion.side_effect = list(responses)
-                rlm.completion("Third document")
+                session.chat("Third document")
 
                 env = rlm._persistent_env
                 assert env.get_context_count() == 3
-                assert env.locals["context_0"] == "First document"
-                assert env.locals["context_1"] == "Second document"
-                assert env.locals["context_2"] == "Third document"
-                assert env.locals["context"] == "First document"
+                assert env.locals["session_context_0"] == "First document"
+                assert env.locals["session_context_1"] == "Second document"
+                assert env.locals["session_context_2"] == "Third document"
+                assert env.locals["context_history"] == [
+                    "First document",
+                    "Second document",
+                    "Third document",
+                ]
 
-    def test_history_accumulation_across_calls(self):
-        """Verify message histories accumulate: history_0, history_1, etc."""
+    def test_completion_context_overwritten_across_calls(self):
+        """Completion should overwrite completion_context each call."""
         responses = ["FINAL(done)"]
 
         with patch.object(rlm_module, "get_client") as mock_get_client:
@@ -96,20 +103,40 @@ class TestMultiTurnPersistentEnvironment:
                 backend_kwargs={"model_name": "test"},
                 persistent=True,
             ) as rlm:
-                rlm.completion("Context A")
+                rlm.completion("First context")
                 mock_lm.completion.side_effect = list(responses)
-                rlm.completion("Context B")
+                rlm.completion("Second context")
+
+                env = rlm._persistent_env
+                assert env.locals["completion_context"] == "Second context"
+                assert "session_context_0" not in env.locals
+
+    def test_history_accumulation_across_calls(self):
+        """Verify session histories accumulate per call."""
+        responses = ["FINAL(done)"]
+
+        with patch.object(rlm_module, "get_client") as mock_get_client:
+            mock_lm = create_mock_lm(responses)
+            mock_get_client.return_value = mock_lm
+
+            with RLM(
+                backend="openai",
+                backend_kwargs={"model_name": "test"},
+                persistent=True,
+            ) as rlm:
+                session = rlm.start_session()
+                session.chat("Context A")
                 mock_lm.completion.side_effect = list(responses)
-                rlm.completion("Context C")
+                session.chat("Context B")
+                mock_lm.completion.side_effect = list(responses)
+                session.chat("Context C")
 
                 env = rlm._persistent_env
                 assert env.get_history_count() == 3
-                assert "history_0" in env.locals
-                assert "history_1" in env.locals
-                assert "history_2" in env.locals
-                assert isinstance(env.locals["history_0"], list)
-                assert len(env.locals["history_0"]) > 0
-                assert env.locals["history"] == env.locals["history_0"]
+                assert "session_history" in env.locals
+                assert isinstance(env.locals["session_history"], list)
+                assert len(env.locals["session_history"]) == 3
+                assert all(isinstance(entry, list) for entry in env.locals["session_history"])
 
     def test_variable_persistence_across_completions(self):
         """Variables computed in one completion should be available in subsequent ones."""
@@ -144,8 +171,8 @@ class TestMultiTurnPersistentEnvironment:
 class TestMultiTurnPromptAwareness:
     """Tests that prompts correctly inform the model about contexts/histories."""
 
-    def test_prompt_includes_context_count(self):
-        """Model should be informed about available contexts."""
+    def test_prompt_excludes_context_count_for_completion(self):
+        """Completion prompts should not include multi-context notes."""
         responses = ["FINAL(ok)"]
 
         with patch.object(rlm_module, "get_client") as mock_get_client:
@@ -165,10 +192,12 @@ class TestMultiTurnPromptAwareness:
                 user_messages = [m for m in last_prompt if m.get("role") == "user"]
                 user_content = " ".join(m.get("content", "") for m in user_messages)
 
-                assert "2 contexts" in user_content or "context_0" in user_content
+                assert "session_context" not in user_content
+                assert "context_history" not in user_content
+                assert "completion_context" in user_content
 
-    def test_prompt_includes_history_count(self):
-        """Model should be informed about available histories."""
+    def test_prompt_excludes_history_for_completion(self):
+        """Completion prompts should not include history notes."""
         responses = ["FINAL(ok)"]
 
         with patch.object(rlm_module, "get_client") as mock_get_client:
@@ -188,7 +217,34 @@ class TestMultiTurnPromptAwareness:
                 user_messages = [m for m in last_prompt if m.get("role") == "user"]
                 user_content = " ".join(m.get("content", "") for m in user_messages)
 
-                assert "history" in user_content.lower()
+                assert "session_history" not in user_content.lower()
+
+    def test_prompt_includes_session_context_notes(self):
+        """Session prompts should include session context and history notes."""
+        responses = ["FINAL(ok)"]
+
+        with patch.object(rlm_module, "get_client") as mock_get_client:
+            mock_lm = create_mock_lm(responses)
+            mock_get_client.return_value = mock_lm
+
+            with RLM(
+                backend="openai",
+                backend_kwargs={"model_name": "test"},
+                persistent=True,
+            ) as rlm:
+                session = rlm.start_session()
+                session.chat("First task")
+                mock_lm.completion.side_effect = list(responses)
+                session.chat("Second task")
+
+                last_prompt = mock_lm.completion.call_args[0][0]
+                user_messages = [m for m in last_prompt if m.get("role") == "user"]
+                user_content = " ".join(m.get("content", "") for m in user_messages)
+
+                assert "session_context_1" in user_content
+                assert "session_context_0" in user_content
+                assert "context_history" in user_content
+                assert "session_history" in user_content
 
 
 class TestMultiTurnCodeExecution:
@@ -198,7 +254,7 @@ class TestMultiTurnCodeExecution:
         """Code should be able to reference earlier contexts."""
         first_responses = ["FINAL(first done)"]
         second_responses = [
-            "```repl\nprint(f'First: {context_0}, Second: {context_1}')\n```",
+            "```repl\nprint(f'First: {session_context_0}, Second: {session_context_1}')\n```",
             "FINAL(printed both)",
         ]
 
@@ -211,20 +267,21 @@ class TestMultiTurnCodeExecution:
                 backend_kwargs={"model_name": "test"},
                 persistent=True,
             ) as rlm:
-                rlm.completion("Document A")
+                session = rlm.start_session()
+                session.chat("Document A")
 
                 mock_lm.completion.side_effect = list(second_responses)
-                rlm.completion("Document B")
+                session.chat("Document B")
 
                 env = rlm._persistent_env
-                assert env.locals["context_0"] == "Document A"
-                assert env.locals["context_1"] == "Document B"
+                assert env.locals["session_context_0"] == "Document A"
+                assert env.locals["session_context_1"] == "Document B"
 
     def test_can_access_history_in_code(self):
         """Code should be able to reference stored histories."""
         first_responses = ["FINAL(first)"]
         second_responses = [
-            "```repl\nprint(f'History entries: {len(history)}')\n```",
+            "```repl\nprint(f'History entries: {len(session_history)}')\n```",
             "FINAL(accessed history)",
         ]
 
@@ -237,14 +294,15 @@ class TestMultiTurnCodeExecution:
                 backend_kwargs={"model_name": "test"},
                 persistent=True,
             ) as rlm:
-                rlm.completion("First query")
+                session = rlm.start_session()
+                session.chat("First query")
 
                 mock_lm.completion.side_effect = list(second_responses)
-                rlm.completion("Second query")
+                session.chat("Second query")
 
                 env = rlm._persistent_env
-                assert "history" in env.locals
-                assert isinstance(env.locals["history"], list)
+                assert "session_history" in env.locals
+                assert isinstance(env.locals["session_history"], list)
 
 
 class TestNonPersistentMode:
@@ -360,7 +418,7 @@ class TestMultiTurnEndToEnd:
             "FINAL(Compared both docs)",
         ]
         turn3_responses = [
-            "Final synthesis\n```repl\nfinal = f'Combined: {doc1_summary} and {doc2_summary} from context_2'\nprint(final)\n```",
+            "Final synthesis\n```repl\nfinal = f'Combined: {doc1_summary} and {doc2_summary} from session_context_2'\nprint(final)\n```",
             "FINAL(synthesized all)",
         ]
 
@@ -373,15 +431,16 @@ class TestMultiTurnEndToEnd:
                 backend_kwargs={"model_name": "test"},
                 persistent=True,
             ) as rlm:
-                result1 = rlm.completion("First document about cats")
+                session = rlm.start_session()
+                result1 = session.chat("First document about cats")
                 assert "Summarized" in result1.response
 
                 mock_lm.completion.side_effect = list(turn2_responses)
-                result2 = rlm.completion("Second document about dogs")
+                result2 = session.chat("Second document about dogs")
                 assert "Compared" in result2.response
 
                 mock_lm.completion.side_effect = list(turn3_responses)
-                result3 = rlm.completion("Synthesize everything")
+                result3 = session.chat("Synthesize everything")
                 assert "synthesized" in result3.response
 
                 env = rlm._persistent_env
