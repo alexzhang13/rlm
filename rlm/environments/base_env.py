@@ -82,18 +82,21 @@ class SupportsPersistence(Protocol):
         supports persistence capabilities.
 
     IMPLEMENTING THIS PROTOCOL:
-        To add persistence to your environment, implement these 5 methods.
+        To add persistence to your environment, implement these 6 methods.
         See tests/test_local_repl_persistent.py for expected behavior.
 
-    VERSIONING BEHAVIOR:
-        Contexts and histories are versioned with numeric suffixes:
-        - First context  -> context_0, context_1, context_2, ...
-        - First history  -> history_0, history_1, history_2, ...
+    SESSION CONTEXT BEHAVIOR:
+        Contexts are versioned with numeric suffixes:
+        - session_context_0, session_context_1, session_context_2, ...
+        - context_history: list of session contexts, overwritten each call
 
-    ALIASING BEHAVIOR:
-        The unversioned names always point to index 0:
-        - context  -> context_0 (first context)
-        - history  -> history_0 (first history)
+    SESSION HISTORY BEHAVIOR:
+        Histories are stored as a list of per-call histories:
+        - session_history: list[list[dict[str, Any]]]
+
+    COMPLETION CONTEXT BEHAVIOR:
+        Completion calls store a single prompt payload:
+        - completion_context
 
     EXAMPLE IMPLEMENTATION:
         See rlm/environments/local_repl.py for a complete reference.
@@ -120,7 +123,7 @@ class SupportsPersistence(Protocol):
     def add_context(
         self, context_payload: dict | list | str, context_index: int | None = None
     ) -> int:
-        """Add a context payload, making it available as context_N in code.
+        """Add a session context payload, making it available as session_context_N in code.
 
         Versioning:
             - context_index=None: auto-increment (0, 1, 2, ...)
@@ -128,8 +131,8 @@ class SupportsPersistence(Protocol):
 
         Storage:
             Must store so executed code can access:
-            - context_0, context_1, etc. (versioned)
-            - context (alias to context_0)
+            - session_context_0, session_context_1, etc. (versioned)
+            - context_history (list of session contexts, overwritten each call)
 
         Args:
             context_payload: The context data (string, dict, or list).
@@ -141,7 +144,7 @@ class SupportsPersistence(Protocol):
         ...
 
     def get_context_count(self) -> int:
-        """Return the number of contexts added so far.
+        """Return the number of session contexts added so far.
 
         Used by RLM to inform the model how many contexts are available.
         """
@@ -150,16 +153,11 @@ class SupportsPersistence(Protocol):
     def add_history(
         self, message_history: list[dict[str, Any]], history_index: int | None = None
     ) -> int:
-        """Add a message history, making it available as history_N in code.
-
-        Versioning:
-            - history_index=None: auto-increment (0, 1, 2, ...)
-            - history_index=N: use specific index N
+        """Add a session message history to session_history.
 
         Storage:
             Must store so executed code can access:
-            - history_0, history_1, etc. (versioned)
-            - history (alias to history_0)
+            - session_history (list of per-call message histories)
 
         IMPORTANT: Store a deep copy, not a reference. The caller may
         modify the list after calling this method.
@@ -176,7 +174,11 @@ class SupportsPersistence(Protocol):
     def get_history_count(self) -> int:
         """Return the number of histories added so far.
 
-        Used by RLM to inform the model how many conversation histories
+        Used by RLM to inform the model how many session histories
         are available.
         """
+        ...
+
+    def set_completion_context(self, context_payload: dict | list | str) -> None:
+        """Set the completion_context variable for a completion call."""
         ...

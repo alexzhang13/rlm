@@ -234,14 +234,18 @@ class TestUtilsImports:
     def test_prompts_import(self):
         """Test prompts module import."""
         from rlm.utils.prompts import (
-            RLM_SYSTEM_PROMPT,
-            USER_PROMPT,
+            RLM_SYSTEM_PROMPT_COMPLETION,
+            RLM_SYSTEM_PROMPT_SESSION,
+            USER_PROMPT_COMPLETION,
+            USER_PROMPT_SESSION,
             build_rlm_system_prompt,
             build_user_prompt,
         )
 
-        assert RLM_SYSTEM_PROMPT is not None
-        assert USER_PROMPT is not None
+        assert RLM_SYSTEM_PROMPT_COMPLETION is not None
+        assert RLM_SYSTEM_PROMPT_SESSION is not None
+        assert USER_PROMPT_COMPLETION is not None
+        assert USER_PROMPT_SESSION is not None
         assert callable(build_rlm_system_prompt)
         assert callable(build_user_prompt)
 

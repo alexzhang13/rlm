@@ -180,6 +180,7 @@ class DockerREPL(NonIsolatedEnv):
         image: str = "python:3.11-slim",
         lm_handler_address: tuple[str, int] | None = None,
         context_payload: dict | list | str | None = None,
+        context_scope: str = "completion",
         setup_code: str | None = None,
         persistent: bool = False,
         depth: int = 1,
@@ -191,8 +192,12 @@ class DockerREPL(NonIsolatedEnv):
             )
         super().__init__(persistent=persistent, depth=depth, **kwargs)
 
+        if context_scope not in {"completion", "session"}:
+            raise ValueError("context_scope must be 'completion' or 'session'")
+
         self.image = image
         self.lm_handler_address = lm_handler_address
+        self.context_scope = context_scope
         self.container_id: str | None = None
         self.proxy_server: HTTPServer | None = None
         self.proxy_thread: threading.Thread | None = None
@@ -257,11 +262,15 @@ class DockerREPL(NonIsolatedEnv):
         )
 
     def load_context(self, context_payload: dict | list | str):
+        var_name = (
+            "session_context_0" if self.context_scope == "session" else "completion_context"
+        )
         if isinstance(context_payload, str):
             escaped = context_payload.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
-            self.execute_code(f'context = """{escaped}"""')
+            self.execute_code(f'{var_name} = """{escaped}"""')
         else:
-            self.execute_code(f"import json; context = json.loads('{json.dumps(context_payload)}')")
+            context_json = json.dumps(context_payload)
+            self.execute_code(f"import json; {var_name} = json.loads('{context_json}')")
 
     def execute_code(self, code: str) -> REPLResult:
         start = time.perf_counter()

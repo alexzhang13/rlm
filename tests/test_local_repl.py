@@ -155,23 +155,23 @@ class TestLocalREPLContext:
     def test_string_context(self):
         """Test loading string context."""
         repl = LocalREPL(context_payload="This is the context data.")
-        assert "context" in repl.locals
-        assert repl.locals["context"] == "This is the context data."
+        assert "completion_context" in repl.locals
+        assert repl.locals["completion_context"] == "This is the context data."
         repl.cleanup()
 
     def test_dict_context(self):
         """Test loading dict context."""
         repl = LocalREPL(context_payload={"key": "value", "number": 42})
-        assert "context" in repl.locals
-        assert repl.locals["context"]["key"] == "value"
-        assert repl.locals["context"]["number"] == 42
+        assert "completion_context" in repl.locals
+        assert repl.locals["completion_context"]["key"] == "value"
+        assert repl.locals["completion_context"]["number"] == 42
         repl.cleanup()
 
     def test_list_context(self):
         """Test loading list context."""
         repl = LocalREPL(context_payload=[1, 2, 3, "four"])
-        assert "context" in repl.locals
-        assert repl.locals["context"] == [1, 2, 3, "four"]
+        assert "completion_context" in repl.locals
+        assert repl.locals["completion_context"] == [1, 2, 3, "four"]
         repl.cleanup()
 
 

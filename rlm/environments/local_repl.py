@@ -122,6 +122,7 @@ class LocalREPL(NonIsolatedEnv):
         self,
         lm_handler_address: tuple[str, int] | None = None,
         context_payload: dict | list | str | None = None,
+        context_scope: str = "completion",
         setup_code: str | None = None,
         persistent: bool = False,
         depth: int = 1,
@@ -129,12 +130,16 @@ class LocalREPL(NonIsolatedEnv):
     ):
         super().__init__(persistent=persistent, depth=depth, **kwargs)
 
+        if context_scope not in {"completion", "session"}:
+            raise ValueError("context_scope must be 'completion' or 'session'")
+
         self.lm_handler_address = lm_handler_address
+        self.context_scope = context_scope
         self.original_cwd = os.getcwd()
         self.temp_dir = tempfile.mkdtemp(prefix=f"repl_env_{uuid.uuid4()}_")
         self._lock = threading.Lock()
-        self._context_count: int = 0
-        self._history_count: int = 0
+        self._session_context_count: int = 0
+        self._session_history_count: int = 0
 
         # Setup globals, locals, and modules in environment.
         self.setup()
@@ -229,14 +234,17 @@ class LocalREPL(NonIsolatedEnv):
             return [f"Error: LM query failed - {e}"] * len(prompts)
 
     def load_context(self, context_payload: dict | list | str):
-        """Load context into the environment as context_0 (and 'context' alias)."""
-        self.add_context(context_payload, 0)
+        """Load context into the environment based on the context scope."""
+        if self.context_scope == "session":
+            self.add_context(context_payload, 0)
+        else:
+            self.set_completion_context(context_payload)
 
     def add_context(
         self, context_payload: dict | list | str, context_index: int | None = None
     ) -> int:
         """
-        Add a context with versioned variable name.
+        Add a session context with versioned variable name.
 
         Args:
             context_payload: The context data to add
@@ -246,28 +254,31 @@ class LocalREPL(NonIsolatedEnv):
             The context index used.
         """
         if context_index is None:
-            context_index = self._context_count
+            context_index = self._session_context_count
 
-        var_name = f"context_{context_index}"
-
+        var_name = f"session_context_{context_index}"
         if isinstance(context_payload, str):
-            context_path = os.path.join(self.temp_dir, f"context_{context_index}.txt")
+            context_path = os.path.join(
+                self.temp_dir, f"session_context_{context_index}.txt"
+            )
             with open(context_path, "w") as f:
                 f.write(context_payload)
             self.execute_code(f"with open(r'{context_path}', 'r') as f:\n    {var_name} = f.read()")
         else:
-            context_path = os.path.join(self.temp_dir, f"context_{context_index}.json")
+            context_path = os.path.join(
+                self.temp_dir, f"session_context_{context_index}.json"
+            )
             with open(context_path, "w") as f:
                 json.dump(context_payload, f)
             self.execute_code(
                 f"import json\nwith open(r'{context_path}', 'r') as f:\n    {var_name} = json.load(f)"
             )
 
-        # Alias context_0 as 'context' for backward compatibility
-        if context_index == 0:
-            self.execute_code(f"context = {var_name}")
-
-        self._context_count = max(self._context_count, context_index + 1)
+        self._session_context_count = max(self._session_context_count, context_index + 1)
+        self.locals["context_history"] = [
+            self.locals[f"session_context_{index}"]
+            for index in range(self._session_context_count)
+        ]
         return context_index
 
     def update_handler_address(self, address: tuple[str, int]) -> None:
@@ -275,14 +286,14 @@ class LocalREPL(NonIsolatedEnv):
         self.lm_handler_address = address
 
     def get_context_count(self) -> int:
-        """Return the number of contexts loaded."""
-        return self._context_count
+        """Return the number of session contexts loaded."""
+        return self._session_context_count
 
     def add_history(
         self, message_history: list[dict[str, Any]], history_index: int | None = None
     ) -> int:
         """
-        Store a conversation's message history as a versioned variable.
+        Store a conversation's message history in session_history.
 
         Args:
             message_history: The list of message dicts from a completion call
@@ -291,24 +302,36 @@ class LocalREPL(NonIsolatedEnv):
         Returns:
             The history index used.
         """
-        if history_index is None:
-            history_index = self._history_count
+        if history_index is not None and history_index != self._session_history_count:
+            raise ValueError("history_index is not supported for session_history ordering")
 
-        var_name = f"history_{history_index}"
-
-        # Store deep copy to avoid reference issues with nested dicts
-        self.locals[var_name] = copy.deepcopy(message_history)
-
-        # Alias history_0 as 'history' for convenience
-        if history_index == 0:
-            self.locals["history"] = self.locals[var_name]
-
-        self._history_count = max(self._history_count, history_index + 1)
-        return history_index
+        session_history = self.locals.setdefault("session_history", [])
+        session_history.append(copy.deepcopy(message_history))
+        self._session_history_count = len(session_history)
+        return self._session_history_count - 1
 
     def get_history_count(self) -> int:
-        """Return the number of conversation histories stored."""
-        return self._history_count
+        """Return the number of session histories stored."""
+        return self._session_history_count
+
+    def set_completion_context(self, context_payload: dict | list | str) -> None:
+        """Set completion_context for completion calls."""
+        if isinstance(context_payload, str):
+            context_path = os.path.join(self.temp_dir, "completion_context.txt")
+            with open(context_path, "w") as f:
+                f.write(context_payload)
+            self.execute_code(
+                f"with open(r'{context_path}', 'r') as f:\n    completion_context = f.read()"
+            )
+        else:
+            context_path = os.path.join(self.temp_dir, "completion_context.json")
+            with open(context_path, "w") as f:
+                json.dump(context_payload, f)
+            self.execute_code(
+                "import json\nwith open(r'{path}', 'r') as f:\n    completion_context = json.load(f)".format(
+                    path=context_path
+                )
+            )
 
     @contextmanager
     def _capture_output(self):
