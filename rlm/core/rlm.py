@@ -159,7 +159,6 @@ class RLM:
                 lm_handler.register_client(other_client.model_name, other_client)
 
         lm_handler.start()
-
         # Environment: reuse if persistent, otherwise create fresh
         if self.persistent and self._persistent_env is not None:
             environment = self._persistent_env
@@ -331,12 +330,11 @@ class RLM:
                 # Verbose output for this iteration
                 self.verbose.print_iteration(iteration, i + 1)
 
-                if final_answer is not None:
+                if final_answer:
                     time_end = time.perf_counter()
                     usage = lm_handler.get_usage_summary()
                     self.verbose.print_final_answer(final_answer)
                     self.verbose.print_summary(i + 1, time_end - time_start, usage.to_dict())
-
                     # Store message history in persistent environment
                     if (
                         session_mode
@@ -462,13 +460,13 @@ class RLM:
         - get_history_count(): Return the number of stored session histories
         - set_completion_context(payload): Set completion_context for completion calls
 
-        Currently only 'local' (LocalREPL) supports these methods.
+        Currently 'local' (LocalREPL) and 'jupyter' (JupyterREPL) support these methods.
 
         Raises:
             ValueError: If the environment type does not support persistent mode.
         """
         # Known environments that support persistence
-        persistent_supported_environments = {"local"}
+        persistent_supported_environments = {"local", "jupyter"}
 
         if self.environment_type not in persistent_supported_environments:
             raise ValueError(

@@ -81,13 +81,96 @@ We support two types of REPL environments -- isolated, and non-isolated. Non-iso
 
 ```python
 rlm = RLM(
-    environment="...", # "local", "docker", "modal", "prime"
+    environment="...", # "local", "docker", "modal", "prime", "jupyter"
     environment_kwargs={...},
 )
 ```
 
 ### Local Environments
 The default `local` environment `LocalREPL` runs in the same process as the RLM itself, with specified global and local namespaces for minimal security. Using this REPL is generally safe, but should not be used for production settings. It also shares the same virtual environment (e.g. Conda or uv) as the host process.
+
+#### Jupyter Notebook
+We support a `jupyter` environment that runs code blocks directly in the notebook kernel with stdout/stderr capture.
+```python
+rlm = RLM(
+    environment="jupyter",
+    environment_kwargs={"workdir": ".", "allow_builtin_imports": True},
+)
+```
+To keep REPL state across `completion()` and `session.chat()` calls, enable persistence (supported for `jupyter`):
+```python
+rlm = RLM(
+    environment="jupyter",
+    persistent=True,
+)
+```
+Persistent sessions expose prompt payloads as `session_context_0`, `session_context_1`, etc. The latest prompt is `session_context_{n-1}`. A `context_history` list contains all session contexts (overwritten each call), and `session_history` stores per-call message histories. Session prompts identify the current prompt as `session_context_{n-1}`; completion prompts only mention `completion_context`. Call `rlm.close()` when done.
+
+Install notebook extras if you haven't already:
+```bash
+uv pip install -e ".[notebook]"
+```
+To make variables from executed code blocks available in the notebook namespace, enable sync:
+```python
+rlm = RLM(
+    environment="jupyter",
+    environment_kwargs={
+        "workdir": ".",
+        "allow_builtin_imports": True,
+        "sync_to_user_ns": True,
+    },
+)
+```
+For notebook-friendly rendering:
+```python
+from rlm.utils.notebook import render_completion
+result = rlm.completion("...")
+render_completion(result)
+```
+
+To write a trace notebook per run:
+```python
+from rlm.utils.trace_notebook import enable_trace_notebook
+
+logger, trace_handle = enable_trace_notebook(log_dir="logs")
+rlm = RLM(environment="jupyter", logger=logger)
+rlm.completion("...")
+
+# stop_trace_writer(trace_handle)  # optional
+```
+Trace notebooks include `llm_query` replay from recorded subcalls. Prompts must match exactly.
+
+To access the markdown trace on the result:
+```python
+result = rlm.completion("...")
+result.trace_markdown
+```
+For multi-turn sessions with cumulative traces:
+```python
+session = rlm.start_session()
+result = session.chat("...")
+result.trace_markdown
+```
+For multi-turn sessions, the REPL exposes all prompt payloads as `session_context_0`, `session_context_1`, etc. The latest prompt is `session_context_{n-1}`; `context_history` tracks all session contexts (overwritten each call), and `session_history` stores per-call message histories. Session prompts identify the current prompt as `session_context_{n-1}`; completion prompts only mention `completion_context`.
+Assistant responses are always strings; `FINAL_VAR(...)` values are coerced to string.
+
+To keep variables available in your notebook (after execution), enable sync:
+```python
+rlm = RLM(
+    environment="jupyter",
+    environment_kwargs={"sync_to_user_ns": True},
+)
+```
+
+To add custom tools for a single session, use `setup_code`:
+```python
+rlm = RLM(
+    environment="jupyter",
+    environment_kwargs={
+        "setup_code": "def my_tool(x): return x * 2",
+    },
+)
+```
 
 #### Docker <img src="https://github.com/docker.png" alt="Docker" height="20" style="vertical-align: middle;"/> (*requires [Docker installed](https://docs.docker.com/desktop/setup/install/)*)
 We also support a Docker-based environment called `DockerREPL` that launches the REPL environment as a Docker image. By default, we use the `python:3.11-slim` image, but the user can specify custom images as well.

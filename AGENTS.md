@@ -82,6 +82,7 @@ uv run pre-commit install
 - Small, focused diffs
 - One change per PR
 - Backward compatibility is only desirable if it can be done without introducing excessive maintenance burden
+- For POCs, prefer breaking changes over compatibility shims; remove obsolete args instead of accepting them
 - Delete dead code (don't guard it)
 
 ### Checklist
@@ -162,13 +163,14 @@ Environment implementations live in `rlm/environments/`. Choose the appropriate 
 
 ### Key Implementation Details
 - `setup()`: Initialize globals, locals, and helper functions
-- `load_context()`: Make context available as `context` variable
+- `load_context()`: Make context available as `context_0` and set `context` to the latest prompt
 - `execute_code()`: Execute code, capture stdout/stderr, return `REPLResult`
 - Always provide `llm_query` and `llm_query_batched` functions in environment globals
 
 ### State Management
 Environments must provide these globals to executed code:
-- `context`: The loaded context payload
+- `context_0`: The loaded context payload
+- `context`: The latest prompt payload (updates as new contexts are added)
 - `llm_query(prompt, model=None)`: For sub-LM calls
 - `llm_query_batched(prompts, model=None)`: For batched sub-LM calls
 - `FINAL_VAR(variable_name)`: For returning final answers
@@ -191,7 +193,7 @@ class MyEnvironment(NonIsolatedEnv):
         # Initialize execution namespace
         
     def load_context(self, context_payload: dict | list | str):
-        # Make context available to executed code
+        # Make context available as context_0 and set context to the latest prompt
         
     def execute_code(self, code: str) -> REPLResult:
         # Execute code and return REPLResult
@@ -317,4 +319,3 @@ When building a new isolated environment (e.g., for a new cloud provider):
 5. **Handle state** - Serialize/deserialize execution state between code blocks
 
 See `rlm/environments/modal_repl.py` as the canonical reference implementation.
-
