@@ -36,6 +36,11 @@ def get_client(
 
         backend_kwargs.setdefault("base_url", "https://openrouter.ai/api/v1")
         return OpenAIClient(**backend_kwargs)
+    elif backend == "vercel":
+        from rlm.clients.openai import OpenAIClient
+
+        backend_kwargs.setdefault("base_url", "https://ai-gateway.vercel.sh/v1")
+        return OpenAIClient(**backend_kwargs)
     elif backend == "litellm":
         from rlm.clients.litellm import LiteLLMClient
 
@@ -54,5 +59,5 @@ def get_client(
         return AzureOpenAIClient(**backend_kwargs)
     else:
         raise ValueError(
-            f"Unknown backend: {backend}. Supported backends: ['openai', 'vllm', 'portkey', 'openrouter', 'litellm', 'anthropic', 'azure_openai', 'gemini']"
+            f"Unknown backend: {backend}. Supported backends: ['openai', 'vllm', 'portkey', 'openrouter', 'litellm', 'anthropic', 'azure_openai', 'gemini', 'vercel']"
         )

@@ -53,9 +53,14 @@ uv init && uv venv --python 3.12  # change version as needed
 uv pip install -e .
 ```
 
-To run a quick test, the following will run an RLM query with the OpenAI client using your environment variable `OPENAI_API_KEY` (feel free to change this). This will generate console output as well as a log which you can use with the visualizer to explore the trajectories. 
+This project includes a `Makefile` to simplify common tasks.
+
+- `make install`: Install base dependencies.
+- `make check`: Run linter, formatter, and tests.
+
+To run a quick test, the following will run an RLM query with the OpenAI client using your environment variable `OPENAI_API_KEY` (feel free to change this). This will generate console output as well as a log which you can use with the visualizer to explore the trajectories.
 ```bash
-uv run examples/quickstart.py
+make quickstart
 ```
 
 The default RLM client uses a REPL environment that runs on the host process through Python `exec` calls. It uses the same virtual environment as the host process (i.e. it will have access to the same dependencies), but with some limitations in its available global modules. As an example, we can call RLM completions using GPT-5-nano:
@@ -98,14 +103,13 @@ modal setup   # authenticate account
 ```
 
 #### Prime Intellect Sandboxes <img src="https://github.com/PrimeIntellect-ai.png" alt="Prime Intellect" height="20" style="vertical-align: middle;"/>
-> [!WARNING]
-> **Prime Intellect Sandboxes** are currently a beta feature. See the [documentation](https://docs.primeintellect.ai/sandboxes/overview) for more information.
+> [!NOTE]
+> **Prime Intellect Sandboxes** are currently a beta feature. See the [documentation](https://docs.primeintellect.ai/sandboxes/overview) for more information. We noticed slow runtimes when using these sandboxes, which is currently an open issue.
 
-> [!IMPORTANT]
-> **Prime Intellect Sandboxes are not yet implemented** in `rlm`. This feature is not available at the moment until we patch some bugs.
 
-See [Prime CLI setup instructions](https://docs.primeintellect.ai/inference/overview) for getting setup. You will need to set your CLI key.
+To use [Prime Sandboxes](https://docs.primeintellect.ai/sandboxes/sdk), install the SDK and set your API key:
 ```bash
+uv pip install -e ".[prime]"
 export PRIME_API_KEY=...
 ```
 

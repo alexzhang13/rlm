@@ -116,15 +116,31 @@ USER_PROMPT = """Think step-by-step on what to do using the REPL environment (wh
 USER_PROMPT_WITH_ROOT = """Think step-by-step on what to do using the REPL environment (which contains the context) to answer the original prompt: \"{root_prompt}\".\n\nContinue using the REPL environment, which has the `context` variable, and querying sub-LLMs by writing to ```repl``` tags, and determine your answer. Your next action:"""
 
 
-def build_user_prompt(root_prompt: str | None = None, iteration: int = 0) -> dict[str, str]:
+def build_user_prompt(
+    root_prompt: str | None = None,
+    iteration: int = 0,
+    context_count: int = 1,
+    history_count: int = 0,
+) -> dict[str, str]:
     if iteration == 0:
         safeguard = "You have not interacted with the REPL environment or seen your prompt / context yet. Your next action should be to look through and figure out how to answer the prompt, so don't just provide a final answer yet.\n\n"
         prompt = safeguard + (
             USER_PROMPT_WITH_ROOT.format(root_prompt=root_prompt) if root_prompt else USER_PROMPT
         )
-        return {"role": "user", "content": prompt}
     else:
         prompt = "The history before is your previous interactions with the REPL environment. " + (
             USER_PROMPT_WITH_ROOT.format(root_prompt=root_prompt) if root_prompt else USER_PROMPT
         )
-        return {"role": "user", "content": prompt}
+
+    # Inform model about multiple contexts if present
+    if context_count > 1:
+        prompt += f"\n\nNote: You have {context_count} contexts available (context_0 through context_{context_count - 1})."
+
+    # Inform model about prior conversation histories if present
+    if history_count > 0:
+        if history_count == 1:
+            prompt += "\n\nNote: You have 1 prior conversation history available in the `history` variable."
+        else:
+            prompt += f"\n\nNote: You have {history_count} prior conversation histories available (history_0 through history_{history_count - 1})."
+
+    return {"role": "user", "content": prompt}

@@ -21,6 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 modal = ["modal>=0.73.0", "dill>=0.3.7"]
 e2b = ["e2b-code-interpreter>=0.0.11", "dill>=0.3.7"]
+prime = ["prime-sandboxes>=0.2.0", "dill>=0.3.7"]
 
 [build-system]
 requires = ["setuptools>=61.0"]
