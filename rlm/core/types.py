@@ -96,6 +96,7 @@ class RLMChatCompletion:
     response: str
     usage_summary: UsageSummary
     execution_time: float
+    trace_markdown: str = ""
 
     def to_dict(self):
         return {
@@ -104,6 +105,7 @@ class RLMChatCompletion:
             "response": self.response,
             "usage_summary": self.usage_summary.to_dict(),
             "execution_time": self.execution_time,
+            "trace_markdown": self.trace_markdown,
         }
 
     @classmethod
@@ -114,7 +116,27 @@ class RLMChatCompletion:
             response=data.get("response"),
             usage_summary=UsageSummary.from_dict(data.get("usage_summary")),
             execution_time=data.get("execution_time"),
+            trace_markdown=data.get("trace_markdown", ""),
         )
+
+    def render_trace(self) -> None:
+        if _in_notebook():
+            from IPython.display import Markdown, display
+
+            display(Markdown(self.trace_markdown))
+            return
+        print(self.trace_markdown)
+
+
+def _in_notebook() -> bool:
+    try:
+        from IPython import get_ipython
+    except Exception:
+        return False
+    ip = get_ipython()
+    if ip is None:
+        return False
+    return hasattr(ip, "kernel")
 
 
 @dataclass

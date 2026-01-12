@@ -1,18 +1,74 @@
-import { RLMIteration, RLMLogFile, LogMetadata, RLMConfigMetadata, extractFinalAnswer } from './types';
+import {
+  RLMIteration,
+  RLMLogFile,
+  LogMetadata,
+  RLMConfigMetadata,
+  extractFinalAnswer,
+  CodeBlock,
+} from './types';
 
 // Extract the context variable from code block locals
 export function extractContextVariable(iterations: RLMIteration[]): string | null {
   for (const iter of iterations) {
-    for (const block of iter.code_blocks) {
-      if (block.result?.locals?.context) {
-        const ctx = block.result.locals.context;
-        if (typeof ctx === 'string') {
-          return ctx;
-        }
+    const blocks = iter.code_blocks ?? [];
+    for (const block of blocks) {
+      const locals = block.result?.locals;
+      const preview = resolveContextPreview(locals);
+      if (preview) {
+        return preview;
       }
     }
   }
   return null;
+}
+
+function resolveContextPreview(locals: Record<string, unknown> | undefined): string | null {
+  if (!locals) return null;
+  const completionContext = locals.completion_context;
+  if (typeof completionContext === 'string') {
+    return completionContext;
+  }
+  const contextHistory = locals.context_history;
+  if (Array.isArray(contextHistory) && contextHistory.length > 0) {
+    const latest = contextHistory[contextHistory.length - 1];
+    const preview = formatContextValue(latest);
+    if (preview) return preview;
+  }
+
+  const sessionContextKey = findLatestSessionContextKey(locals);
+  if (sessionContextKey) {
+    const preview = formatContextValue(locals[sessionContextKey]);
+    if (preview) return preview;
+  }
+
+  return null;
+}
+
+function findLatestSessionContextKey(locals: Record<string, unknown>) {
+  let latestKey: string | null = null;
+  let latestIndex = -1;
+  for (const key of Object.keys(locals)) {
+    if (!key.startsWith('session_context_')) continue;
+    const suffix = key.slice('session_context_'.length);
+    const index = Number.parseInt(suffix, 10);
+    if (Number.isNaN(index)) continue;
+    if (index > latestIndex) {
+      latestIndex = index;
+      latestKey = key;
+    }
+  }
+  return latestKey;
+}
+
+function formatContextValue(value: unknown): string | null {
+  if (typeof value === 'string') return value;
+  if (value == null) return null;
+  try {
+    const serialized = JSON.stringify(value);
+    return serialized.length > 0 ? serialized : String(value);
+  } catch {
+    return String(value);
+  }
 }
 
 // Default config when metadata is not present (backwards compatibility)
@@ -55,8 +111,7 @@ export function parseJSONL(content: string): ParsedJSONL {
           environment_kwargs: parsed.environment_kwargs ?? null,
           other_backends: parsed.other_backends ?? null,
         };
-      } else {
-        // This is an iteration entry
+      } else if (parsed.type === 'iteration' || looksLikeIteration(parsed)) {
         iterations.push(parsed as RLMIteration);
       }
     } catch (e) {
@@ -65,6 +120,15 @@ export function parseJSONL(content: string): ParsedJSONL {
   }
   
   return { iterations, config };
+}
+
+function looksLikeIteration(entry: Record<string, unknown>) {
+  if (entry == null || typeof entry !== 'object') return false;
+  return (
+    typeof entry['iteration'] === 'number' &&
+    typeof entry['response'] === 'string' &&
+    Array.isArray(entry['prompt'])
+  );
 }
 
 export function extractContextQuestion(iterations: RLMIteration[]): string {
@@ -105,12 +169,11 @@ export function extractContextQuestion(iterations: RLMIteration[]): string {
   
   // Check code block output for actual context
   for (const iter of iterations) {
-    for (const block of iter.code_blocks) {
-      if (block.result?.locals?.context) {
-        const ctx = block.result.locals.context;
-        if (typeof ctx === 'string' && ctx.length < 500) {
-          return ctx;
-        }
+    const blocks = iter.code_blocks ?? [];
+    for (const block of blocks) {
+      const preview = resolveContextPreview(block.result?.locals);
+      if (preview && preview.length < 500) {
+        return preview;
       }
     }
   }
@@ -126,20 +189,21 @@ export function computeMetadata(iterations: RLMIteration[]): LogMetadata {
   let finalAnswer: string | null = null;
   
   for (const iter of iterations) {
-    totalCodeBlocks += iter.code_blocks.length;
+    const blocks: CodeBlock[] = iter.code_blocks ?? [];
+    totalCodeBlocks += blocks.length;
     
     // Use iteration_time if available, otherwise sum code block times
     if (iter.iteration_time != null) {
       totalExecutionTime += iter.iteration_time;
     } else {
-      for (const block of iter.code_blocks) {
+      for (const block of blocks) {
         if (block.result) {
           totalExecutionTime += block.result.execution_time || 0;
         }
       }
     }
     
-    for (const block of iter.code_blocks) {
+    for (const block of blocks) {
       if (block.result) {
         if (block.result.stderr) {
           hasErrors = true;
@@ -178,4 +242,3 @@ export function parseLogFile(fileName: string, content: string): RLMLogFile {
     config,
   };
 }
-

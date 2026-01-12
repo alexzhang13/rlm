@@ -43,6 +43,31 @@ class RLMLogger:
 
         self._metadata_logged = True
 
+    def log_run_context(
+        self,
+        prompt,
+        root_prompt: str | None = None,
+        environment_type: str | None = None,
+        environment_kwargs: dict | None = None,
+        session_mode: bool | None = None,
+    ) -> dict:
+        """Log the prompt payload and optional root prompt for a single run."""
+        entry = {
+            "type": "run_context",
+            "timestamp": datetime.now().isoformat(),
+            "prompt": prompt,
+            "root_prompt": root_prompt,
+            "environment_type": environment_type,
+            "environment_kwargs": environment_kwargs or {},
+            "session_mode": session_mode,
+        }
+
+        with open(self.log_file_path, "a") as f:
+            json.dump(entry, f)
+            f.write("\n")
+
+        return entry
+
     def log(self, iteration: RLMIteration):
         """Log an RLMIteration to the file."""
         self._iteration_count += 1

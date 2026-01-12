@@ -28,6 +28,7 @@ from rlm.utils.prompts import (
     build_user_prompt,
 )
 from rlm.utils.rlm_utils import filter_sensitive_keys
+from rlm.utils.trace_markdown import build_trace_markdown
 
 
 class RLM:
@@ -100,8 +101,7 @@ class RLM:
         self.system_prompt = self.system_prompt_session
         self.logger = logger
         self.verbose = VerbosePrinter(enabled=verbose)
-
-        # Persistence support
+        self.trace_markdown_history = ""
         self.persistent = persistent
         self._persistent_env: SupportsPersistence | None = None
 
@@ -226,12 +226,15 @@ class RLM:
         Returns:
             A final answer as a string.
         """
-        completion, _ = self._run_completion(
+        self.trace_markdown_history = ""
+        completion, _, trace_history = self._run_completion(
             prompt=prompt,
             root_prompt=root_prompt,
             message_history=None,
+            trace_history="",
             session_mode=False,
         )
+        self.trace_markdown_history = trace_history
         return completion
 
     def _run_completion(
@@ -240,9 +243,28 @@ class RLM:
         prompt: str | dict[str, Any],
         root_prompt: str | None,
         message_history: list[dict[str, Any]] | None,
+        trace_history: str,
         session_mode: bool,
-    ) -> tuple[RLMChatCompletion, list[dict[str, Any]]]:
+    ) -> tuple[RLMChatCompletion, list[dict[str, Any]], str]:
         time_start = time.perf_counter()
+
+        run_context_entry = None
+        if self.logger:
+            run_context_entry = self.logger.log_run_context(
+                prompt=prompt,
+                root_prompt=root_prompt,
+                environment_type=self.environment_type,
+                environment_kwargs=filter_sensitive_keys(self.environment_kwargs),
+                session_mode=session_mode,
+            )
+
+        run_context = run_context_entry or {
+            "prompt": prompt,
+            "root_prompt": root_prompt,
+            "environment_type": self.environment_type,
+            "environment_kwargs": filter_sensitive_keys(self.environment_kwargs),
+            "session_mode": session_mode,
+        }
 
         # If we're at max depth, the RLM is an LM, so we fallback to the regular LM.
         if self.depth >= self.max_depth:
@@ -251,8 +273,8 @@ class RLM:
             response = client.completion(prompt)
             fallback_end = time.perf_counter()
             usage = client.get_last_usage()
-            if message_history is None:
-                message_history = self._setup_prompt(prompt, session_mode=session_mode)
+            run_trace = build_trace_markdown(run_context, [])
+            trace_history = append_trace_history(trace_history, run_trace)
             completion = RLMChatCompletion(
                 root_model=self.backend_kwargs.get("model_name", "unknown")
                 if self.backend_kwargs
@@ -261,8 +283,11 @@ class RLM:
                 response=response,
                 usage_summary=usage,
                 execution_time=fallback_end - fallback_start,
+                trace_markdown=trace_history,
             )
-            return completion, message_history
+            if message_history is None:
+                message_history = self._setup_prompt(prompt, session_mode=session_mode)
+            return completion, message_history, trace_history
 
         with self._spawn_completion_context(
             prompt,
@@ -270,6 +295,7 @@ class RLM:
         ) as (lm_handler, environment):
             if message_history is None:
                 message_history = self._setup_prompt(prompt, session_mode=session_mode)
+            iterations: list[RLMIteration] = []
 
             for i in range(self.max_iterations):
                 # Current prompt = message history + additional prompt suffix
@@ -289,10 +315,13 @@ class RLM:
                     prompt=current_prompt,
                     lm_handler=lm_handler,
                     environment=environment,
+                    iteration_index=i + 1,
                 )
+                iterations.append(iteration)
 
                 # Check if RLM is done and has a final answer.
-                final_answer = find_final_answer(iteration.response, environment=environment)
+                raw_final_answer = find_final_answer(iteration.response, environment=environment)
+                final_answer = raw_final_answer or None
                 iteration.final_answer = final_answer
 
                 # If logger is used, log the iteration.
@@ -316,6 +345,8 @@ class RLM:
                     ):
                         environment.add_history(message_history)
 
+                    run_trace = build_trace_markdown(run_context, iterations)
+                    trace_history = append_trace_history(trace_history, run_trace)
                     completion = RLMChatCompletion(
                         root_model=self.backend_kwargs.get("model_name", "unknown")
                         if self.backend_kwargs
@@ -324,8 +355,9 @@ class RLM:
                         response=final_answer,
                         usage_summary=usage,
                         execution_time=time_end - time_start,
+                        trace_markdown=trace_history,
                     )
-                    return completion, message_history
+                    return completion, message_history, trace_history
 
                 # Format the iteration for the next prompt.
                 new_messages = format_iteration(iteration)
@@ -335,15 +367,19 @@ class RLM:
 
             # Default behavior: we run out of iterations, provide one final answer
             time_end = time.perf_counter()
-            final_answer = self._default_answer(message_history, lm_handler)
+            default_iteration = self._default_answer(message_history, lm_handler)
+            iterations.append(default_iteration)
+            message_history.extend(format_iteration(default_iteration))
+            final_answer = default_iteration.final_answer or ""
             usage = lm_handler.get_usage_summary()
             self.verbose.print_final_answer(final_answer)
             self.verbose.print_summary(self.max_iterations, time_end - time_start, usage.to_dict())
-
             # Store message history in persistent environment
             if session_mode and self.persistent and isinstance(environment, SupportsPersistence):
                 environment.add_history(message_history)
 
+            run_trace = build_trace_markdown(run_context, iterations)
+            trace_history = append_trace_history(trace_history, run_trace)
             completion = RLMChatCompletion(
                 root_model=self.backend_kwargs.get("model_name", "unknown")
                 if self.backend_kwargs
@@ -352,14 +388,16 @@ class RLM:
                 response=final_answer,
                 usage_summary=usage,
                 execution_time=time_end - time_start,
+                trace_markdown=trace_history,
             )
-            return completion, message_history
+            return completion, message_history, trace_history
 
     def _completion_turn(
         self,
         prompt: str | dict[str, Any],
         lm_handler: LMHandler,
         environment: BaseEnv,
+        iteration_index: int,
     ) -> RLMIteration:
         """
         Perform a single iteration of the RLM, including prompting the model
@@ -382,7 +420,9 @@ class RLM:
             iteration_time=iteration_time,
         )
 
-    def _default_answer(self, message_history: list[dict[str, Any]], lm_handler: LMHandler) -> str:
+    def _default_answer(
+        self, message_history: list[dict[str, Any]], lm_handler: LMHandler
+    ) -> RLMIteration:
         """
         Default behavior if the RLM runs out of iterations and does not find a final answer.
         It will take the message history, and try to generate a final answer from it.
@@ -394,26 +434,17 @@ class RLM:
             }
         ]
         response = lm_handler.completion(current_prompt)
+        iteration = RLMIteration(
+            prompt=current_prompt,
+            response=response,
+            final_answer=response,
+            code_blocks=[],
+        )
 
         if self.logger:
-            self.logger.log(
-                RLMIteration(
-                    prompt=current_prompt,
-                    response=response,
-                    final_answer=response,
-                    code_blocks=[],
-                )
-            )
+            self.logger.log(iteration)
 
-        return response
-
-    def _fallback_answer(self, message: str | dict[str, Any]) -> str:
-        """
-        Fallback behavior if the RLM is actually at max depth, and should be treated as an LM.
-        """
-        client: BaseLM = get_client(self.backend, self.backend_kwargs)
-        response = client.completion(message)
-        return response
+        return iteration
 
     def start_session(self) -> "RLMSession":
         return RLMSession(self)
@@ -468,13 +499,21 @@ class RLM:
         return False
 
 
+def append_trace_history(existing: str, new_trace: str) -> str:
+    if not existing:
+        return new_trace
+    return f"{existing}\n\n---\n\n{new_trace}"
+
+
 class RLMSession:
     def __init__(self, rlm: RLM):
         self.rlm = rlm
         self.message_history: list[dict[str, Any]] | None = None
+        self.trace_markdown_history = ""
 
     def reset(self) -> None:
         self.message_history = None
+        self.trace_markdown_history = ""
 
     def chat(
         self, prompt: str | dict[str, Any], root_prompt: str | None = None
@@ -489,11 +528,13 @@ class RLMSession:
             )[1]
             self.message_history.append(metadata_prompt)
 
-        completion, message_history = self.rlm._run_completion(
+        completion, message_history, trace_history = self.rlm._run_completion(
             prompt=prompt_payload,
             root_prompt=root_prompt,
             message_history=self.message_history,
+            trace_history=self.trace_markdown_history,
             session_mode=True,
         )
         self.message_history = message_history
+        self.trace_markdown_history = trace_history
         return completion

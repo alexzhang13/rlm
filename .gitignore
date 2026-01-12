@@ -3,6 +3,8 @@
 
 # Logs
 logs/
+!visualizer/src/app/api/logs/
+!visualizer/src/app/api/logs/route.ts
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
