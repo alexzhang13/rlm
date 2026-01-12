@@ -33,7 +33,12 @@ def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | 
     If FINAL_VAR is found and an environment is provided, executes code to retrieve the variable value.
     Returns None if neither pattern is found.
 
-    Handles various model formats including special tokens like <|begin_of_box|>FINAL(...)<|end_of_box|>
+    Only accepts FINAL/FINAL_VAR in these positions to avoid false positives from CoT reasoning:
+    1. At the start of a line (with optional leading whitespace)
+    2. Immediately after special tokens like <|begin_of_box|>
+
+    This rejects cases like "I will then do FINAL(...)" where the model is explaining its plan.
+
     Args:
         text: The response text to parse
         environment: Optional environment to execute code for FINAL_VAR retrieval
@@ -41,8 +46,14 @@ def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | 
     Returns:
         The final answer string, or None if no final answer pattern is found
     """
-    # Check for FINAL_VAR pattern - allow special tokens before it
-    final_var_pattern = r"(?:^|\s|<\|[^|]+\|>)\s*FINAL_VAR\((.*?)\)"
+    # Pattern explanation:
+    # (?:^[ \t]*|(?<=\n)[ \t]*|<\|[^|]+\|>\s*) matches:
+    #   - Start of string with optional spaces/tabs: ^[ \t]*
+    #   - After newline with optional spaces/tabs: (?<=\n)[ \t]*
+    #   - After special tokens like <|...|>: <\|[^|]+\|>\s*
+
+    # Check for FINAL_VAR pattern first (more specific)
+    final_var_pattern = r"(?:^[ \t]*|(?<=\n)[ \t]*|<\|[^|]+\|>\s*)FINAL_VAR\((.*?)\)"
     match = re.search(final_var_pattern, text, re.MULTILINE | re.DOTALL)
     if match:
         variable_name = match.group(1).strip().strip('"').strip("'")
@@ -54,8 +65,8 @@ def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | 
             return final_answer
         return None
 
-    # Check for FINAL pattern - allow special tokens before it
-    final_pattern = r"(?:^|\s|<\|[^|]+\|>)\s*FINAL\((.*?)\)"
+    # Check for FINAL pattern
+    final_pattern = r"(?:^[ \t]*|(?<=\n)[ \t]*|<\|[^|]+\|>\s*)FINAL\((.*?)\)"
     match = re.search(final_pattern, text, re.MULTILINE | re.DOTALL)
     if match:
         return match.group(1).strip()
