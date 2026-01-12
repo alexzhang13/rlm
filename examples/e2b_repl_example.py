@@ -1,107 +1,28 @@
-"""
-Example usage of E2B REPL with code execution and LLM queries.
+import os
 
-Run with: python -m examples.e2b_repl_example
+from dotenv import load_dotenv
 
-Requires E2B API key set in environment:
-    export E2B_API_KEY=your_api_key
-"""
+from rlm import RLM
+from rlm.logger import RLMLogger
 
-from rlm.clients.base_lm import BaseLM
-from rlm.core.lm_handler import LMHandler
-from rlm.core.types import ModelUsageSummary, UsageSummary
-from rlm.environments.e2b_repl import E2BREPL
+load_dotenv()
 
+logger = RLMLogger(log_dir="./logs")
 
-class MockLM(BaseLM):
-    """Simple mock LM that echoes prompts."""
+rlm = RLM(
+    backend="openai",
+    backend_kwargs={
+        "api_key": os.getenv("OPENAI_API_KEY"),
+        "model_name": "gpt-5-nano",
+    },
+    environment="e2b",
+    environment_kwargs={
+        "timeout": 300,
+    },
+    max_depth=1,
+    logger=logger,
+    verbose=True,
+)
 
-    def __init__(self):
-        super().__init__(model_name="mock-model")
-
-    def completion(self, prompt):
-        return f"Mock response to: {prompt[:50]}"
-
-    async def acompletion(self, prompt):
-        return self.completion(prompt)
-
-    def get_usage_summary(self):
-        return UsageSummary(
-            model_usage_summaries={
-                "mock-model": ModelUsageSummary(
-                    total_calls=1, total_input_tokens=10, total_output_tokens=10
-                )
-            }
-        )
-
-    def get_last_usage(self):
-        return self.get_usage_summary()
-
-
-def main():
-    print("=" * 60)
-    print("E2B REPL Example")
-    print("=" * 60)
-
-    # Example 1: Basic code execution
-    print("\n[1] Basic code execution (no LLM handler)")
-    print("-" * 40)
-
-    with E2BREPL(timeout=300) as repl:
-        print(f"E2B sandbox created, ID: {repl.sandbox_id}")
-
-        result = repl.execute_code("x = 1 + 2")
-        print("Executed: x = 1 + 2")
-        print(f"Locals: {result.locals}")
-
-        result = repl.execute_code("print(x * 2)")
-        print("Executed: print(x * 2)")
-        print(f"Stdout: {result.stdout.strip()}")
-
-        result = repl.execute_code("answer = 42")
-        result = repl.execute_code('print(FINAL_VAR("answer"))')
-        print(f"FINAL_VAR('answer'): {result.stdout.strip()}")
-
-    # Example 2: With LLM handler
-    print("\n[2] Code execution with LLM handler")
-    print("-" * 40)
-
-    mock_client = MockLM()
-
-    with LMHandler(client=mock_client) as handler:
-        print(f"LM Handler started at {handler.address}")
-
-        with E2BREPL(
-            timeout=300,
-            lm_handler_address=handler.address,
-        ) as repl:
-            print(f"E2B sandbox created, ID: {repl.sandbox_id}")
-            print(f"Broker URL: {repl.broker_url}")
-
-            # Single LLM query
-            result = repl.execute_code('response = llm_query("What is 2+2?")')
-            print("Executed: response = llm_query('What is 2+2?')")
-            print(f"Stderr: {result.stderr or '(none)'}")
-
-            result = repl.execute_code("print(response)")
-            print(f"Response: {result.stdout.strip()}")
-
-            # Batched LLM query
-            result = repl.execute_code(
-                'responses = llm_query_batched(["Question 1", "Question 2", "Question 3"])'
-            )
-            print("\nExecuted: responses = llm_query_batched([...])")
-
-            result = repl.execute_code("print(f'Got {len(responses)} responses')")
-            print(f"Result: {result.stdout.strip()}")
-
-            result = repl.execute_code("print(responses[0])")
-            print(f"First response: {result.stdout.strip()}")
-
-    print("\n" + "=" * 60)
-    print("Done!")
-    print("=" * 60)
-
-
-if __name__ == "__main__":
-    main()
+result = rlm.completion("Using your code, solve 2^(2^(2^(2))). Show your work in Python.")
+print(result.response)
