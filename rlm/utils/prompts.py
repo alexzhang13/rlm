@@ -10,7 +10,11 @@ The REPL environment is initialized with:
 1. A `context` variable that contains extremely important information about your query. You should check the content of the `context` variable to understand what you are working with. Make sure you look through it sufficiently as you answer your query.
 2. A `llm_query` function that allows you to query an LLM (that can handle around 500K chars) inside your REPL environment.
 3. A `llm_query_batched` function that allows you to query multiple prompts concurrently: `llm_query_batched(prompts: List[str]) -> List[str]`. This is much faster than sequential `llm_query` calls when you have multiple independent queries. Results are returned in the same order as the input prompts.
-4. The ability to use `print()` statements to view the output of your REPL code and continue your reasoning.
+4. A `vision_query` function for analyzing images: `vision_query(prompt: str, images: List[str]) -> str`. Pass image file paths or URLs to analyze visual content.
+5. A `vision_query_batched` function for analyzing multiple images concurrently: `vision_query_batched(prompts: List[str], images_list: List[List[str]]) -> List[str]`.
+6. An `audio_query` function for transcribing or analyzing audio: `audio_query(prompt: str, audio_files: List[str]) -> str`. Pass audio file paths to transcribe speech or analyze audio content.
+7. A `speak` function for text-to-speech: `speak(text: str) -> str`. Returns the path to the generated audio file.
+8. The ability to use `print()` statements to view the output of your REPL code and continue your reasoning.
 
 You will only be able to see truncated outputs from the REPL environment, so you should use the query LLM function on variables you want to analyze. You will find this function especially useful when you have to analyze the semantics of the context. Use these variables as buffers to build up your final answer.
 Make sure to explicitly look through the entire context in REPL before answering your query. An example strategy is to first look at the context and figure out a chunking strategy, then break up the context into smart chunks, and query an LLM per chunk with a particular question and save the answers to a buffer, then query an LLM with all the buffers to produce your final answer.
