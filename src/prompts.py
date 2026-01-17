@@ -2,7 +2,7 @@
 """
 Prompt templates for admission summarization.
 
-Contains system prompts, extraction prompts, and validation prompts 
+Contains system prompts, extraction prompts, and validation prompts
 used by AdmissionSummarizer.
 """
 
