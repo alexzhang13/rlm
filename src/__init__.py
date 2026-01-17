@@ -28,6 +28,11 @@ try:
         FIELDS,
         FIELD_PROMPTS
     )
+    from .rlm_summarizer_batched import (
+        AdmissionSummarizerV3,
+        AdmissionSummaryV3,
+        create_summarizer_v3
+    )
     from .schema import (
         AdmissionSummaryV2,
         ImmutableAdmissionRecord,
@@ -55,5 +60,10 @@ __all__ = [
     'RLM_MEDICAL_SYSTEM_PROMPT',
     'EXTRACTION_USER_PROMPT',
     'FIELDS',
-    'FIELD_PROMPTS'
+    'FIELD_PROMPTS',
+    
+    # V3 batched summarizer
+    'AdmissionSummarizerV3',
+    'AdmissionSummaryV3',
+    'create_summarizer_v3'
 ]

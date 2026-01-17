@@ -25,14 +25,21 @@ from src.rlm_summarizer_batched import AdmissionSummarizerV3
 
 
 CONFIG = {
-    "model_name": "gemini-2.5-flash",
+    "model_name": "gemini-2.5-pro",
     "max_iterations": 8,
     "n_samples": 1,
-    "verbose": False,  # Disable verbose to avoid Rich console encoding on Windows
+    "verbose": True,  # Disable verbose to avoid Rich console encoding on Windows
 }
 
 
 def run_comparison():
+    # Check API key first
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        print("[ERROR] GEMINI_API_KEY not set")
+        print("   Set with: set GEMINI_API_KEY=your-key")
+        return 1
+    
     print("=" * 70)
     print("Comparison: RLM V2 (single query) vs V3 (batched field-by-field)")
     print("=" * 70)
@@ -52,8 +59,6 @@ def run_comparison():
     print(f"   Selected: {len(samples)} patient(s)")
     
     # Initialize summarizers
-    api_key = os.environ.get("GEMINI_API_KEY")
-    
     v2_summarizer = AdmissionSummarizerWeek2(
         api_key=api_key,
         model_name=CONFIG['model_name'],
@@ -145,7 +150,12 @@ def run_comparison():
                 print(f"\n[FIELD] {field.upper()}")
                 print(f"   V2: {v2_val}")
                 print(f"   V3: {v3_val}")
+    
+    print("\n" + "=" * 70)
+    print("[DONE] Comparison complete!")
+    print("=" * 70)
+    return 0
 
 
 if __name__ == "__main__":
-    run_comparison()
+    sys.exit(run_comparison())

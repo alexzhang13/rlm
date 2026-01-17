@@ -28,104 +28,6 @@ from rlm import RLM
 logger = logging.getLogger(__name__)
 
 
-# =====================================================
-# V3 QUERY - Field-by-Field Batched Extraction
-# =====================================================
-
-RLM_V3_QUERY = """Extract structured information from the discharge note in `context['context']`.
-
-The note has headers like: <DISCHARGE DIAGNOSIS>, <DISCHARGE DISPOSITION>, <HISTORY OF PRESENT ILLNESS>, <PAST MEDICAL HISTORY>, <PHYSICAL EXAM>, etc.
-
-TASK: Use llm_query_batched() to extract ALL 5 fields IN PARALLEL, then combine results and return immediately with FINAL_VAR().
-
-Execute this code:
-```repl
-import json
-
-text = context['context']
-
-# Define 5 focused prompts - each extracts ONE field
-prompts = [
-    f'''From this discharge note, extract ONLY the DIAGNOSES.
-Include: primary diagnosis, secondary diagnoses, active conditions.
-Exclude: past medical history conditions unless actively addressed.
-Return as a JSON list of short strings.
-
-Text:
-{text}
-
-Return ONLY a JSON list like: ["diagnosis 1", "diagnosis 2"]''',
-
-    f'''From this discharge note, extract ONLY the KEY CLINICAL EVENTS.
-Include: procedures, surgeries, significant findings, treatments given.
-Exclude: routine vitals, medications.
-Return as a JSON list of short strings.
-
-Text:
-{text}
-
-Return ONLY a JSON list like: ["event 1", "event 2"]''',
-
-    f'''From this discharge note, extract ONLY the OPEN ISSUES at discharge.
-Include: unresolved problems, pending tests, ongoing treatments, follow-up required.
-Return as a JSON list of short strings.
-
-Text:
-{text}
-
-Return ONLY a JSON list like: ["issue 1", "issue 2"]''',
-
-    f'''From this discharge note, extract ONLY COMPLICATIONS during THIS admission.
-Include: new problems that developed during hospital stay.
-Exclude: historical complications from past surgeries.
-Return as a JSON list of short strings. If none, return [].
-
-Text:
-{text}
-
-Return ONLY a JSON list like: ["complication 1"] or []''',
-
-    f'''From this discharge note, extract ONLY the DISPOSITION.
-This is where the patient was discharged to.
-Return as a single short string.
-
-Text:
-{text}
-
-Return ONLY the disposition like: "Home" or "Home With Service" or "SNF"'''
-]
-
-# Run all 5 queries IN PARALLEL
-results = llm_query_batched(prompts)
-
-# Parse each result
-def parse_list(s):
-    try:
-        return json.loads(s) if s.strip().startswith('[') else []
-    except:
-        return []
-
-def parse_string(s):
-    s = s.strip()
-    if s.startswith('"') and s.endswith('"'):
-        return s[1:-1]
-    return s
-
-result = {
-    "diagnoses": parse_list(results[0]),
-    "key_events": parse_list(results[1]),
-    "open_issues": parse_list(results[2]),
-    "complications": parse_list(results[3]),
-    "disposition": parse_string(results[4])
-}
-
-print(f"Extracted: {len(result['diagnoses'])} diagnoses, {len(result['key_events'])} events")
-```
-
-FINAL_VAR(result)
-"""
-
-
 @dataclass
 class AdmissionSummaryV3:
     """Simplified 5-field admission summary - V3."""
@@ -147,12 +49,14 @@ class AdmissionSummarizerV3:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model_name: str = "gemini-3-pro-preview",
-        max_iterations: int = 5,  # Should complete in 2-3 iterations
+        model_name: str = "gemini-2.5-flash",
+        max_iterations: int = 8,
         max_depth: int = 1,
         verbose: bool = False
     ):
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
+        if not self.api_key:
+            raise ValueError("GEMINI_API_KEY must be set")
         self.model_name = model_name
         self.max_iterations = max_iterations
         self.max_depth = max_depth
@@ -186,11 +90,87 @@ class AdmissionSummarizerV3:
         """
         rlm = self._create_rlm()
         
+        # Root prompt instructs the RLM to use batched queries
+        root_prompt = """Extract 5 fields from the discharge note in `context` using parallel batched queries.
+
+Execute this code:
+```repl
+import json
+
+text = context  # context is the discharge note string
+
+# Define 5 focused prompts - each extracts ONE field
+prompt_diagnoses = "From this discharge note, extract ONLY the DIAGNOSES as a JSON list. Include primary and secondary diagnoses. Return ONLY a JSON list like [\\\"diagnosis 1\\\", \\\"diagnosis 2\\\"].\\n\\nText:\\n" + text[:40000]
+
+prompt_events = "From this discharge note, extract ONLY the KEY CLINICAL EVENTS as a JSON list. Include procedures, surgeries, treatments. Return ONLY a JSON list.\\n\\nText:\\n" + text[:40000]
+
+prompt_issues = "From this discharge note, extract ONLY the OPEN ISSUES at discharge as a JSON list. Include unresolved problems, pending tests. Return ONLY a JSON list.\\n\\nText:\\n" + text[:40000]
+
+prompt_complications = "From this discharge note, extract ONLY COMPLICATIONS during this admission as a JSON list. If none, return [].\\n\\nText:\\n" + text[:40000]
+
+prompt_disposition = "From this discharge note, extract ONLY the DISPOSITION (where discharged to) as a single string like Home or SNF.\\n\\nText:\\n" + text[:40000]
+
+prompts = [prompt_diagnoses, prompt_events, prompt_issues, prompt_complications, prompt_disposition]
+
+# Run all 5 queries IN PARALLEL
+print("Running batched queries...")
+results = llm_query_batched(prompts)
+print(f"Got {len(results)} results")
+
+# Parse each result
+def safe_parse_list(s):
+    s = s.strip()
+    try:
+        # Try direct JSON parse
+        parsed = json.loads(s)
+        if isinstance(parsed, list):
+            return parsed
+        return []
+    except:
+        # Try to find JSON list in response
+        import re
+        match = re.search(r'\\[.*?\\]', s, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group())
+            except:
+                pass
+        return []
+
+def safe_parse_string(s):
+    s = s.strip()
+    # Remove quotes if present
+    if s.startswith('"') and s.endswith('"'):
+        return s[1:-1]
+    if s.startswith("'") and s.endswith("'"):
+        return s[1:-1]
+    # Take first line, remove common prefixes
+    first_line = s.split('\\n')[0].strip()
+    for prefix in ['Disposition:', 'The disposition is', 'Patient discharged to']:
+        if first_line.lower().startswith(prefix.lower()):
+            first_line = first_line[len(prefix):].strip()
+    return first_line[:100]  # Limit length
+
+result = {
+    "diagnoses": safe_parse_list(results[0]),
+    "key_events": safe_parse_list(results[1]),
+    "open_issues": safe_parse_list(results[2]),
+    "complications": safe_parse_list(results[3]),
+    "disposition": safe_parse_string(results[4])
+}
+
+print(f"Extracted: {len(result['diagnoses'])} diagnoses, {len(result['key_events'])} events, disposition: {result['disposition']}")
+```
+
+FINAL_VAR(result)"""
+        
         try:
             result = rlm.completion(
-                prompt={"context": discharge_text, "query": RLM_V3_QUERY},
-                root_prompt="Extract diagnoses, key_events, open_issues, complications, disposition using batched queries"
+                prompt=discharge_text,  # Pass text directly, not as dict
+                root_prompt=root_prompt
             )
+            
+            logger.info(f"RLM V3 response type: {type(result.response) if hasattr(result, 'response') else type(result)}")
             
             parsed = self._safe_parse(result)
             
@@ -204,6 +184,9 @@ class AdmissionSummarizerV3:
                 }
             else:
                 logger.warning(f"V3: Unexpected result type: {type(parsed)}")
+                # Try fallback parsing
+                if hasattr(result, 'response') and isinstance(result.response, str):
+                    return self._parse_fallback_response(result.response)
                 return self._empty_summary()
                 
         except Exception as e:
@@ -239,9 +222,9 @@ class AdmissionSummarizerV3:
             
             # Try Python literal eval
             try:
-                result = ast.literal_eval(text)
-                if isinstance(result, dict):
-                    return result
+                parsed = ast.literal_eval(text)
+                if isinstance(parsed, dict):
+                    return parsed
             except (ValueError, SyntaxError):
                 pass
             
@@ -259,6 +242,39 @@ class AdmissionSummarizerV3:
             logger.warning(f"Parse error: {e}")
             return {}
     
+    def _parse_fallback_response(self, text: str) -> Dict[str, Any]:
+        """Parse a fallback string response that may contain JSON."""
+        if not text:
+            return self._empty_summary()
+            
+        text = text.strip()
+        
+        # Try direct JSON parse
+        try:
+            result = json.loads(text)
+            if isinstance(result, dict) and 'diagnoses' in result:
+                return result
+        except json.JSONDecodeError:
+            pass
+        
+        # Try to extract JSON from code blocks or raw text
+        patterns = [
+            r'```json\s*([\s\S]*?)\s*```',
+            r'```\s*([\s\S]*?)\s*```',
+            r'\{[^{}]*"diagnoses"[^{}]*\}',
+        ]
+        for pattern in patterns:
+            matches = re.findall(pattern, text, re.DOTALL)
+            for match in matches:
+                try:
+                    result = json.loads(match.strip() if isinstance(match, str) else match)
+                    if isinstance(result, dict) and 'diagnoses' in result:
+                        return result
+                except:
+                    pass
+        
+        return self._empty_summary()
+    
     def _empty_summary(self) -> Dict[str, Any]:
         """Return empty summary dict."""
         return {
@@ -272,8 +288,8 @@ class AdmissionSummarizerV3:
 
 def create_summarizer_v3(
     api_key: Optional[str] = None,
-    model_name: str = "gemini-3-pro-preview",
-    max_iterations: int = 5,
+    model_name: str = "gemini-2.5-flash",
+    max_iterations: int = 8,
     verbose: bool = False
 ) -> AdmissionSummarizerV3:
     """Factory function to create V3 summarizer."""
