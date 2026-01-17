@@ -1,0 +1,61 @@
+[
+  {
+    "subject_id": 10322266,
+    "hadm_id": 20577682,
+    "single_pass_time": 16.734118461608887,
+    "rlm_time": 20.58523440361023,
+    "single_pass_result": {
+      "diagnoses": [
+        "EC fistula to transverse colon",
+        "Small bowel fistual",
+        "HTN",
+        "Hypothyroidism",
+        "Osteopenia",
+        "Breast cancer (DCIS)"
+      ],
+      "key_events": [
+        "admitted for nonoperative treatment of EC fistula to transverse colon",
+        "Patient presented to Dr. ___ on ___ with a ___ bubble\" at abdominal wound site and increased (but intermittant) drainage of feculent, foul smelling fluid over the last 2 weeks from her previously healing abdominal wound",
+        "requiring up to four to five 4 x 4 dressing changes per day"
+      ],
+      "open_issues": [
+        "ongoing treatment with Metronidazole 500 mg Tablet PO TID for 30 days",
+        "ongoing treatment with Ciprofloxacin 500 mg Tablet PO Q12H for 30 days"
+      ],
+      "complications": [
+        "EC fistula to transverse colon",
+        "tissue expander rupture",
+        "ureter injury and repair"
+      ],
+      "disposition": "Home With Service Facility: ___"
+    },
+    "rlm_result": {
+      "diagnoses": [
+        "Small bowel fistula"
+      ],
+      "key_events": [
+        "Admitted for nonoperative treatment of EC fistula to transverse colon",
+        "S/p SB fistula resection with mesh repair",
+        "Presented with abdominal wound \"bubble\"",
+        "Increased intermittent drainage of feculent, foul smelling fluid",
+        "Cholecystectomy (history)",
+        "Left mastectomy (history)",
+        "TRAM flap (history)",
+        "Total abdominal hysterectomy and bilateral salpingectomy (history)",
+        "Two ventral hernia repairs with mesh (history)",
+        "Bilateral knee replacement (history)"
+      ],
+      "open_issues": [
+        "Feculent material draining from upper abdominal defect",
+        "Prescribed 30-day course of Metronidazole",
+        "Prescribed 30-day course of Ciprofloxacin"
+      ],
+      "complications": [
+        "Increased intermittent drainage of feculent, foul smelling fluid from abdominal wound",
+        "Left mastectomy complicated by tissue expander rupture (history)",
+        "Total abdominal hysterectomy and bilateral salpingectomy complicated by ureter injury and repair (history)"
+      ],
+      "disposition": "Home with service facility"
+    }
+  }
+]

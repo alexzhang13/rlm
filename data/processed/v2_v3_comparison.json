@@ -1,0 +1,22 @@
+[
+  {
+    "subject_id": 10322266,
+    "hadm_id": 20577682,
+    "v2_time": 6.688929557800293,
+    "v3_time": 4.86172080039978,
+    "v2_result": {
+      "diagnoses": [],
+      "key_events": [],
+      "open_issues": [],
+      "complications": [],
+      "disposition": ""
+    },
+    "v3_result": {
+      "diagnoses": [],
+      "key_events": [],
+      "open_issues": [],
+      "complications": [],
+      "disposition": ""
+    }
+  }
+]
