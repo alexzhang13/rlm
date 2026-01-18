@@ -51,10 +51,12 @@ class LMRequestHandler(StreamRequestHandler):
         content = client.completion(request.prompt)
         end_time = time.perf_counter()
 
-        usage_summary = client.get_last_usage()
+        model_usage = client.get_last_usage()
+        root_model = request.model or client.model_name
+        usage_summary = UsageSummary(model_usage_summaries={root_model: model_usage})
         return LMResponse.success_response(
             chat_completion=RLMChatCompletion(
-                root_model=request.model or client.model_name,
+                root_model=root_model,
                 prompt=request.prompt,
                 response=content,
                 usage_summary=usage_summary,
@@ -76,11 +78,13 @@ class LMRequestHandler(StreamRequestHandler):
         end_time = time.perf_counter()
 
         total_time = end_time - start_time
-        usage_summary = client.get_last_usage()
+        model_usage = client.get_last_usage()
+        root_model = request.model or client.model_name
+        usage_summary = UsageSummary(model_usage_summaries={root_model: model_usage})
 
         chat_completions = [
             RLMChatCompletion(
-                root_model=request.model or client.model_name,
+                root_model=root_model,
                 prompt=prompt,
                 response=content,
                 usage_summary=usage_summary,
