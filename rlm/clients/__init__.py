@@ -20,6 +20,10 @@ def get_client(
         from rlm.clients.openai import OpenAIClient
 
         return OpenAIClient(**backend_kwargs)
+    elif backend == "groq":
+        from rlm.clients.openai import OpenAIClient
+
+        return OpenAIClient(**backend_kwargs)
     elif backend == "vllm":
         from rlm.clients.openai import OpenAIClient
 
