@@ -63,6 +63,40 @@ class TestLocalREPLMultiContext:
         assert repl.locals["is_first"] is True
         repl.cleanup()
 
+    def test_context_dict_is_copy(self):
+        """Test that dict context is a deep copy, not a reference."""
+        repl = LocalREPL()
+
+        context_dict = {"key": "original", "nested": {"inner": "value"}}
+        repl.add_context(context_dict)
+
+        # Modify the original after adding
+        context_dict["key"] = "modified"
+        context_dict["nested"]["inner"] = "modified_inner"
+
+        # Stored context should remain unchanged
+        assert repl.locals["context_0"]["key"] == "original"
+        assert repl.locals["context_0"]["nested"]["inner"] == "value"
+
+        repl.cleanup()
+
+    def test_context_list_is_copy(self):
+        """Test that list context is a deep copy, not a reference."""
+        repl = LocalREPL()
+
+        context_list = [{"item": "original"}, [1, 2, 3]]
+        repl.add_context(context_list)
+
+        # Modify the original after adding
+        context_list[0]["item"] = "modified"
+        context_list[1].append(4)
+
+        # Stored context should remain unchanged
+        assert repl.locals["context_0"][0]["item"] == "original"
+        assert repl.locals["context_0"][1] == [1, 2, 3]
+
+        repl.cleanup()
+
 
 class TestLocalREPLHistory:
     """Tests for message history storage in LocalREPL for persistent sessions."""
