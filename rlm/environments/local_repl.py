@@ -125,6 +125,7 @@ class LocalREPL(NonIsolatedEnv):
         setup_code: str | None = None,
         persistent: bool = False,
         depth: int = 1,
+        enable_multimodal: bool = False,
         **kwargs,
     ):
         super().__init__(persistent=persistent, depth=depth, **kwargs)
@@ -135,6 +136,7 @@ class LocalREPL(NonIsolatedEnv):
         self._lock = threading.Lock()
         self._context_count: int = 0
         self._history_count: int = 0
+        self.enable_multimodal = enable_multimodal
 
         # Setup globals, locals, and modules in environment.
         self.setup()
@@ -159,16 +161,17 @@ class LocalREPL(NonIsolatedEnv):
         # Track LLM calls made during code execution
         self._pending_llm_calls: list[RLMChatCompletion] = []
 
-        # Add helper functions
+        # Add core helper functions (always available)
         self.globals["FINAL_VAR"] = self._final_var
         self.globals["llm_query"] = self._llm_query
         self.globals["llm_query_batched"] = self._llm_query_batched
-        # Multimodal helper functions
-        self.globals["vision_query"] = self._vision_query
-        self.globals["vision_query_batched"] = self._vision_query_batched
-        # Audio helper functions
-        self.globals["audio_query"] = self._audio_query
-        self.globals["speak"] = self._speak
+        
+        # Add multimodal helper functions only if multimodal is enabled
+        if self.enable_multimodal:
+            self.globals["vision_query"] = self._vision_query
+            self.globals["vision_query_batched"] = self._vision_query_batched
+            self.globals["audio_query"] = self._audio_query
+            self.globals["speak"] = self._speak
 
     def _final_var(self, variable_name: str) -> str:
         """Return the value of a variable as a final answer."""
