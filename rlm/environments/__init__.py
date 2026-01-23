@@ -28,14 +28,11 @@ def get_environment(
         from rlm.environments.daytona_repl import DaytonaREPL
 
         return DaytonaREPL(**environment_kwargs)
-    else:
-        raise ValueError(
-            f"Unknown environment: {environment}. Supported: ['local', 'modal', 'docker', 'daytona']"
     elif environment == "prime":
         from rlm.environments.prime_repl import PrimeREPL
 
         return PrimeREPL(**environment_kwargs)
     else:
         raise ValueError(
-            f"Unknown environment: {environment}. Supported: ['local', 'modal', 'docker', 'prime']"
+            f"Unknown environment: {environment}. Supported: ['local', 'modal', 'docker', 'daytona', 'prime']"
         )
