@@ -54,15 +54,16 @@ print(result.response)`} />
               <span className="text-xs px-2 py-1 rounded-md bg-blue-100 text-blue-700 font-mono">default: "openai"</span>
             </div>
             <p className="text-muted-foreground mb-4">LM provider to use for completions.</p>
-            <Table 
+            <Table
               headers={["Value", "Provider"]}
               rows={[
                 [<code key="1" className="text-sm">"openai"</code>, "OpenAI API"],
                 [<code key="2" className="text-sm">"anthropic"</code>, "Anthropic API"],
-                [<code key="3" className="text-sm">"portkey"</code>, "Portkey AI gateway"],
-                [<code key="4" className="text-sm">"openrouter"</code>, "OpenRouter"],
-                [<code key="5" className="text-sm">"litellm"</code>, "LiteLLM (multi-provider)"],
-                [<code key="6" className="text-sm">"vllm"</code>, "Local vLLM server"],
+                [<code key="3" className="text-sm">"vercel"</code>, "Vercel AI Gateway"],
+                [<code key="4" className="text-sm">"portkey"</code>, "Portkey AI gateway"],
+                [<code key="5" className="text-sm">"openrouter"</code>, "OpenRouter"],
+                [<code key="6" className="text-sm">"litellm"</code>, "LiteLLM (multi-provider)"],
+                [<code key="7" className="text-sm">"vllm"</code>, "Local vLLM server"],
               ]}
             />
           </div>
@@ -79,6 +80,12 @@ print(result.response)`} />
 backend_kwargs={
     "api_key": "...",
     "model_name": "gpt-5-mini",
+}
+
+# Vercel AI Gateway
+backend_kwargs={
+    "api_key": "...",
+    "model_name": "openai/gpt-5.2",  # Format: creator/model-name
 }
 
 # vLLM (local)

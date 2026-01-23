@@ -96,6 +96,7 @@ uv pip install -e . --extra modal`} />
         <TabsList>
           <TabsTrigger value="openai">OpenAI</TabsTrigger>
           <TabsTrigger value="anthropic">Anthropic</TabsTrigger>
+          <TabsTrigger value="vercel">Vercel AI Gateway</TabsTrigger>
           <TabsTrigger value="portkey">Portkey</TabsTrigger>
         </TabsList>
         <TabsContent value="openai">
@@ -123,6 +124,22 @@ rlm = RLM(
     backend_kwargs={
         "api_key": os.getenv("ANTHROPIC_API_KEY"),
         "model_name": "claude-sonnet-4-20250514",
+    },
+    verbose=False,  # print to logs
+)
+
+result = rlm.completion("Calculate 2^(2^(2^2)) using Python.")
+print(result.response)`} />
+        </TabsContent>
+        <TabsContent value="vercel">
+          <CodeBlock code={`import os
+from rlm import RLM
+
+rlm = RLM(
+    backend="vercel",
+    backend_kwargs={
+        "api_key": os.getenv("AI_GATEWAY_API_KEY"),
+        "model_name": "openai/gpt-5.2",  # Format: creator/model-name
     },
     verbose=False,  # print to logs
 )

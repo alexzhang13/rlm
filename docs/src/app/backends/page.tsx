@@ -7,7 +7,7 @@ export default function BackendsPage() {
       
       <p className="text-muted-foreground mb-6">
         <p>
-          RLMs natively support a wide range of language model providers, including <code>OpenAI</code>, <code>Anthropic</code>, <code>Portkey</code>, <code>OpenRouter</code>, and <code>LiteLLM</code>. Additional providers can be supported with minimal effort. The <code>backend_kwargs</code> are named arguments passed directly to the backend client.
+          RLMs natively support a wide range of language model providers, including <code>OpenAI</code>, <code>Anthropic</code>, <code>Vercel AI Gateway</code>, <code>Portkey</code>, <code>OpenRouter</code>, and <code>LiteLLM</code>. Additional providers can be supported with minimal effort. The <code>backend_kwargs</code> are named arguments passed directly to the backend client.
         </p>
       </p>
 
@@ -61,6 +61,23 @@ export default function BackendsPage() {
         "model_name": "openai/gpt-5-mini",  # Format: provider/model
     },
 )`} />
+
+      <hr className="my-8 border-border" />
+
+      <h2 className="text-2xl font-semibold mb-4">Vercel AI Gateway</h2>
+      <p className="text-muted-foreground mb-4">
+        <a href="https://vercel.com/docs/infrastructure/ai-gateway" className="text-primary underline font-medium" target="_blank" rel="noopener noreferrer">Vercel AI Gateway</a> provides a unified endpoint for accessing multiple AI providers with built-in caching and analytics.
+      </p>
+      <CodeBlock code={`rlm = RLM(
+    backend="vercel",
+    backend_kwargs={
+        "api_key": os.getenv("AI_GATEWAY_API_KEY"),
+        "model_name": "openai/gpt-5.2",  # Format: creator/model-name
+    },
+)`} />
+      <p className="text-muted-foreground mt-4">
+        Vercel AI Gateway provides OpenAI-compatible endpoints for multiple AI providers. Use the <code className="px-1.5 py-0.5 rounded bg-muted text-foreground text-sm">creator/model-name</code> format (e.g., <code className="px-1.5 py-0.5 rounded bg-muted text-foreground text-sm">openai/gpt-5.2</code>, <code className="px-1.5 py-0.5 rounded bg-muted text-foreground text-sm">anthropic/claude-sonnet-4.5</code>). Cost tracking works correctly through the standard usage API.
+      </p>
 
       <hr className="my-8 border-border" />
 
