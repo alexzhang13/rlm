@@ -18,6 +18,9 @@ uv pip install -e .
 
 # For Modal sandbox support
 uv pip install -e ".[modal]"
+
+# For Prime sandbox support
+uv pip install -e ".[prime]"
 ```
 
 ## General Guidelines

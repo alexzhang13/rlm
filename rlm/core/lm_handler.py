@@ -45,16 +45,18 @@ class LMRequestHandler(StreamRequestHandler):
 
     def _handle_single(self, request: LMRequest, handler: "LMHandler") -> LMResponse:
         """Handle a single prompt request."""
-        client = handler.get_client(request.model)
+        client = handler.get_client(request.model, request.depth)
 
         start_time = time.perf_counter()
         content = client.completion(request.prompt)
         end_time = time.perf_counter()
 
-        usage_summary = client.get_last_usage()
+        model_usage = client.get_last_usage()
+        root_model = request.model or client.model_name
+        usage_summary = UsageSummary(model_usage_summaries={root_model: model_usage})
         return LMResponse.success_response(
             chat_completion=RLMChatCompletion(
-                root_model=request.model or client.model_name,
+                root_model=root_model,
                 prompt=request.prompt,
                 response=content,
                 usage_summary=usage_summary,
@@ -64,7 +66,7 @@ class LMRequestHandler(StreamRequestHandler):
 
     def _handle_batched(self, request: LMRequest, handler: "LMHandler") -> LMResponse:
         """Handle a batched prompts request using async for concurrency."""
-        client = handler.get_client(request.model)
+        client = handler.get_client(request.model, request.depth)
 
         start_time = time.perf_counter()
 
@@ -76,11 +78,13 @@ class LMRequestHandler(StreamRequestHandler):
         end_time = time.perf_counter()
 
         total_time = end_time - start_time
-        usage_summary = client.get_last_usage()
+        model_usage = client.get_last_usage()
+        root_model = request.model or client.model_name
+        usage_summary = UsageSummary(model_usage_summaries={root_model: model_usage})
 
         chat_completions = [
             RLMChatCompletion(
-                root_model=request.model or client.model_name,
+                root_model=root_model,
                 prompt=prompt,
                 response=content,
                 usage_summary=usage_summary,
@@ -112,8 +116,10 @@ class LMHandler:
         client: BaseLM,
         host: str = "127.0.0.1",
         port: int = 0,  # auto-assign available port
+        other_backend_client: BaseLM | None = None,
     ):
         self.default_client = client
+        self.other_backend_client = other_backend_client
         self.clients: dict[str, BaseLM] = {}
         self.host = host
         self._server: ThreadingLMServer | None = None
@@ -126,10 +132,21 @@ class LMHandler:
         """Register a client for a specific model name."""
         self.clients[model_name] = client
 
-    def get_client(self, model: str | None = None) -> BaseLM:
-        """Get client by model name, or return default."""
+    def get_client(self, model: str | None = None, depth: int = 0) -> BaseLM:
+        """Get client by model name or depth, or return default.
+
+        Routing logic:
+        - depth=0: use default_client (main backend)
+        - depth=1: use other_backend_client if it exists, otherwise default_client
+        - If model is specified and exists in clients, use that (overrides depth routing)
+        """
         if model and model in self.clients:
             return self.clients[model]
+
+        # Route based on depth
+        if depth == 1 and self.other_backend_client is not None:
+            return self.other_backend_client
+
         return self.default_client
 
     @property
@@ -179,6 +196,14 @@ class LMHandler:
     def get_usage_summary(self) -> UsageSummary:
         """Get the usage summary for all clients, merged into a single dict."""
         merged = {}
+        # Include default client
+        default_summary = self.default_client.get_usage_summary()
+        merged.update(default_summary.model_usage_summaries)
+        # Include other backend client if it exists
+        if self.other_backend_client is not None:
+            other_summary = self.other_backend_client.get_usage_summary()
+            merged.update(other_summary.model_usage_summaries)
+        # Include all registered clients
         for client in self.clients.values():
             client_summary = client.get_usage_summary()
             merged.update(client_summary.model_usage_summaries)

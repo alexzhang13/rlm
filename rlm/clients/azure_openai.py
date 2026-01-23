@@ -39,6 +39,9 @@ class AzureOpenAIClient(BaseLM):
         if api_version is None:
             api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
 
+        if azure_deployment is None:
+            azure_deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+
         if azure_endpoint is None:
             raise ValueError(
                 "azure_endpoint is required for Azure OpenAI client. "

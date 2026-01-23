@@ -193,3 +193,53 @@ class TestLocalREPLCleanup:
         assert os.path.exists(temp_dir)
         repl.cleanup()
         assert not os.path.exists(temp_dir)
+
+
+class TestLocalREPLSimulatingRLMNoPersistence:
+    """
+    Tests simulating RLM's non-persistent completion behavior.
+
+    When RLM is configured without persistent=True (the default), each
+    get_completion() call spawns a fresh environment and destroys it after.
+    This test suite simulates that behavior to prove variables don't survive
+    across RLM completions.
+
+    Why this matters: This is NOT just testing that two Python objects don't
+    share state (trivially true). This simulates the actual RLM workflow where
+    environments are created and destroyed per completion.
+    """
+
+    def test_simulated_rlm_completions_reset_environment(self):
+        """
+        Simulates 2 RLM completions to show env resets between calls.
+
+        Without persistent=True, RLM creates a fresh environment for each
+        completion, so state doesn't carry over.
+        """
+        completion_1_env = LocalREPL()
+        completion_1_env.execute_code("important_result = 42")
+        assert completion_1_env.locals["important_result"] == 42
+        completion_1_env.cleanup()
+
+        completion_2_env = LocalREPL()
+        result = completion_2_env.execute_code("print(important_result)")
+
+        assert "NameError" in result.stderr
+        assert "important_result" in result.stderr
+        completion_2_env.cleanup()
+
+    def test_simulated_rlm_completions_functions_not_preserved(self):
+        """
+        Simulates 2 RLM completions to show functions don't persist.
+        """
+        completion_1_env = LocalREPL()
+        completion_1_env.execute_code("def my_helper(): return 'useful'")
+        assert completion_1_env.execute_code("print(my_helper())").stdout.strip() == "useful"
+        completion_1_env.cleanup()
+
+        completion_2_env = LocalREPL()
+        result = completion_2_env.execute_code("my_helper()")
+
+        assert "NameError" in result.stderr
+        assert "my_helper" in result.stderr
+        completion_2_env.cleanup()

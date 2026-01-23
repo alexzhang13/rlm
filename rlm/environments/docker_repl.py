@@ -28,6 +28,7 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
     lm_handler_address: tuple[str, int] | None = None
     pending_calls: list[RLMChatCompletion] = []
     lock: threading.Lock = threading.Lock()
+    depth: int = 1
 
     def log_message(self, *args):
         pass
@@ -55,7 +56,7 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
         if not self.lm_handler_address:
             return {"error": "No LM handler configured"}
 
-        request = LMRequest(prompt=body.get("prompt"), model=body.get("model"))
+        request = LMRequest(prompt=body.get("prompt"), model=body.get("model"), depth=self.depth)
         response = send_lm_request(self.lm_handler_address, request)
 
         if not response.success:
@@ -72,7 +73,7 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
 
         prompts = body.get("prompts", [])
         responses = send_lm_request_batched(
-            self.lm_handler_address, prompts, model=body.get("model")
+            self.lm_handler_address, prompts, model=body.get("model"), depth=self.depth
         )
 
         results = []
@@ -87,7 +88,7 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
         return {"responses": results}
 
 
-def _build_exec_script(code: str, proxy_port: int) -> str:
+def _build_exec_script(code: str, proxy_port: int, depth: int = 1) -> str:
     """Build execution script for the container."""
     code_b64 = base64.b64encode(code.encode()).decode()
 
@@ -104,7 +105,7 @@ STATE = "/workspace/state.dill"
 
 def llm_query(prompt, model=None):
     try:
-        r = requests.post(f"{{PROXY}}/llm_query", json={{"prompt": prompt, "model": model}}, timeout=300)
+        r = requests.post(f"{{PROXY}}/llm_query", json={{"prompt": prompt, "model": model, "depth": {depth}}}, timeout=300)
         d = r.json()
         return d.get("response") or f"Error: {{d.get('error')}}"
     except Exception as e:
@@ -112,7 +113,7 @@ def llm_query(prompt, model=None):
 
 def llm_query_batched(prompts, model=None):
     try:
-        r = requests.post(f"{{PROXY}}/llm_query_batched", json={{"prompts": prompts, "model": model}}, timeout=300)
+        r = requests.post(f"{{PROXY}}/llm_query_batched", json={{"prompts": prompts, "model": model, "depth": {depth}}}, timeout=300)
         d = r.json()
         return d.get("responses") or [f"Error: {{d.get('error')}}"] * len(prompts)
     except Exception as e:
@@ -180,9 +181,15 @@ class DockerREPL(NonIsolatedEnv):
         lm_handler_address: tuple[str, int] | None = None,
         context_payload: dict | list | str | None = None,
         setup_code: str | None = None,
+        persistent: bool = False,
+        depth: int = 1,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        if persistent:
+            raise NotImplementedError(
+                "Persistent REPLs are currently not supported for environment: DockerREPL"
+            )
+        super().__init__(persistent=persistent, depth=depth, **kwargs)
 
         self.image = image
         self.lm_handler_address = lm_handler_address
@@ -190,7 +197,11 @@ class DockerREPL(NonIsolatedEnv):
         self.proxy_server: HTTPServer | None = None
         self.proxy_thread: threading.Thread | None = None
         self.proxy_port: int = 0
-        self.temp_dir = tempfile.mkdtemp(prefix="docker_repl_")
+        base_dir = os.environ.get(
+            "RLM_DOCKER_WORKSPACE_DIR", os.path.join(os.getcwd(), ".rlm_workspace")
+        )
+        os.makedirs(base_dir, exist_ok=True)
+        self.temp_dir = tempfile.mkdtemp(prefix="docker_repl_", dir=base_dir)
         self.pending_calls: list[RLMChatCompletion] = []
         self._calls_lock = threading.Lock()
 
@@ -211,6 +222,7 @@ class DockerREPL(NonIsolatedEnv):
                 "lm_handler_address": self.lm_handler_address,
                 "pending_calls": self.pending_calls,
                 "lock": self._calls_lock,
+                "depth": self.depth,
             },
         )
         self.proxy_server = HTTPServer(("127.0.0.1", 0), handler)
@@ -249,11 +261,21 @@ class DockerREPL(NonIsolatedEnv):
         )
 
     def load_context(self, context_payload: dict | list | str):
+        """Load context by writing to a file in the mounted workspace."""
         if isinstance(context_payload, str):
-            escaped = context_payload.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
-            self.execute_code(f'context = """{escaped}"""')
+            context_path = os.path.join(self.temp_dir, "context.txt")
+            with open(context_path, "w") as f:
+                f.write(context_payload)
+            self.execute_code(
+                "with open('/workspace/context.txt', 'r') as f:\n    context = f.read()"
+            )
         else:
-            self.execute_code(f"import json; context = json.loads('{json.dumps(context_payload)}')")
+            context_path = os.path.join(self.temp_dir, "context.json")
+            with open(context_path, "w") as f:
+                json.dump(context_payload, f)
+            self.execute_code(
+                "import json\nwith open('/workspace/context.json', 'r') as f:\n    context = json.load(f)"
+            )
 
     def execute_code(self, code: str) -> REPLResult:
         start = time.perf_counter()
@@ -261,7 +283,7 @@ class DockerREPL(NonIsolatedEnv):
         with self._calls_lock:
             self.pending_calls.clear()
 
-        script = _build_exec_script(code, self.proxy_port)
+        script = _build_exec_script(code, self.proxy_port, self.depth)
         result = subprocess.run(
             ["docker", "exec", self.container_id, "python", "-c", script],
             capture_output=True,
@@ -292,13 +314,13 @@ class DockerREPL(NonIsolatedEnv):
             )
 
     def cleanup(self):
-        if self.container_id:
+        if hasattr(self, "container_id") and self.container_id:
             subprocess.run(["docker", "stop", self.container_id], capture_output=True)
             self.container_id = None
-        if self.proxy_server:
+        if hasattr(self, "proxy_server") and self.proxy_server:
             self.proxy_server.shutdown()
             self.proxy_server = None
-        if os.path.exists(self.temp_dir):
+        if hasattr(self, "temp_dir") and os.path.exists(self.temp_dir):
             import shutil
 
             shutil.rmtree(self.temp_dir, ignore_errors=True)

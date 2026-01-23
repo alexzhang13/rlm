@@ -177,6 +177,7 @@ class TestEnvironmentImports:
 
     def test_prime_repl_import(self):
         """Test PrimeREPL import."""
+        pytest.importorskip("prime_sandboxes")
         from rlm.environments.prime_repl import PrimeREPL
 
         assert PrimeREPL is not None
@@ -307,7 +308,6 @@ class TestImportConflicts:
             "rlm.environments.base_env",
             "rlm.environments.local_repl",
             "rlm.environments.docker_repl",
-            "rlm.environments.prime_repl",
             "rlm.logger",
             "rlm.logger.rlm_logger",
             "rlm.logger.verbose",
@@ -324,6 +324,7 @@ class TestImportConflicts:
             ("rlm.clients.portkey", "portkey_ai"),
             ("rlm.clients.litellm", "litellm"),
             ("rlm.environments.modal_repl", "modal"),
+            ("rlm.environments.prime_repl", "prime_sandboxes"),
         ]
 
         # Test core modules
@@ -475,7 +476,6 @@ class TestImportCompleteness:
         from rlm.environments.base_env import BaseEnv, IsolatedEnv, NonIsolatedEnv
         from rlm.environments.docker_repl import DockerREPL
         from rlm.environments.local_repl import LocalREPL
-        from rlm.environments.prime_repl import PrimeREPL
 
         # Verify they're all classes
         assert isinstance(BaseEnv, type)
@@ -483,7 +483,6 @@ class TestImportCompleteness:
         assert isinstance(NonIsolatedEnv, type)
         assert isinstance(LocalREPL, type)
         assert isinstance(DockerREPL, type)
-        assert isinstance(PrimeREPL, type)
 
         # Test optional ModalREPL
         try:
@@ -491,5 +490,14 @@ class TestImportCompleteness:
             from rlm.environments.modal_repl import ModalREPL
 
             assert isinstance(ModalREPL, type)
+        except Exception:
+            pass
+
+        # Test optional PrimeREPL
+        try:
+            pytest.importorskip("prime_sandboxes")
+            from rlm.environments.prime_repl import PrimeREPL
+
+            assert isinstance(PrimeREPL, type)
         except Exception:
             pass
