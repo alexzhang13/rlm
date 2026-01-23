@@ -4,8 +4,6 @@ Example usage of Daytona REPL with code execution and LLM queries.
 Run with: python -m examples.daytona_repl_example
 """
 
-import os
-
 from rlm.clients.base_lm import BaseLM
 from rlm.core.lm_handler import LMHandler
 from rlm.core.types import ModelUsageSummary, UsageSummary
@@ -76,7 +74,6 @@ def main():
             with DaytonaREPL(
                 name="rlm-example-handler",
                 lm_handler_address=handler.address,
-                api_key=os.getenv("DAYTONA_API_KEY"),
             ) as repl:
                 print(f"Daytona sandbox started with ID: {repl.sandbox.id}")
                 print(f"Broker URL: {repl.broker_url}")
