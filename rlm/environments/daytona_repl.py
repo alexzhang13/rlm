@@ -6,6 +6,7 @@ Uses the Daytona API (https://daytona.io/docs) for sandbox management.
 
 import base64
 import json
+import os
 import textwrap
 import threading
 import time
@@ -350,7 +351,7 @@ class DaytonaREPL(IsolatedEnv):
         """
         super().__init__(**kwargs)
 
-        self.api_key = api_key
+        self.api_key = api_key or os.getenv("DAYTONA_API_KEY")
         self.target = target
         self.name = name
         self.timeout = timeout
