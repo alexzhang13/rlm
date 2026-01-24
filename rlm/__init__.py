@@ -1,3 +1,3 @@
-from rlm.core.rlm import RLM
+from rlm.core.rlm import RLM, BudgetExceededError
 
-__all__ = ["RLM"]
+__all__ = ["RLM", "BudgetExceededError"]

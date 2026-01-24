@@ -324,6 +324,33 @@ class VerbosePrinter:
                     execution_time=call.execution_time,
                 )
 
+    def print_budget_exceeded(self, spent: float, budget: float) -> None:
+        """Print a budget exceeded warning."""
+        if not self.enabled:
+            return
+
+        # Title
+        title = Text()
+        title.append("⚠ ", style=STYLE_ERROR)
+        title.append("Budget Exceeded", style=Style(color=COLORS["error"], bold=True))
+
+        # Content
+        content = Text()
+        content.append(f"Spent: ${spent:.6f}\n", style=STYLE_ERROR)
+        content.append(f"Budget: ${budget:.6f}", style=STYLE_MUTED)
+
+        panel = Panel(
+            content,
+            title=title,
+            title_align="left",
+            border_style=COLORS["error"],
+            padding=(0, 2),
+        )
+
+        self.console.print()
+        self.console.print(panel)
+        self.console.print()
+
     def print_final_answer(self, answer: Any) -> None:
         """Print the final answer."""
         if not self.enabled:

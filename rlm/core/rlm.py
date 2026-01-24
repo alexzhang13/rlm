@@ -29,6 +29,15 @@ from rlm.utils.prompts import (
 from rlm.utils.rlm_utils import filter_sensitive_keys
 
 
+class BudgetExceededError(Exception):
+    """Raised when the RLM execution exceeds the maximum budget."""
+
+    def __init__(self, spent: float, budget: float, message: str | None = None):
+        self.spent = spent
+        self.budget = budget
+        super().__init__(message or f"Budget exceeded: spent ${spent:.6f} of ${budget:.6f} budget")
+
+
 class RLM:
     """
     Recursive Language Model class that the user instantiates and runs on their tasks.
@@ -46,6 +55,7 @@ class RLM:
         depth: int = 0,
         max_depth: int = 1,
         max_iterations: int = 30,
+        max_budget: float | None = None,
         custom_system_prompt: str | None = None,
         other_backends: list[ClientBackend] | None = None,
         other_backend_kwargs: list[dict[str, Any]] | None = None,
@@ -62,6 +72,7 @@ class RLM:
             depth: The current depth of the RLM (0-indexed).
             max_depth: The maximum depth of recursion. When depth >= max_depth, falls back to plain LM completion.
             max_iterations: The maximum number of iterations of the RLM.
+            max_budget: Maximum budget in USD. Execution stops if exceeded. Requires cost-tracking backend (e.g., OpenRouter).
             custom_system_prompt: The custom system prompt to use for the RLM.
             other_backends: A list of other client backends that the environments can use to make sub-calls.
             other_backend_kwargs: The kwargs to pass to the other client backends (ordered to match other_backends).
@@ -90,9 +101,13 @@ class RLM:
         self.depth = depth
         self.max_depth = max_depth
         self.max_iterations = max_iterations
+        self.max_budget = max_budget
         self.system_prompt = custom_system_prompt if custom_system_prompt else RLM_SYSTEM_PROMPT
         self.logger = logger
         self.verbose = VerbosePrinter(enabled=verbose)
+
+        # Budget tracking (cumulative across all calls including children)
+        self._cumulative_cost: float = 0.0
 
         # Persistence support
         self.persistent = persistent
@@ -238,6 +253,20 @@ class RLM:
                     lm_handler=lm_handler,
                     environment=environment,
                 )
+
+                # Check budget after each iteration
+                if self.max_budget is not None:
+                    current_usage = lm_handler.get_usage_summary()
+                    current_cost = current_usage.total_cost or 0.0
+                    self._cumulative_cost = current_cost
+                    if self._cumulative_cost > self.max_budget:
+                        time_end = time.perf_counter()
+                        self.verbose.print_budget_exceeded(self._cumulative_cost, self.max_budget)
+                        raise BudgetExceededError(
+                            spent=self._cumulative_cost,
+                            budget=self.max_budget,
+                            message=f"Budget exceeded after iteration {i + 1}: spent ${self._cumulative_cost:.6f} of ${self.max_budget:.6f} budget",
+                        )
 
                 # Check if RLM is done and has a final answer.
                 final_answer = find_final_answer(iteration.response, environment=environment)
@@ -395,7 +424,14 @@ class RLM:
             except Exception as e:
                 return f"Error: LM query failed at max depth - {e}"
 
-        # Otherwise: spawn a child RLM with its own LocalREPL
+        # Calculate remaining budget for child (if budget tracking enabled)
+        remaining_budget = None
+        if self.max_budget is not None:
+            remaining_budget = self.max_budget - self._cumulative_cost
+            if remaining_budget <= 0:
+                return f"Error: Budget exhausted (spent ${self._cumulative_cost:.6f} of ${self.max_budget:.6f})"
+
+        # Spawn a child RLM with its own LocalREPL
         child = RLM(
             backend=self.backend,
             backend_kwargs=child_backend_kwargs,
@@ -404,6 +440,7 @@ class RLM:
             depth=next_depth,
             max_depth=self.max_depth,
             max_iterations=self.max_iterations,
+            max_budget=remaining_budget,
             custom_system_prompt=self.system_prompt,
             other_backends=self.other_backends,
             other_backend_kwargs=self.other_backend_kwargs,
@@ -413,7 +450,14 @@ class RLM:
         )
         try:
             result = child.completion(prompt, root_prompt=None)
+            # Track child's cost in parent's cumulative cost
+            if result.usage_summary and result.usage_summary.total_cost:
+                self._cumulative_cost += result.usage_summary.total_cost
             return result.response
+        except BudgetExceededError as e:
+            # Propagate child's spending to parent
+            self._cumulative_cost += e.spent
+            return f"Error: Child RLM budget exceeded - {e}"
         except Exception as e:
             return f"Error: Child RLM completion failed - {e}"
         finally:
