@@ -152,7 +152,7 @@ if __name__ == "__main__":
 # =============================================================================
 
 
-def _build_exec_script(code: str, broker_port: int = 8080) -> str:
+def _build_exec_script(code: str, broker_port: int = 8080, depth: int = 1) -> str:
     """
     Build a script that executes code with state persistence.
     LLM queries go through the local broker server.
@@ -185,7 +185,7 @@ def llm_query(prompt, model=None):
     try:
         response = requests.post(
             f"{{BROKER_URL}}/enqueue",
-            json={{"type": "single", "prompt": prompt, "model": model}},
+            json={{"type": "single", "prompt": prompt, "model": model, "depth": {depth}}},
             timeout=300,
         )
         data = response.json()
@@ -201,7 +201,7 @@ def llm_query_batched(prompts, model=None):
     try:
         response = requests.post(
             f"{{BROKER_URL}}/enqueue",
-            json={{"type": "batched", "prompts": prompts, "model": model}},
+            json={{"type": "batched", "prompts": prompts, "model": model, "depth": {depth}}},
             timeout=300,
         )
         data = response.json()
@@ -329,6 +329,8 @@ class DaytonaREPL(IsolatedEnv):
         lm_handler_address: tuple[str, int] | None = None,
         context_payload: dict | list | str | None = None,
         setup_code: str | None = None,
+        persistent: bool = False,
+        depth: int = 1,
         **kwargs,
     ):
         """
@@ -347,9 +349,15 @@ class DaytonaREPL(IsolatedEnv):
             lm_handler_address: (host, port) tuple for LM Handler server.
             context_payload: Initial context to load into the environment.
             setup_code: Optional code to run during setup.
+            persistent: Whether to persist state across calls (not yet supported).
+            depth: Depth level for LLM request routing (used by LMHandler).
             **kwargs: Additional arguments passed to base class.
         """
-        super().__init__(**kwargs)
+        if persistent:
+            raise NotImplementedError(
+                "Persistent REPLs are currently not supported for environment: DaytonaREPL"
+            )
+        super().__init__(persistent=persistent, depth=depth, **kwargs)
 
         self.api_key = api_key or os.getenv("DAYTONA_API_KEY")
         self.target = target
@@ -489,7 +497,7 @@ class DaytonaREPL(IsolatedEnv):
 
         if req_type == "single":
             prompt = req_data.get("prompt")
-            request = LMRequest(prompt=prompt, model=model)
+            request = LMRequest(prompt=prompt, model=model, depth=self.depth)
             response = send_lm_request(self.lm_handler_address, request)
 
             if not response.success:
@@ -503,7 +511,9 @@ class DaytonaREPL(IsolatedEnv):
 
         elif req_type == "batched":
             prompts = req_data.get("prompts", [])
-            responses = send_lm_request_batched(self.lm_handler_address, prompts, model=model)
+            responses = send_lm_request_batched(
+                self.lm_handler_address, prompts, model=model, depth=self.depth
+            )
 
             results = []
             for resp in responses:
@@ -539,7 +549,7 @@ class DaytonaREPL(IsolatedEnv):
             self.pending_llm_calls.clear()
 
         # Build and execute the script
-        script = _build_exec_script(code, self.BROKER_PORT)
+        script = _build_exec_script(code, self.BROKER_PORT, self.depth)
 
         # Upload the script as a temporary file
         script_path = "/tmp/rlm_exec_script.py"
