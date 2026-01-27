@@ -4,70 +4,23 @@ import { useState, useCallback, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useDemoLogs } from '@/hooks/use-demo-logs';
 import { FileUploader } from './FileUploader';
 import { LogViewer } from './LogViewer';
 import { AsciiRLM } from './AsciiGlobe';
 import { ThemeToggle } from './ThemeToggle';
-import { parseLogFile, extractContextVariable } from '@/lib/parse-logs';
+import { parseLogFile } from '@/lib/parse-logs';
 import { RLMLogFile } from '@/lib/types';
 import { cn } from '@/lib/utils';
-
-interface DemoLogInfo {
-  fileName: string;
-  contextPreview: string | null;
-  hasFinalAnswer: boolean;
-  iterations: number;
-}
 
 export function Dashboard() {
   const [logFiles, setLogFiles] = useState<RLMLogFile[]>([]);
   const [selectedLog, setSelectedLog] = useState<RLMLogFile | null>(null);
-  const [demoLogs, setDemoLogs] = useState<DemoLogInfo[]>([]);
-  const [loadingDemos, setLoadingDemos] = useState(true);
 
-  // Load demo log previews on mount - fetches latest 10 from API
-  useEffect(() => {
-    async function loadDemoPreviews() {
-      try {
-        // Fetch list of log files from API
-        const listResponse = await fetch('/api/logs');
-        if (!listResponse.ok) {
-          throw new Error('Failed to fetch log list');
-        }
-        const { files } = await listResponse.json();
-        
-        const previews: DemoLogInfo[] = [];
-        
-        for (const fileName of files) {
-          try {
-            const response = await fetch(`/logs/${fileName}`);
-            if (!response.ok) continue;
-            const content = await response.text();
-            const parsed = parseLogFile(fileName, content);
-            const contextVar = extractContextVariable(parsed.iterations);
-            
-            previews.push({
-              fileName,
-              contextPreview: contextVar,
-              hasFinalAnswer: !!parsed.metadata.finalAnswer,
-              iterations: parsed.metadata.totalIterations,
-            });
-          } catch (e) {
-            console.error('Failed to load demo preview:', fileName, e);
-          }
-        }
-        
-        setDemoLogs(previews);
-      } catch (e) {
-        console.error('Failed to load demo logs:', e);
-      } finally {
-        setLoadingDemos(false);
-      }
-    }
-    
-    loadDemoPreviews();
-  }, []);
+  // Preview cards for "Recent Traces" section: log files from server that users can click to load.
+  const { demoLogs, loadingDemos } = useDemoLogs();
 
+  // When a full log file is loaded (upload or demo), parse and register it.
   const handleFileLoaded = useCallback((fileName: string, content: string) => {
     const parsed = parseLogFile(fileName, content);
     setLogFiles(prev => {
