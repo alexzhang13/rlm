@@ -90,7 +90,9 @@ class TestFindFinalAnswer:
         text = "Check the variable:\nFINAL_VAR(result)"
         # Create a mock environment that returns the variable value
         mock_env = Mock()
-        mock_env.execute_code.return_value = REPLResult(stdout="42", stderr="", locals={})
+        mock_env.execute_code.return_value = REPLResult(
+            stdout="42", stderr="", locals={}
+        )
         result = find_final_answer(text, environment=mock_env)
         assert result == "42"
         # Verify execute_code was called with the correct code
@@ -127,6 +129,33 @@ multiline answer)"""
         text = "   FINAL(answer with spaces)"
         result = find_final_answer(text)
         assert result == "answer with spaces"
+
+    def test_final_with_nested_parentheses_greedy_matching(self):
+        """Test that greedy matching captures content with nested parentheses correctly.
+        Greedy matching (.*) matches to the last closing parenthesis, correctly handling
+        nested parentheses in FINAL() content. Non-greedy (.*?) would incorrectly stop
+        at the first closing parenthesis, breaking functions, tuples, and nested structures.
+        """
+        # Function call with nested parentheses
+        text = "FINAL(func(arg1, arg2))"
+        result = find_final_answer(text)
+        assert result == "func(arg1, arg2)"
+
+        # List and tuple with multiple closing parentheses
+        text = "FINAL([1, 2, 3], (4, 5))"
+        result = find_final_answer(text)
+        assert result == "[1, 2, 3], (4, 5)"
+
+        # Complex nested dictionary
+        text = "FINAL({'key': 'value', 'nested': {'a': 1, 'b': 2}})"
+        result = find_final_answer(text)
+        assert "'key': 'value'" in result
+        assert "'nested':" in result
+
+        # Multiple function calls with nested parentheses
+        text = "FINAL(calculate(10, 20) + process(data))"
+        result = find_final_answer(text)
+        assert result == "calculate(10, 20) + process(data)"
 
     def test_final_and_final_var_parsing(self):
         """Test that both FINAL and FINAL_VAR patterns are parsed correctly."""
@@ -170,7 +199,9 @@ multiline answer)"""
     def test_final_var_takes_precedence_over_final(self):
         """Test that FINAL_VAR is checked first and takes precedence over FINAL."""
         mock_env = Mock()
-        mock_env.execute_code.return_value = REPLResult(stdout="var_value", stderr="", locals={})
+        mock_env.execute_code.return_value = REPLResult(
+            stdout="var_value", stderr="", locals={}
+        )
 
         # If both appear, FINAL_VAR should be found first (checked first in the function)
         text = "FINAL_VAR(result)\nFINAL(direct_answer)"
@@ -213,7 +244,9 @@ multiline answer)"""
             # Test retrieving list variable
             text = "FINAL_VAR(answer)"
             result = find_final_answer(text, environment=env)
-            assert result == "[1, 2, 3, 4, 5]", f"Expected '[1, 2, 3, 4, 5]', got '{result}'"
+            assert (
+                result == "[1, 2, 3, 4, 5]"
+            ), f"Expected '[1, 2, 3, 4, 5]', got '{result}'"
 
             # Test retrieving computed variable
             text = "FINAL_VAR(computed)"
