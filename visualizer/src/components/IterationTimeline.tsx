@@ -68,14 +68,8 @@ export function IterationTimeline({
     <div className="border-b border-border bg-muted/30 flex-shrink-0">
       {/* Section header */}
       <div className="px-4 pt-3 pb-2 flex items-center gap-2">
-        <div className="w-5 h-5 rounded bg-primary/10 flex items-center justify-center">
-          <svg className="w-3 h-3 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
-        </div>
-        <span className="text-xs font-semibold text-foreground">Recursive Iterations</span>
         <span className="text-[10px] text-muted-foreground">
-          ({iterations.length} total)
+          All Iterations ({iterations.length} total)
         </span>
         <div className="flex-1" />
         <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
@@ -156,8 +150,14 @@ export function IterationTimeline({
                           {stats.subCalls} sub
                         </span>
                       )}
-                      <span className="text-[10px] text-muted-foreground ml-auto">
+                      <span className="text-[10px] text-muted-foreground ml-auto flex items-center gap-1.5">
                         {stats.execTime.toFixed(2)}s
+                        <span className="text-border">•</span>
+                        <span className="font-mono">
+                          <span >{(stats.inputTokens / 1000).toFixed(1)}k</span>
+                          <span className="mx-0.5">→</span>
+                          <span >{(stats.outputTokens / 1000).toFixed(1)}k</span>
+                        </span>
                       </span>
                     </div>
                     
@@ -166,22 +166,14 @@ export function IterationTimeline({
                       {responseSnippet}{iteration.response.length > 60 ? '...' : ''}
                     </p>
                     
-                    {/* Bottom row: tokens */}
-                    <div className="flex items-center gap-2 mt-1 text-[9px] font-mono text-muted-foreground/70">
-                      <span>
-                        <span className="text-sky-600 dark:text-sky-400">{(stats.inputTokens / 1000).toFixed(1)}k</span>
-                        <span className="mx-0.5">→</span>
-                        <span className="text-emerald-600 dark:text-emerald-400">{(stats.outputTokens / 1000).toFixed(1)}k</span>
-                      </span>
-                      {stats.hasFinal && finalAnswer && (
-                        <>
-                          <span className="text-border">│</span>
-                          <span className="text-amber-600 dark:text-amber-400 truncate max-w-[100px]">
-                            = {finalAnswer}
-                          </span>
-                        </>
-                      )}
-                    </div>
+                    {/* Bottom row: final answer */}
+                    {stats.hasFinal && finalAnswer && (
+                      <div className="flex items-center gap-2 mt-1 text-[9px]">
+                        <span className="text-amber-600 dark:text-amber-400 truncate max-w-[100px]">
+                          = {finalAnswer}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

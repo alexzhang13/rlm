@@ -56,7 +56,7 @@ export function LogViewer({ logFile, onBack }: LogViewerProps) {
 
       <div className="flex-1 flex overflow-hidden bg-background">
         
-        <div className="w-[22%] max-w-xs flex-shrink-0">
+        <div className="w-[20%] max-w-xs flex-shrink-0">
           <LogViewerSummary metadata={metadata} />
         </div>
 
@@ -151,41 +151,28 @@ interface LogViewerSummaryProps {
 function LogViewerSummary({ metadata }: LogViewerSummaryProps) {
   return (
     <div className="h-full border-r border-border bg-muted/30 px-6 py-4 overflow-y-auto">
-      <div className="flex flex-col gap-6">
 
-      <Card className="bg-gradient-to-r from-primary/5 to-accent/5 border-primary/20">
-          <CardContent className="p-4">
-            <div className="flex flex-col gap-2">
-              <StatsRow label="Iterations" value={metadata.totalIterations} />
-              <StatsRow label="Code" value={metadata.totalCodeBlocks} />
-              <StatsRow label="Sub-LM" value={metadata.totalSubLMCalls} />
-              <StatsRow label="Exec time" value={`${metadata.totalExecutionTime.toFixed(2)}s`} />
-            </div>
-          </CardContent>
-        </Card>
+      <div className="flex flex-col gap-5">
+        <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+            Overview
+        </p>
+        
+        <div className="flex flex-col gap-1">
+          <StatsRow label="Iterations" value={metadata.totalIterations} />
+          <StatsRow label="Code Blocks" value={metadata.totalCodeBlocks} />
+          <StatsRow label="Sub-LM Calls" value={metadata.totalSubLMCalls} />
+          <StatsRow label="Exec time" value={`${metadata.totalExecutionTime.toFixed(2)}s`} />
+        </div>
 
-        <Card className="bg-gradient-to-r from-primary/5 to-accent/5 border-primary/20">
-          <CardContent className="p-4">
-            <div className="flex flex-col gap-4">
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1">
-                  Context / Question
-                </p>
-                <p className="text-xs font-medium">
-                  {metadata.contextQuestion}
-                </p>
-              </div>
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted-foregrouxs font-medium mb-1">
-                  Final Answer
-                </p>
-                <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                  {metadata.finalAnswer || 'Not yet completed'}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex flex-col gap-1">
+          <StatsRow label="Context / Question" value={""} />
+          <p className="text-xs font-medium"> {metadata.contextQuestion} </p>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <StatsRow label="Final Answer" value={""} />
+          <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400"> {metadata.finalAnswer || 'Not yet completed'} </p>
+        </div>
 
       </div>
     </div>
@@ -278,35 +265,22 @@ function SelectedIterationInfo({ iteration, iterationNumber }: SelectedIteration
         <span className="text-xs font-semibold text-foreground">Iteration {iterationNumber}</span>
         <div className="flex-1" />
         <div className="flex items-center gap-4 text-xs">
-          {codeBlocks > 0 && (
-            <div className="flex items-center gap-1.5">
-              <span className="text-muted-foreground">Code Blocks</span>
-              <span className="text-emerald-600 dark:text-emerald-400 font-medium">
-                {codeBlocks}
-              </span>
-            </div>
-          )}
-          
-          {totalSubCalls > 0 && (
-            <div className="flex items-center gap-1.5">
-              <span className="text-muted-foreground">Sub-LM Calls</span>
-              <span className="text-fuchsia-600 dark:text-fuchsia-400 font-medium">
-                {totalSubCalls}
-              </span>
-            </div>
-          )}
-          
           <div className="flex items-center gap-1.5">
-            <span className="text-muted-foreground">Time</span>
             <span className="font-medium">{execTime.toFixed(2)}s</span>
           </div>
           
           <div className="flex items-center gap-1.5">
-            <span className="text-muted-foreground">Estimated Tokens</span>
+            <span className="text-muted-foreground">Est. Tokens</span>
             <span className="font-mono">
               <span className="text-sky-600 dark:text-sky-400">{inputTokensK}k</span>
               <span className="mx-1">→</span>
               <span className="text-emerald-600 dark:text-emerald-400">{outputTokensK}k</span>
+            </span>
+          </div>
+          
+          <div className="flex items-center gap-1.5 ml-4">
+            <span className="text-muted-foreground font-mono text-[10px]">
+              {new Date(iteration.timestamp).toLocaleString()}
             </span>
           </div>
         </div>

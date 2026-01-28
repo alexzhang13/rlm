@@ -11,7 +11,7 @@ interface StatsRowProps {
 export function StatsRow({ label, value, valueClassName }: StatsRowProps) {
   return (
     <div className="flex items-center justify-between">
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+      <p className="text-xs text-muted-foreground font-medium">
         {label}
       </p>
       <p className={`text-xs font-medium ${valueClassName || ''}`}>
