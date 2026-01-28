@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
-import { StatsCard } from './StatsCard';
+import { StatsRow } from './StatsRow';
 import { TrajectoryPanel } from './TrajectoryPanel';
 import { ExecutionPanel } from './ExecutionPanel';
 import { IterationTimeline } from './IterationTimeline';
@@ -56,7 +56,7 @@ export function LogViewer({ logFile, onBack }: LogViewerProps) {
 
       <div className="flex-1 flex overflow-hidden bg-background">
         
-        <div className="w-[30%] max-w-xs flex-shrink-0">
+        <div className="w-[22%] max-w-xs flex-shrink-0">
           <LogViewerSummary metadata={metadata} />
         </div>
 
@@ -146,6 +146,18 @@ function LogViewerSummary({ metadata }: LogViewerSummaryProps) {
   return (
     <div className="h-full border-r border-border bg-muted/30 px-6 py-4 overflow-y-auto">
       <div className="flex flex-col gap-6">
+
+      <Card className="bg-gradient-to-r from-primary/5 to-accent/5 border-primary/20">
+          <CardContent className="p-4">
+            <div className="flex flex-col gap-2">
+              <StatsRow label="Iterations" value={metadata.totalIterations} />
+              <StatsRow label="Code" value={metadata.totalCodeBlocks} />
+              <StatsRow label="Sub-LM" value={metadata.totalSubLMCalls} />
+              <StatsRow label="Exec time" value={`${metadata.totalExecutionTime.toFixed(2)}s`} />
+            </div>
+          </CardContent>
+        </Card>
+
         <Card className="bg-gradient-to-r from-primary/5 to-accent/5 border-primary/20">
           <CardContent className="p-4">
             <div className="flex flex-col gap-4">
@@ -153,15 +165,15 @@ function LogViewerSummary({ metadata }: LogViewerSummaryProps) {
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1">
                   Context / Question
                 </p>
-                <p className="text-sm font-medium">
+                <p className="text-xs font-medium">
                   {metadata.contextQuestion}
                 </p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foregrouxs font-medium mb-1">
                   Final Answer
                 </p>
-                <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
                   {metadata.finalAnswer || 'Not yet completed'}
                 </p>
               </div>
@@ -169,32 +181,6 @@ function LogViewerSummary({ metadata }: LogViewerSummaryProps) {
           </CardContent>
         </Card>
 
-        <div className="flex flex-wrap gap-2">
-          <StatsCard
-            label="Iterations"
-            value={metadata.totalIterations}
-            icon="◎"
-            variant="cyan"
-          />
-          <StatsCard
-            label="Code"
-            value={metadata.totalCodeBlocks}
-            icon="⟨⟩"
-            variant="green"
-          />
-          <StatsCard
-            label="Sub-LM"
-            value={metadata.totalSubLMCalls}
-            icon="◇"
-            variant="magenta"
-          />
-          <StatsCard
-            label="Exec"
-            value={`${metadata.totalExecutionTime.toFixed(2)}s`}
-            icon="⏱"
-            variant="yellow"
-          />
-        </div>
       </div>
     </div>
   );
@@ -215,26 +201,27 @@ function LogViewerMainContent({
     <div className="flex-1 min-h-0">
       <ResizablePanelGroup orientation="horizontal" className="h-full">
       
-      <ResizablePanel defaultSize={50} minSize={20} maxSize={80}>
-        <div className="h-full border-r border-border">
-          <TrajectoryPanel
-            iterations={iterations}
-            selectedIteration={selectedIteration}
-            onSelectIteration={onSelectIteration}
-          />
-        </div>
-      </ResizablePanel>
+        <ResizablePanel defaultSize={50} minSize={20} maxSize={80}>
+          <div className="h-full border-r border-border">
+            <TrajectoryPanel
+              iterations={iterations}
+              selectedIteration={selectedIteration}
+              onSelectIteration={onSelectIteration}
+            />
+          </div>
+        </ResizablePanel>
 
-      <ResizableHandle
-        withHandle
-        className="bg-border hover:bg-primary/30 transition-colors"
-      />
-
-      <ResizablePanel defaultSize={50} minSize={20} maxSize={80}>
-        <ExecutionPanel
-          iteration={iterations[selectedIteration] || null}
+        <ResizableHandle
+          withHandle
+          className="bg-border hover:bg-primary/30 transition-colors"
         />
-      </ResizablePanel>
+
+        <ResizablePanel defaultSize={50} minSize={20} maxSize={80}>
+          <ExecutionPanel
+            iteration={iterations[selectedIteration] || null}
+          />
+        </ResizablePanel>
+
       </ResizablePanelGroup>
     </div>
   );
