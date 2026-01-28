@@ -53,21 +53,28 @@ export function LogViewer({ logFile, onBack }: LogViewerProps) {
         metadata={metadata}
         onBack={onBack}
       />
-      <LogViewerSummary metadata={metadata} />
 
+      <div className="flex-1 flex overflow-hidden bg-background">
+        
+        <div className="w-[30%] max-w-xs flex-shrink-0">
+          <LogViewerSummary metadata={metadata} />
+        </div>
 
-      <IterationTimeline
-        iterations={iterations}
-        selectedIteration={selectedIteration}
-        onSelectIteration={setSelectedIteration}
-      />
+        <div className="flex-1 flex flex-col overflow-hidden bg-background">  
+          <IterationTimeline
+            iterations={iterations}
+            selectedIteration={selectedIteration}
+            onSelectIteration={setSelectedIteration}
+          />
+          <LogViewerMainContent
+            iterations={iterations}
+            selectedIteration={selectedIteration}
+            onSelectIteration={setSelectedIteration}
+          />
+        </div>
 
-      <LogViewerMainContent
-        iterations={iterations}
-        selectedIteration={selectedIteration}
-        onSelectIteration={setSelectedIteration}
-      />
-
+      </div>
+      
       <LogViewerFooter />
     </div>
   );
@@ -137,16 +144,16 @@ interface LogViewerSummaryProps {
 
 function LogViewerSummary({ metadata }: LogViewerSummaryProps) {
   return (
-    <div className="border-b border-border bg-muted/30 px-6 py-4">
-      <div className="flex gap-6">
-        <Card className="flex-1 bg-gradient-to-r from-primary/5 to-accent/5 border-primary/20">
+    <div className="h-full border-r border-border bg-muted/30 px-6 py-4 overflow-y-auto">
+      <div className="flex flex-col gap-6">
+        <Card className="bg-gradient-to-r from-primary/5 to-accent/5 border-primary/20">
           <CardContent className="p-4">
-            <div className="grid md:grid-cols-2 gap-4">
+            <div className="flex flex-col gap-4">
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1">
                   Context / Question
                 </p>
-                <p className="text-sm font-medium line-clamp-2">
+                <p className="text-sm font-medium">
                   {metadata.contextQuestion}
                 </p>
               </div>
@@ -154,7 +161,7 @@ function LogViewerSummary({ metadata }: LogViewerSummaryProps) {
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1">
                   Final Answer
                 </p>
-                <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400 line-clamp-2">
+                <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
                   {metadata.finalAnswer || 'Not yet completed'}
                 </p>
               </div>
@@ -162,7 +169,7 @@ function LogViewerSummary({ metadata }: LogViewerSummaryProps) {
           </CardContent>
         </Card>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <StatsCard
             label="Iterations"
             value={metadata.totalIterations}
@@ -206,29 +213,28 @@ function LogViewerMainContent({
 }: LogViewerMainContentProps) {
   return (
     <div className="flex-1 min-h-0">
-      <ResizablePanelGroup orientation="horizontal">
-        <ResizablePanel defaultSize={50} minSize={20} maxSize={80}>
-          <div className="h-full border-r border-border">
-            <TrajectoryPanel
-              iterations={iterations}
-              selectedIteration={selectedIteration}
-              onSelectIteration={onSelectIteration}
-            />
-          </div>
-        </ResizablePanel>
+      <ResizablePanelGroup orientation="horizontal" className="h-full">
+      
+      <ResizablePanel defaultSize={50} minSize={20} maxSize={80}>
+        <div className="h-full border-r border-border">
+          <TrajectoryPanel
+            iterations={iterations}
+            selectedIteration={selectedIteration}
+            onSelectIteration={onSelectIteration}
+          />
+        </div>
+      </ResizablePanel>
 
-        <ResizableHandle
-          withHandle
-          className="bg-border hover:bg-primary/30 transition-colors"
+      <ResizableHandle
+        withHandle
+        className="bg-border hover:bg-primary/30 transition-colors"
+      />
+
+      <ResizablePanel defaultSize={50} minSize={20} maxSize={80}>
+        <ExecutionPanel
+          iteration={iterations[selectedIteration] || null}
         />
-
-        <ResizablePanel defaultSize={50} minSize={20} maxSize={80}>
-          <div className="h-full bg-background">
-            <ExecutionPanel
-              iteration={iterations[selectedIteration] || null}
-            />
-          </div>
-        </ResizablePanel>
+      </ResizablePanel>
       </ResizablePanelGroup>
     </div>
   );

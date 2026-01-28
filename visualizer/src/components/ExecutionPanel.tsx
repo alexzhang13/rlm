@@ -33,7 +33,7 @@ export function ExecutionPanel({ iteration }: ExecutionPanelProps) {
   );
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-background">
+    <div className="h-full flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex-shrink-0 p-4 border-b border-border bg-muted/30">
         <div className="flex items-center justify-between mb-3">
@@ -84,7 +84,7 @@ export function ExecutionPanel({ iteration }: ExecutionPanelProps) {
         <div className="flex-1 overflow-hidden">
           <TabsContent value="code" className="h-full m-0 data-[state=active]:flex data-[state=active]:flex-col">
             <ScrollArea className="flex-1 h-full">
-              <div className="p-4 space-y-4">
+              <div className="p-4">
                 {iteration.code_blocks.length > 0 ? (
                   iteration.code_blocks.map((block, idx) => (
                     <CodeBlock key={idx} block={block} index={idx} />
