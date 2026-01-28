@@ -10,7 +10,7 @@ import { TrajectoryPanel } from './TrajectoryPanel';
 import { ExecutionPanel } from './ExecutionPanel';
 import { IterationTimeline } from './IterationTimeline';
 import { ThemeToggle } from './ThemeToggle';
-import { RLMLogFile } from '@/lib/types';
+import { RLMLogFile, RLMIteration } from '@/lib/types';
 
 interface LogViewerProps {
   logFile: RLMLogFile;
@@ -66,6 +66,12 @@ export function LogViewer({ logFile, onBack }: LogViewerProps) {
             selectedIteration={selectedIteration}
             onSelectIteration={setSelectedIteration}
           />
+
+          <SelectedIterationInfo
+            iteration={iterations[selectedIteration]}
+            iterationNumber={selectedIteration + 1}
+          />
+
           <LogViewerMainContent
             iterations={iterations}
             selectedIteration={selectedIteration}
@@ -223,6 +229,88 @@ function LogViewerMainContent({
         </ResizablePanel>
 
       </ResizablePanelGroup>
+    </div>
+  );
+}
+
+interface SelectedIterationInfoProps {
+  iteration: RLMIteration | undefined;
+  iterationNumber: number;
+}
+
+function SelectedIterationInfo({ iteration, iterationNumber }: SelectedIterationInfoProps) {
+  if (!iteration) return null;
+
+  // Calculate stats similar to IterationTimeline
+  let totalSubCalls = 0;
+  let codeExecTime = 0;
+  
+  for (const block of iteration.code_blocks) {
+    if (block.result) {
+      codeExecTime += block.result.execution_time || 0;
+      if (block.result.rlm_calls) {
+        totalSubCalls += block.result.rlm_calls.length;
+      }
+    }
+  }
+  
+  // Use iteration_time if available, otherwise fall back to code execution time
+  const execTime = iteration.iteration_time ?? codeExecTime;
+  
+  // Estimate token counts from prompt (rough estimation)
+  const promptText = iteration.prompt.map(m => m.content).join('');
+  const estimatedInputTokens = Math.round(promptText.length / 4);
+  const estimatedOutputTokens = Math.round(iteration.response.length / 4);
+  
+  const codeBlocks = iteration.code_blocks.length;
+  const inputTokensK = (estimatedInputTokens / 1000).toFixed(1);
+  const outputTokensK = (estimatedOutputTokens / 1000).toFixed(1);
+
+  return (
+    <div className="border-b border-border bg-muted/30 flex-shrink-0">
+      {/* Section header and stats */}
+      <div className="px-4 pt-3 pb-2 flex items-center gap-2">
+        <div className="w-5 h-5 rounded bg-primary/10 flex items-center justify-center">
+          <svg className="w-3 h-3 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        </div>
+        <span className="text-xs font-semibold text-foreground">Iteration {iterationNumber}</span>
+        <div className="flex-1" />
+        <div className="flex items-center gap-4 text-xs">
+          {codeBlocks > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-muted-foreground">Code Blocks</span>
+              <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                {codeBlocks}
+              </span>
+            </div>
+          )}
+          
+          {totalSubCalls > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-muted-foreground">Sub-LM Calls</span>
+              <span className="text-fuchsia-600 dark:text-fuchsia-400 font-medium">
+                {totalSubCalls}
+              </span>
+            </div>
+          )}
+          
+          <div className="flex items-center gap-1.5">
+            <span className="text-muted-foreground">Time</span>
+            <span className="font-medium">{execTime.toFixed(2)}s</span>
+          </div>
+          
+          <div className="flex items-center gap-1.5">
+            <span className="text-muted-foreground">Estimated Tokens</span>
+            <span className="font-mono">
+              <span className="text-sky-600 dark:text-sky-400">{inputTokensK}k</span>
+              <span className="mx-1">→</span>
+              <span className="text-emerald-600 dark:text-emerald-400">{outputTokensK}k</span>
+            </span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
