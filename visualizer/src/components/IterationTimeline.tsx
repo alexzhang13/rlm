@@ -73,14 +73,23 @@ export function IterationTimeline({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
           </svg>
         </div>
-        <span className="text-xs font-semibold text-foreground">Recursive Language Model Trajectory</span>
+        <span className="text-xs font-semibold text-foreground">Recursive Iterations</span>
         <span className="text-[10px] text-muted-foreground">
           ({iterations.length} total)
         </span>
         <div className="flex-1" />
-        <span className="text-[10px] text-muted-foreground">
-          ← scroll →
-        </span>
+        <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <kbd className="px-1 py-0.5 bg-muted rounded text-[9px] font-mono">←</kbd>
+            <kbd className="px-1 py-0.5 bg-muted rounded text-[9px] font-mono">→</kbd>
+            <span>prev / next iteration</span>
+          </span>
+          <span className="text-border">•</span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1 py-0.5 bg-muted rounded text-[9px] font-mono">Esc</kbd>
+            <span>back to files</span>
+          </span>
+        </div>
       </div>
       
       <ScrollArea className="w-full">

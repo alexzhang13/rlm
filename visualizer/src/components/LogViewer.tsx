@@ -75,7 +75,7 @@ export function LogViewer({ logFile, onBack }: LogViewerProps) {
 
       </div>
       
-      <LogViewerFooter />
+      {/* <LogViewerFooter /> */}
     </div>
   );
 }

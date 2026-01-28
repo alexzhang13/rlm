@@ -196,7 +196,7 @@ function RecentTracesSection({
         </Card>
       ) : (
         <ScrollArea className="h-[320px]">
-          <div className="space-y-2 pr-4">
+          <div className="space-y-2 pr-4">ssss
             {demoLogs.map((demo) => (
               <Card
                 key={demo.fileName}
