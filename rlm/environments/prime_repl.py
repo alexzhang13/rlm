@@ -220,7 +220,16 @@ def FINAL_VAR(variable_name):
     variable_name = variable_name.strip().strip("\\"\\'")
     if variable_name in _locals:
         return str(_locals[variable_name])
-    return f"Error: Variable '{{variable_name}}' not found"
+    available = [k for k in _locals.keys() if not k.startswith("_")]
+    if available:
+        return f"Error: Variable '{{variable_name}}' not found. Available variables: {{available}}. You must create and assign a variable BEFORE calling FINAL_VAR on it."
+    return f"Error: Variable '{{variable_name}}' not found. No variables have been created yet. You must create and assign a variable in a REPL block BEFORE calling FINAL_VAR on it."
+
+def SHOW_VARS():
+    available = {{k: type(v).__name__ for k, v in _locals.items() if not k.startswith("_")}}
+    if not available:
+        return "No variables created yet. Use ```repl``` blocks to create variables."
+    return f"Available variables: {{available}}"
 
 _globals = {{
     "__builtins__": __builtins__,
@@ -228,6 +237,7 @@ _globals = {{
     "llm_query": llm_query,
     "llm_query_batched": llm_query_batched,
     "FINAL_VAR": FINAL_VAR,
+    "SHOW_VARS": SHOW_VARS,
 }}
 
 code = base64.b64decode("{code_b64}").decode()
