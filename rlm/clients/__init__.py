@@ -20,6 +20,10 @@ def get_client(
         from rlm.clients.openai import OpenAIClient
 
         return OpenAIClient(**backend_kwargs)
+    elif backend == "groq":
+        from rlm.clients.openai import OpenAIClient
+
+        return OpenAIClient(**backend_kwargs)
     elif backend == "vllm":
         from rlm.clients.openai import OpenAIClient
 
@@ -57,7 +61,11 @@ def get_client(
         from rlm.clients.azure_openai import AzureOpenAIClient
 
         return AzureOpenAIClient(**backend_kwargs)
+    elif backend == "cerebras":
+        from rlm.clients.cerebras import CerebrasClient
+
+        return CerebrasClient(**backend_kwargs)
     else:
         raise ValueError(
-            f"Unknown backend: {backend}. Supported backends: ['openai', 'vllm', 'portkey', 'openrouter', 'litellm', 'anthropic', 'azure_openai', 'gemini', 'vercel']"
+            f"Unknown backend: {backend}. Supported backends: ['openai', 'groq', 'vllm', 'portkey', 'openrouter', 'litellm', 'anthropic', 'azure_openai', 'gemini', 'vercel', 'cerebras']"
         )
