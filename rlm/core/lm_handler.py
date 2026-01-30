@@ -156,10 +156,12 @@ class LMHandler:
             merged = dict(self.depth_call_counts)
 
         for client in self.depth_clients.values():
-            get_counts = getattr(client, "get_depth_call_counts", None)
-            if get_counts is None:
+            # Only recursive clients implement get_depth_call_counts; skip plain LM clients.
+            if getattr(type(client), "get_depth_call_counts", None) is None:
                 continue
-            child_counts = get_counts()
+            child_counts = client.get_depth_call_counts()
+            if not isinstance(child_counts, dict):
+                raise ValueError("get_depth_call_counts must return a dict")
             for depth, count in child_counts.items():
                 merged[depth] = merged.get(depth, 0) + count
 
