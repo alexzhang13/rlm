@@ -105,7 +105,7 @@ def enqueue():
         }
 
     # Wait for response (with timeout)
-    event.wait(timeout=300)
+    event.wait(timeout=__LLM_QUERY_TIMEOUT__)
 
     with lock:
         entry = pending_requests.pop(request_id, None)
@@ -152,7 +152,7 @@ if __name__ == "__main__":
 # =============================================================================
 
 
-def _build_exec_script(code: str, broker_port: int = 8080, depth: int = 1) -> str:
+def _build_exec_script(code: str, broker_port: int, depth: int, llm_query_timeout: int) -> str:
     """
     Build a script that executes code with state persistence.
     LLM queries go through the local broker server.
@@ -186,7 +186,7 @@ def llm_query(prompt, model=None):
         response = requests.post(
             f"{{BROKER_URL}}/enqueue",
             json={{"type": "single", "prompt": prompt, "model": model, "depth": {depth}}},
-            timeout=300,
+            timeout={llm_query_timeout},
         )
         data = response.json()
         if data.get("error"):
@@ -202,7 +202,7 @@ def llm_query_batched(prompts, model=None):
         response = requests.post(
             f"{{BROKER_URL}}/enqueue",
             json={{"type": "batched", "prompts": prompts, "model": model, "depth": {depth}}},
-            timeout=300,
+            timeout={llm_query_timeout},
         )
         data = response.json()
         if data.get("error"):
@@ -414,8 +414,11 @@ class DaytonaREPL(IsolatedEnv):
         self.sandbox = self.daytona.create(params)
 
         # Upload the broker script
+        broker_script = _BROKER_SCRIPT.replace(
+            "__LLM_QUERY_TIMEOUT__", str(self.llm_query_timeout)
+        )
         self.sandbox.fs.upload_file(
-            _BROKER_SCRIPT.encode("utf-8"),
+            broker_script.encode("utf-8"),
             "broker_server.py",
         )
 
@@ -498,7 +501,9 @@ class DaytonaREPL(IsolatedEnv):
         if req_type == "single":
             prompt = req_data.get("prompt")
             request = LMRequest(prompt=prompt, model=model, depth=self.depth)
-            response = send_lm_request(self.lm_handler_address, request)
+            response = send_lm_request(
+                self.lm_handler_address, request, timeout=self.llm_query_timeout
+            )
 
             if not response.success:
                 return {"error": response.error}
@@ -512,7 +517,11 @@ class DaytonaREPL(IsolatedEnv):
         elif req_type == "batched":
             prompts = req_data.get("prompts", [])
             responses = send_lm_request_batched(
-                self.lm_handler_address, prompts, model=model, depth=self.depth
+                self.lm_handler_address,
+                prompts,
+                model=model,
+                depth=self.depth,
+                timeout=self.llm_query_timeout,
             )
 
             results = []
@@ -549,7 +558,9 @@ class DaytonaREPL(IsolatedEnv):
             self.pending_llm_calls.clear()
 
         # Build and execute the script
-        script = _build_exec_script(code, self.BROKER_PORT, self.depth)
+        script = _build_exec_script(
+            code, self.BROKER_PORT, self.depth, self.llm_query_timeout
+        )
 
         # Upload the script as a temporary file
         script_path = "/tmp/rlm_exec_script.py"

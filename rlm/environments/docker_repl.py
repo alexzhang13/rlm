@@ -29,6 +29,7 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
     pending_calls: list[RLMChatCompletion] = []
     lock: threading.Lock = threading.Lock()
     depth: int = 1
+    llm_query_timeout: int = 300
 
     def log_message(self, *args):
         pass
@@ -57,7 +58,9 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
             return {"error": "No LM handler configured"}
 
         request = LMRequest(prompt=body.get("prompt"), model=body.get("model"), depth=self.depth)
-        response = send_lm_request(self.lm_handler_address, request)
+        response = send_lm_request(
+            self.lm_handler_address, request, timeout=self.llm_query_timeout
+        )
 
         if not response.success:
             return {"error": response.error}
@@ -73,7 +76,11 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
 
         prompts = body.get("prompts", [])
         responses = send_lm_request_batched(
-            self.lm_handler_address, prompts, model=body.get("model"), depth=self.depth
+            self.lm_handler_address,
+            prompts,
+            model=body.get("model"),
+            depth=self.depth,
+            timeout=self.llm_query_timeout,
         )
 
         results = []
@@ -88,7 +95,7 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
         return {"responses": results}
 
 
-def _build_exec_script(code: str, proxy_port: int, depth: int = 1) -> str:
+def _build_exec_script(code: str, proxy_port: int, depth: int, llm_query_timeout: int) -> str:
     """Build execution script for the container."""
     code_b64 = base64.b64encode(code.encode()).decode()
 
@@ -105,7 +112,7 @@ STATE = "/workspace/state.dill"
 
 def llm_query(prompt, model=None):
     try:
-        r = requests.post(f"{{PROXY}}/llm_query", json={{"prompt": prompt, "model": model, "depth": {depth}}}, timeout=300)
+        r = requests.post(f"{{PROXY}}/llm_query", json={{"prompt": prompt, "model": model, "depth": {depth}}}, timeout={llm_query_timeout})
         d = r.json()
         return d.get("response") or f"Error: {{d.get('error')}}"
     except Exception as e:
@@ -113,7 +120,7 @@ def llm_query(prompt, model=None):
 
 def llm_query_batched(prompts, model=None):
     try:
-        r = requests.post(f"{{PROXY}}/llm_query_batched", json={{"prompts": prompts, "model": model, "depth": {depth}}}, timeout=300)
+        r = requests.post(f"{{PROXY}}/llm_query_batched", json={{"prompts": prompts, "model": model, "depth": {depth}}}, timeout={llm_query_timeout})
         d = r.json()
         return d.get("responses") or [f"Error: {{d.get('error')}}"] * len(prompts)
     except Exception as e:
@@ -223,6 +230,7 @@ class DockerREPL(NonIsolatedEnv):
                 "pending_calls": self.pending_calls,
                 "lock": self._calls_lock,
                 "depth": self.depth,
+                "llm_query_timeout": self.llm_query_timeout,
             },
         )
         self.proxy_server = HTTPServer(("127.0.0.1", 0), handler)
@@ -283,7 +291,7 @@ class DockerREPL(NonIsolatedEnv):
         with self._calls_lock:
             self.pending_calls.clear()
 
-        script = _build_exec_script(code, self.proxy_port, self.depth)
+        script = _build_exec_script(code, self.proxy_port, self.depth, self.llm_query_timeout)
         result = subprocess.run(
             ["docker", "exec", self.container_id, "python", "-c", script],
             capture_output=True,

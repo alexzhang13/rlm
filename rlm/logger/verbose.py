@@ -80,7 +80,7 @@ class VerbosePrinter:
         model: str,
         environment: str,
         max_iterations: int,
-        max_depth: int,
+        recursive_max_depth: int,
         other_backends: list[str] | None = None,
     ) -> None:
         """Print the initial RLM configuration header."""
@@ -124,13 +124,13 @@ class VerbosePrinter:
             config_table.add_row(
                 "Sub-models",
                 backends_text,
-                "Max Depth",
-                Text(str(max_depth), style=STYLE_WARNING),
+                "Recursive Depth",
+                Text(str(recursive_max_depth), style=STYLE_WARNING),
             )
         else:
             config_table.add_row(
-                "Max Depth",
-                Text(str(max_depth), style=STYLE_WARNING),
+                "Recursive Depth",
+                Text(str(recursive_max_depth), style=STYLE_WARNING),
                 "",
                 "",
             )
@@ -161,7 +161,7 @@ class VerbosePrinter:
             model=model,
             environment=metadata.environment_type,
             max_iterations=metadata.max_iterations,
-            max_depth=metadata.max_depth,
+            recursive_max_depth=metadata.recursive_max_depth,
             other_backends=other,
         )
 

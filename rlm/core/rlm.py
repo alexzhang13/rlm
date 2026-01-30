@@ -4,6 +4,7 @@ from typing import Any
 
 from rlm.clients import BaseLM, get_client
 from rlm.core.lm_handler import LMHandler
+from rlm.core.recursion_utils import select_backend_for_depth
 from rlm.core.types import (
     ClientBackend,
     CodeBlock,
@@ -44,7 +45,7 @@ class RLM:
         environment: EnvironmentType = "local",
         environment_kwargs: dict[str, Any] | None = None,
         depth: int = 0,
-        max_depth: int = 1,
+        recursive_max_depth: int = 1,
         max_iterations: int = 30,
         custom_system_prompt: str | None = None,
         other_backends: list[ClientBackend] | None = None,
@@ -60,35 +61,46 @@ class RLM:
             environment: The environment to use for the RLM.
             environment_kwargs: The kwargs to pass to the environment.
             depth: The current depth of the RLM (0-indexed).
-            max_depth: The maximum depth of the RLM. Currently, only depth 1 is supported.
+            recursive_max_depth: The maximum recursion depth across all nested RLM calls.
             max_iterations: The maximum number of iterations of the RLM.
             custom_system_prompt: The custom system prompt to use for the RLM.
-            other_backends: A list of other client backends that the environments can use to make sub-calls.
-            other_backend_kwargs: The kwargs to pass to the other client backends (ordered to match other_backends).
+            other_backends: Depth-specific backends for recursive sub-calls (index 0 is depth 1, etc.).
+            other_backend_kwargs: The kwargs to pass to the depth-specific backends (ordered to match other_backends).
+                Missing depths fall back to the root backend.
             logger: The logger to use for the RLM.
             verbose: Whether to print verbose output in rich to console.
             persistent: If True, reuse the environment across completion() calls for multi-turn conversations.
         """
         # Store config for spawning per-completion
         self.backend = backend
-        self.backend_kwargs = backend_kwargs
+        self.backend_kwargs = backend_kwargs or {}
         self.environment_type = environment
         self.environment_kwargs = (
             environment_kwargs.copy() if environment_kwargs is not None else {}
         )
-        # Validate other_backends: currently only support one additional backend
-        if other_backends is not None:
-            if len(other_backends) != 1:
+
+        if depth < 0:
+            raise ValueError("depth must be >= 0")
+        if recursive_max_depth < 0:
+            raise ValueError("recursive_max_depth must be >= 0")
+
+        if (other_backends is None) != (other_backend_kwargs is None):
+            raise ValueError(
+                "other_backends and other_backend_kwargs must both be set or both be None"
+            )
+
+        if other_backends is not None and other_backend_kwargs is not None:
+            if len(other_backends) != len(other_backend_kwargs):
                 raise ValueError(
-                    "We currently only support one additional backend for the recursive sub-calls! "
-                    "This model will be the model used for recursive sub-calls, but this will change in the future"
+                    "other_backends and other_backend_kwargs must have the same length"
                 )
 
         self.other_backends = other_backends
         self.other_backend_kwargs = other_backend_kwargs
 
         self.depth = depth
-        self.max_depth = max_depth
+        self.recursive_max_depth = recursive_max_depth
+        self.max_depth = self.depth + 1
         self.max_iterations = max_iterations
         self.system_prompt = custom_system_prompt if custom_system_prompt else RLM_SYSTEM_PROMPT
         self.logger = logger
@@ -105,17 +117,13 @@ class RLM:
         # Log metadata if logger is provided
         if self.logger or verbose:
             metadata = RLMMetadata(
-                root_model=backend_kwargs.get("model_name", "unknown")
-                if backend_kwargs
-                else "unknown",
-                max_depth=max_depth,
+                root_model=self.backend_kwargs.get("model_name", "unknown"),
+                recursive_max_depth=recursive_max_depth,
                 max_iterations=max_iterations,
                 backend=backend,
-                backend_kwargs=filter_sensitive_keys(backend_kwargs) if backend_kwargs else {},
+                backend_kwargs=filter_sensitive_keys(self.backend_kwargs),
                 environment_type=environment,
-                environment_kwargs=filter_sensitive_keys(environment_kwargs)
-                if environment_kwargs
-                else {},
+                environment_kwargs=filter_sensitive_keys(self.environment_kwargs),
                 other_backends=other_backends,
             )
             if self.logger:
@@ -130,21 +138,50 @@ class RLM:
         When persistent=True, the environment is reused across calls.
         When persistent=False (default), creates fresh environment each call.
         """
-        # Create client and wrap in handler
-        client: BaseLM = get_client(self.backend, self.backend_kwargs)
+        root_backend, root_backend_kwargs = select_backend_for_depth(
+            depth=0,
+            backend=self.backend,
+            backend_kwargs=self.backend_kwargs,
+            other_backends=self.other_backends,
+            other_backend_kwargs=self.other_backend_kwargs,
+        )
+        client: BaseLM = get_client(root_backend, root_backend_kwargs)
+        lm_handler = LMHandler(client)
 
-        # Create other_backend_client if provided (for depth=1 routing)
-        other_backend_client: BaseLM | None = None
-        if self.other_backends and self.other_backend_kwargs:
-            other_backend_client = get_client(self.other_backends[0], self.other_backend_kwargs[0])
+        child_depth = self.depth + 1
+        if self.recursive_max_depth > 1:
+            from rlm.clients.recursive import RecursiveRLMClient
 
-        lm_handler = LMHandler(client, other_backend_client=other_backend_client)
+            depth_client = RecursiveRLMClient(
+                depth=child_depth,
+                backend=self.backend,
+                backend_kwargs=self.backend_kwargs,
+                environment=self.environment_type,
+                environment_kwargs=self.environment_kwargs,
+                recursive_max_depth=self.recursive_max_depth - 1,
+                parent_max_iterations=self.max_iterations,
+                other_backends=self.other_backends,
+                other_backend_kwargs=self.other_backend_kwargs,
+                custom_system_prompt=self.system_prompt,
+            )
+        else:
+            depth_backend, depth_backend_kwargs = select_backend_for_depth(
+                depth=child_depth,
+                backend=self.backend,
+                backend_kwargs=self.backend_kwargs,
+                other_backends=self.other_backends,
+                other_backend_kwargs=self.other_backend_kwargs,
+            )
+            depth_client = get_client(depth_backend, depth_backend_kwargs)
+
+        lm_handler.register_depth_client(child_depth, depth_client)
 
         # Register other clients to be available as sub-call options (by model name)
         if self.other_backends and self.other_backend_kwargs:
             for backend, kwargs in zip(self.other_backends, self.other_backend_kwargs, strict=True):
                 other_client: BaseLM = get_client(backend, kwargs)
-                lm_handler.register_client(other_client.model_name, other_client)
+                if other_client.model_name not in lm_handler.clients:
+                    lm_handler.register_client(other_client.model_name, other_client)
 
         lm_handler.start()
 
@@ -208,7 +245,7 @@ class RLM:
         time_start = time.perf_counter()
 
         # If we're at max depth, the RLM is an LM, so we fallback to the regular LM.
-        if self.depth >= self.max_depth:
+        if self.recursive_max_depth <= 0:
             return self._fallback_answer(prompt)
 
         with self._spawn_completion_context(prompt) as (lm_handler, environment):
@@ -250,6 +287,10 @@ class RLM:
                 if final_answer is not None:
                     time_end = time.perf_counter()
                     usage = lm_handler.get_usage_summary()
+                    depth_call_counts = lm_handler.get_depth_call_counts()
+                    max_depth_reached = (
+                        max(depth_call_counts) if depth_call_counts else self.depth
+                    )
                     self.verbose.print_final_answer(final_answer)
                     self.verbose.print_summary(i + 1, time_end - time_start, usage.to_dict())
 
@@ -265,6 +306,8 @@ class RLM:
                         response=final_answer,
                         usage_summary=usage,
                         execution_time=time_end - time_start,
+                        depth_call_counts=depth_call_counts,
+                        max_depth_reached=max_depth_reached,
                     )
 
                 # Format the iteration for the next prompt.
@@ -277,6 +320,8 @@ class RLM:
             time_end = time.perf_counter()
             final_answer = self._default_answer(message_history, lm_handler)
             usage = lm_handler.get_usage_summary()
+            depth_call_counts = lm_handler.get_depth_call_counts()
+            max_depth_reached = max(depth_call_counts) if depth_call_counts else self.depth
             self.verbose.print_final_answer(final_answer)
             self.verbose.print_summary(self.max_iterations, time_end - time_start, usage.to_dict())
 
@@ -292,6 +337,8 @@ class RLM:
                 response=final_answer,
                 usage_summary=usage,
                 execution_time=time_end - time_start,
+                depth_call_counts=depth_call_counts,
+                max_depth_reached=max_depth_reached,
             )
 
     def _completion_turn(
@@ -350,7 +397,14 @@ class RLM:
         """
         Fallback behavior if the RLM is actually at max depth, and should be treated as an LM.
         """
-        client: BaseLM = get_client(self.backend, self.backend_kwargs)
+        backend, backend_kwargs = select_backend_for_depth(
+            depth=self.depth,
+            backend=self.backend,
+            backend_kwargs=self.backend_kwargs,
+            other_backends=self.other_backends,
+            other_backend_kwargs=self.other_backend_kwargs,
+        )
+        client: BaseLM = get_client(backend, backend_kwargs)
         response = client.completion(message)
         return response
 

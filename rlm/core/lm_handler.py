@@ -7,11 +7,11 @@ Uses a multi-threaded socket server. Protocol: 4-byte length prefix + JSON paylo
 import asyncio
 import time
 from socketserver import StreamRequestHandler, ThreadingTCPServer
-from threading import Thread
+from threading import Lock, Thread
 
 from rlm.clients.base_lm import BaseLM
 from rlm.core.comms_utils import LMRequest, LMResponse, socket_recv, socket_send
-from rlm.core.types import RLMChatCompletion, UsageSummary
+from rlm.core.types import ModelUsageSummary, RLMChatCompletion, UsageSummary
 
 
 class LMRequestHandler(StreamRequestHandler):
@@ -46,6 +46,7 @@ class LMRequestHandler(StreamRequestHandler):
     def _handle_single(self, request: LMRequest, handler: "LMHandler") -> LMResponse:
         """Handle a single prompt request."""
         client = handler.get_client(request.model, request.depth)
+        handler.record_depth_call(request.depth)
 
         start_time = time.perf_counter()
         content = client.completion(request.prompt)
@@ -67,6 +68,7 @@ class LMRequestHandler(StreamRequestHandler):
     def _handle_batched(self, request: LMRequest, handler: "LMHandler") -> LMResponse:
         """Handle a batched prompts request using async for concurrency."""
         client = handler.get_client(request.model, request.depth)
+        handler.record_depth_call(request.depth, len(request.prompts))
 
         start_time = time.perf_counter()
 
@@ -121,6 +123,9 @@ class LMHandler:
         self.default_client = client
         self.other_backend_client = other_backend_client
         self.clients: dict[str, BaseLM] = {}
+        self.depth_clients: dict[int, BaseLM] = {}
+        self.depth_call_counts: dict[int, int] = {}
+        self.depth_call_counts_lock = Lock()
         self.host = host
         self._server: ThreadingLMServer | None = None
         self._thread: Thread | None = None
@@ -132,16 +137,48 @@ class LMHandler:
         """Register a client for a specific model name."""
         self.clients[model_name] = client
 
+    def register_depth_client(self, depth: int, client: BaseLM) -> None:
+        """Register a client for a specific recursion depth."""
+        if depth < 0:
+            raise ValueError("depth must be >= 0")
+        self.depth_clients[depth] = client
+
+    def record_depth_call(self, depth: int, count: int = 1) -> None:
+        """Record a call routed at a specific recursion depth."""
+        if depth < 0:
+            raise ValueError("depth must be >= 0")
+        with self.depth_call_counts_lock:
+            self.depth_call_counts[depth] = self.depth_call_counts.get(depth, 0) + count
+
+    def get_depth_call_counts(self) -> dict[int, int]:
+        """Return aggregated depth call counts, including recursive clients."""
+        with self.depth_call_counts_lock:
+            merged = dict(self.depth_call_counts)
+
+        for client in self.depth_clients.values():
+            get_counts = getattr(client, "get_depth_call_counts", None)
+            if get_counts is None:
+                continue
+            child_counts = get_counts()
+            for depth, count in child_counts.items():
+                merged[depth] = merged.get(depth, 0) + count
+
+        return merged
+
     def get_client(self, model: str | None = None, depth: int = 0) -> BaseLM:
         """Get client by model name or depth, or return default.
 
         Routing logic:
+        - If model is specified and exists in clients, use that (overrides depth routing)
+        - If a depth-specific client is registered, use that
         - depth=0: use default_client (main backend)
         - depth=1: use other_backend_client if it exists, otherwise default_client
-        - If model is specified and exists in clients, use that (overrides depth routing)
         """
         if model and model in self.clients:
             return self.clients[model]
+
+        if depth in self.depth_clients:
+            return self.depth_clients[depth]
 
         # Route based on depth
         if depth == 1 and self.other_backend_client is not None:
@@ -195,16 +232,28 @@ class LMHandler:
 
     def get_usage_summary(self) -> UsageSummary:
         """Get the usage summary for all clients, merged into a single dict."""
-        merged = {}
+        merged: dict[str, ModelUsageSummary] = {}
+
+        def merge_summary(summary: UsageSummary) -> None:
+            for model, usage in summary.model_usage_summaries.items():
+                if model in merged:
+                    current = merged[model]
+                    merged[model] = ModelUsageSummary(
+                        total_calls=current.total_calls + usage.total_calls,
+                        total_input_tokens=current.total_input_tokens + usage.total_input_tokens,
+                        total_output_tokens=current.total_output_tokens + usage.total_output_tokens,
+                    )
+                else:
+                    merged[model] = usage
         # Include default client
-        default_summary = self.default_client.get_usage_summary()
-        merged.update(default_summary.model_usage_summaries)
+        merge_summary(self.default_client.get_usage_summary())
         # Include other backend client if it exists
         if self.other_backend_client is not None:
-            other_summary = self.other_backend_client.get_usage_summary()
-            merged.update(other_summary.model_usage_summaries)
+            merge_summary(self.other_backend_client.get_usage_summary())
         # Include all registered clients
         for client in self.clients.values():
-            client_summary = client.get_usage_summary()
-            merged.update(client_summary.model_usage_summaries)
+            merge_summary(client.get_usage_summary())
+        # Include depth-specific clients
+        for client in self.depth_clients.values():
+            merge_summary(client.get_usage_summary())
         return UsageSummary(model_usage_summaries=merged)

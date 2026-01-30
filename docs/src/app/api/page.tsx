@@ -36,7 +36,7 @@ print(result.response)`} />
     environment: str = "local",
     environment_kwargs: dict | None = None,
     depth: int = 0,
-    max_depth: int = 1,
+    recursive_max_depth: int = 1,
     max_iterations: int = 30,
     custom_system_prompt: str | None = None,
     other_backends: list[str] | None = None,
@@ -140,23 +140,18 @@ environment_kwargs={"setup_code": "import numpy as np"}`} />
               <span className="text-xs px-2 py-1 rounded-md bg-muted text-muted-foreground font-mono">int</span>
               <span className="text-xs px-2 py-1 rounded-md bg-blue-100 text-blue-700 font-mono">default: 30</span>
             </div>
-            <p className="text-muted-foreground">Maximum REPL iterations before forcing a final answer.</p>
+            <p className="text-muted-foreground">Maximum REPL iterations before forcing a final answer. Recursive sub-calls halve this per depth (floor 1).</p>
           </div>
 
-          {/* max_depth */}
+          {/* recursive_max_depth */}
           <div className="border-l-4 border-blue-500 pl-6">
             <div className="flex items-baseline gap-3 mb-2">
-              <code className="text-lg font-semibold text-foreground">max_depth</code>
+              <code className="text-lg font-semibold text-foreground">recursive_max_depth</code>
               <span className="text-xs px-2 py-1 rounded-md bg-muted text-muted-foreground font-mono">int</span>
               <span className="text-xs px-2 py-1 rounded-md bg-blue-100 text-blue-700 font-mono">default: 1</span>
             </div>
-            <div className="mb-2 p-3 bg-amber-50 border border-amber-200 rounded-md">
-              <p className="text-sm text-amber-800">
-                <strong>Note:</strong> This is a TODO. Only <code className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 text-xs font-semibold">max_depth=1</code> is currently supported.
-              </p>
-            </div>
             <p className="text-muted-foreground">
-              Maximum recursion depth. When <code className="px-1.5 py-0.5 rounded bg-muted text-foreground text-sm">depth {">="} max_depth</code>, falls back to regular LM completion.
+              Global recursion cap across all nested RLM calls. This value decrements each recursive layer; when it reaches 0, the RLM falls back to regular LM completion.
             </p>
           </div>
 
@@ -177,12 +172,16 @@ environment_kwargs={"setup_code": "import numpy as np"}`} />
               <span className="text-xs px-2 py-1 rounded-md bg-muted text-muted-foreground font-mono">list[str] | None</span>
               <span className="text-xs px-2 py-1 rounded-md bg-blue-100 text-blue-700 font-mono">default: None</span>
             </div>
-            <p className="text-muted-foreground mb-4">Additional backends available for sub-LM calls within the REPL.</p>
+            <p className="text-muted-foreground mb-4">Depth-specific backends for recursive sub-calls. Entry 0 is used at depth 1, entry 1 at depth 2, etc.</p>
             <CodeBlock code={`rlm = RLM(
     backend="openai",
     backend_kwargs={"model_name": "gpt-5-mini"},
-    other_backends=["anthropic"],
-    other_backend_kwargs=[{"model_name": "claude-sonnet-4-20250514"}],
+    recursive_max_depth=2,
+    other_backends=["anthropic", "openai"],
+    other_backend_kwargs=[
+        {"model_name": "claude-sonnet-4-20250514"},
+        {"model_name": "gpt-4o-mini"},
+    ],
 )`} />
           </div>
 
@@ -193,7 +192,7 @@ environment_kwargs={"setup_code": "import numpy as np"}`} />
               <span className="text-xs px-2 py-1 rounded-md bg-muted text-muted-foreground font-mono">list[dict] | None</span>
               <span className="text-xs px-2 py-1 rounded-md bg-blue-100 text-blue-700 font-mono">default: None</span>
             </div>
-            <p className="text-muted-foreground">Configurations for <code className="px-1.5 py-0.5 rounded bg-muted text-foreground text-sm">other_backends</code> (must match order).</p>
+            <p className="text-muted-foreground">Configurations for <code className="px-1.5 py-0.5 rounded bg-muted text-foreground text-sm">other_backends</code> (must match order). Missing depths fall back to the root backend.</p>
           </div>
 
           {/* logger */}

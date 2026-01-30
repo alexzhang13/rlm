@@ -43,7 +43,7 @@ RLM(
     environment: str = "local",
     environment_kwargs: dict | None = None,
     depth: int = 0,
-    max_depth: int = 1,
+    recursive_max_depth: int = 1,
     max_iterations: int = 30,
     custom_system_prompt: str | None = None,
     other_backends: list[str] | None = None,
@@ -150,17 +150,30 @@ environment_kwargs = {
 }
 ```
 
+**Common (all environments):**
+```python
+environment_kwargs = {
+    "llm_query_timeout": 900,       # Root timeout in seconds
+    "llm_query_timeout_step": 120,  # Subtract per routing depth
+    "llm_query_timeout_min": 300,   # Floor in seconds
+}
+```
+Timeout at depth `d` (llm_query routing depth):
+```
+max(min_timeout, root_timeout - d * step)
+```
+
 ---
 
-#### `max_depth`
+#### `recursive_max_depth`
 {: .no_toc }
 
 **Type:** `int`  
 **Default:** `1`
 
-Maximum recursion depth for nested RLM calls. Currently only depth 1 is fully supported.
+Maximum recursion depth for nested RLM calls.
 
-When `depth >= max_depth`, the RLM falls back to a regular LM completion.
+Global recursion cap across all nested RLM calls. This value decrements each recursive layer; when it reaches 0, the RLM falls back to a regular LM completion.
 
 ---
 
@@ -171,6 +184,7 @@ When `depth >= max_depth`, the RLM falls back to a regular LM completion.
 **Default:** `30`
 
 Maximum number of REPL iterations before forcing a final answer.
+For recursive sub-calls, this value is halved per depth with a floor of 1.
 
 Each iteration consists of:
 1. LM generates response (potentially with code blocks)
@@ -217,23 +231,24 @@ rlm = RLM(
 **Type:** `list[str] | None` / `list[dict] | None`  
 **Default:** `None`
 
-Register additional LM backends available for sub-calls via `llm_query()`.
+Depth-specific LM backends for recursive sub-calls. Entry `other_backends[i]` (and matching
+`other_backend_kwargs[i]`) is used at recursion depth `i + 1`. If the list is shorter than
+the recursion depth, the root backend is used as a default.
 
 ```python
 rlm = RLM(
     backend="openai",
     backend_kwargs={"model_name": "gpt-4o"},
-    other_backends=["anthropic", "openai"],
+    recursive_max_depth=3,
+    other_backends=["anthropic", "openai", "openai"],
     other_backend_kwargs=[
         {"model_name": "claude-sonnet-4-20250514"},
         {"model_name": "gpt-4o-mini"},
+        {"model_name": "gpt-4o-nano"},
     ],
 )
 
-# Inside REPL, code can call:
-# llm_query(prompt)  # Uses default (gpt-4o)
-# llm_query(prompt, model="claude-sonnet-4-20250514")  # Uses Claude
-# llm_query(prompt, model="gpt-4o-mini")  # Uses GPT-4o-mini
+# Depth 1 uses Claude, depth 2 uses GPT-4o-mini, depth 3 uses GPT-4o-nano.
 ```
 
 ---
@@ -437,7 +452,7 @@ rlm = RLM(
         "image": "python:3.11-slim",
     },
     
-    # Additional models for sub-calls
+    # Depth-specific backends for recursion
     other_backends=["openai"],
     other_backend_kwargs=[{
         "api_key": os.getenv("OPENAI_API_KEY"),
@@ -446,7 +461,7 @@ rlm = RLM(
     
     # Behavior
     max_iterations=40,
-    max_depth=1,
+    recursive_max_depth=1,
     
     # Debugging
     logger=logger,
@@ -458,4 +473,3 @@ result = rlm.completion(
     root_prompt="Summarize the key findings"
 )
 ```
-
