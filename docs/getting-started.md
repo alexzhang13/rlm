@@ -131,11 +131,11 @@ This will display:
 | `backend_kwargs` | `dict` | `None` | Backend-specific configuration |
 | `environment` | `str` | `"local"` | Execution environment type |
 | `environment_kwargs` | `dict` | `None` | Environment configuration |
-| `max_depth` | `int` | `1` | Maximum recursion depth |
+| `recursive_max_depth` | `int` | `1` | Maximum recursion depth across all nested RLM calls |
 | `max_iterations` | `int` | `30` | Max REPL iterations per call |
 | `custom_system_prompt` | `str` | `None` | Override default system prompt |
-| `other_backends` | `list` | `None` | Additional backends for sub-calls |
-| `other_backend_kwargs` | `list` | `None` | Configs for additional backends |
+| `other_backends` | `list` | `None` | Depth-specific backends for recursive sub-calls |
+| `other_backend_kwargs` | `list` | `None` | Configs for depth-specific backends |
 | `logger` | `RLMLogger` | `None` | Logger for trajectory tracking |
 | `verbose` | `bool` | `False` | Enable console output |
 
@@ -218,6 +218,23 @@ rlm = RLM(
 **Cons:** Requires Modal account, network latency
 
 ---
+
+### llm_query Timeouts
+
+`llm_query()` calls inherit a depth-based timeout. Configure via `environment_kwargs`:
+
+```python
+environment_kwargs = {
+    "llm_query_timeout": 900,
+    "llm_query_timeout_step": 120,
+    "llm_query_timeout_min": 300,
+}
+```
+
+Timeout at depth `d` (llm_query routing depth):
+```
+max(min_timeout, root_timeout - d * step)
+```
 
 ## Choosing a Backend
 
@@ -340,4 +357,3 @@ Upload `.jsonl` log files to visualize:
 - [API Reference](api/rlm.md) - Complete RLM class documentation
 - [Environments](environments/) - Deep dive into each environment
 - [Backends](backends.md) - Detailed backend configuration
-

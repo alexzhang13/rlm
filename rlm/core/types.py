@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import ModuleType
 from typing import Any, Literal
 
@@ -96,6 +96,8 @@ class RLMChatCompletion:
     response: str
     usage_summary: UsageSummary
     execution_time: float
+    depth_call_counts: dict[int, int] = field(default_factory=dict)
+    max_depth_reached: int | None = None
 
     def to_dict(self):
         return {
@@ -104,16 +106,25 @@ class RLMChatCompletion:
             "response": self.response,
             "usage_summary": self.usage_summary.to_dict(),
             "execution_time": self.execution_time,
+            "depth_call_counts": {
+                str(depth): count for depth, count in self.depth_call_counts.items()
+            },
+            "max_depth_reached": self.max_depth_reached,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "RLMChatCompletion":
+        depth_call_counts = data.get("depth_call_counts") or {}
         return cls(
             root_model=data.get("root_model"),
             prompt=data.get("prompt"),
             response=data.get("response"),
             usage_summary=UsageSummary.from_dict(data.get("usage_summary")),
             execution_time=data.get("execution_time"),
+            depth_call_counts={
+                int(depth): int(count) for depth, count in depth_call_counts.items()
+            },
+            max_depth_reached=data.get("max_depth_reached"),
         )
 
 
@@ -189,18 +200,18 @@ class RLMMetadata:
     """Metadata about the RLM configuration."""
 
     root_model: str
-    max_depth: int
+    recursive_max_depth: int
     max_iterations: int
     backend: str
     backend_kwargs: dict[str, Any]
     environment_type: str
     environment_kwargs: dict[str, Any]
-    other_backends: list[str] | None = None
+    other_backends: list[ClientBackend] | None = None
 
     def to_dict(self):
         return {
             "root_model": self.root_model,
-            "max_depth": self.max_depth,
+            "recursive_max_depth": self.recursive_max_depth,
             "max_iterations": self.max_iterations,
             "backend": self.backend,
             "backend_kwargs": {k: _serialize_value(v) for k, v in self.backend_kwargs.items()},

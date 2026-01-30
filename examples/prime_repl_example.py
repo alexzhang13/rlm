@@ -21,7 +21,7 @@ rlm = RLM(
         "docker_image": "python:3.11-slim",
         "timeout_minutes": 30,
     },
-    max_depth=1,
+    recursive_max_depth=1,
     logger=logger,
     verbose=True,
 )

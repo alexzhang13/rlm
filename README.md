@@ -85,6 +85,7 @@ rlm = RLM(
     environment_kwargs={...},
 )
 ```
+Environment kwargs also accept `llm_query_timeout`, `llm_query_timeout_step`, and `llm_query_timeout_min` to control depth-based `llm_query()` timeouts.
 
 ### Local Environments
 The default `local` environment `LocalREPL` runs in the same process as the RLM itself, with specified global and local namespaces for minimal security. Using this REPL is generally safe, but should not be used for production settings. It also shares the same virtual environment (e.g. Conda or uv) as the host process.

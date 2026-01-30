@@ -213,3 +213,6 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# rlm artifacts
+.rlm_workspace/

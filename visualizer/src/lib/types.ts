@@ -35,7 +35,8 @@ export interface RLMIteration {
 // Metadata saved at the start of a log file about RLM configuration
 export interface RLMConfigMetadata {
   root_model: string | null;
-  max_depth: number | null;
+  recursive_max_depth: number | null;
+  max_depth?: number | null;
   max_iterations: number | null;
   backend: string | null;
   backend_kwargs: Record<string, unknown> | null;
@@ -69,4 +70,3 @@ export function extractFinalAnswer(answer: string | [string, string] | null): st
   }
   return answer;
 }
-
