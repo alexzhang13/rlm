@@ -1,7 +1,0 @@
-Divide-and-conquer test. Compute the sum of squares of the numbers 1..32.
-You MUST do this via the REPL using recursive llm_query calls:
-1) In REPL, split the range into two halves and call llm_query on each half.
-2) Each sub-LLM should again split its half and call llm_query (one more level).
-3) The leaf sub-LLMs should compute sums directly and return them.
-4) Aggregate the results and return FINAL(sum).
-Use llm_query_batched if helpful.

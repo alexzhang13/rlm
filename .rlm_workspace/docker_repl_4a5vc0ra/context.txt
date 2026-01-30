@@ -1,7 +1,0 @@
-You are a first-level sub-LLM in a divide-and-conquer pipeline to compute sum of squares from 17 to 32.
-Your job:
-- Split [17, 32] into exactly two contiguous subranges that partition it fully (no overlap, no gaps), ideally equal-sized.
-- Output ONLY a compact JSON object with the following structure (no extra text):
-  {"leaf_ranges": [{"start": a1, "end": b1}, {"start": a2, "end": b2}]}
-- Do not compute any sums.
-- Ensure the two ranges are contiguous, ordered, and exactly cover [17,32].

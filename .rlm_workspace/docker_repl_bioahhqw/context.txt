@@ -1,1 +1,0 @@
-Given the identified task: "{"leaf_ranges":[{"start":17,"end":24},{"start":25,"end":32}]}", propose a concrete, step-by-step plan to complete it. Include: (1) how to split the context into chunks if needed, (2) how to query the LLM for each chunk, (3) how to aggregate results, and (4) how to present the final answer.
