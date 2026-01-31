@@ -17,7 +17,7 @@ DEFAULT_GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 class GeminiClient(BaseLM):
     """
     LM Client for running models with the Google Gemini API.
-    Uses the official google-genai SDK.
+    Uses the new google-genai SDK (v1.0+).
     """
 
     def __init__(
@@ -52,8 +52,8 @@ class GeminiClient(BaseLM):
     def completion(self, prompt: str | list[dict[str, Any]], model: str | None = None) -> str:
         contents, system_instruction = self._prepare_contents(prompt)
 
-        model = model or self.model_name
-        if not model:
+        model_name = model or self.model_name
+        if not model_name:
             raise ValueError("Model name is required for Gemini client.")
 
         config = None
@@ -61,12 +61,10 @@ class GeminiClient(BaseLM):
             config = types.GenerateContentConfig(system_instruction=system_instruction)
 
         response = self.client.models.generate_content(
-            model=model,
-            contents=contents,
-            config=config,
+            model=model_name, contents=contents, config=config
         )
 
-        self._track_cost(response, model)
+        self._track_cost(response, model_name)
         return response.text
 
     async def acompletion(
@@ -74,27 +72,24 @@ class GeminiClient(BaseLM):
     ) -> str:
         contents, system_instruction = self._prepare_contents(prompt)
 
-        model = model or self.model_name
-        if not model:
+        model_name = model or self.model_name
+        if not model_name:
             raise ValueError("Model name is required for Gemini client.")
 
         config = None
         if system_instruction:
             config = types.GenerateContentConfig(system_instruction=system_instruction)
 
-        # google-genai SDK supports async via aio interface
         response = await self.client.aio.models.generate_content(
-            model=model,
-            contents=contents,
-            config=config,
+            model=model_name, contents=contents, config=config
         )
 
-        self._track_cost(response, model)
+        self._track_cost(response, model_name)
         return response.text
 
     def _prepare_contents(
         self, prompt: str | list[dict[str, Any]]
-    ) -> tuple[list[types.Content] | str, str | None]:
+    ) -> tuple[list[dict[str, Any]] | str, str | None]:
         """Prepare contents and extract system instruction for Gemini API."""
         system_instruction = None
 
@@ -112,19 +107,19 @@ class GeminiClient(BaseLM):
                     # Gemini handles system instruction separately
                     system_instruction = content
                 elif role == "user":
-                    contents.append(types.Content(role="user", parts=[types.Part(text=content)]))
+                    contents.append({"role": "user", "parts": [{"text": content}]})
                 elif role == "assistant":
                     # Gemini uses "model" instead of "assistant"
-                    contents.append(types.Content(role="model", parts=[types.Part(text=content)]))
+                    contents.append({"role": "model", "parts": [{"text": content}]})
                 else:
                     # Default to user role for unknown roles
-                    contents.append(types.Content(role="user", parts=[types.Part(text=content)]))
+                    contents.append({"role": "user", "parts": [{"text": content}]})
 
             return contents, system_instruction
 
         raise ValueError(f"Invalid prompt type: {type(prompt)}")
 
-    def _track_cost(self, response: types.GenerateContentResponse, model: str):
+    def _track_cost(self, response: Any, model: str):
         self.model_call_counts[model] += 1
 
         # Extract token usage from response
