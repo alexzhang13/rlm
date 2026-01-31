@@ -1,7 +1,7 @@
 """Tests for the Gemini client."""
 
 import os
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from dotenv import load_dotenv
@@ -163,6 +163,7 @@ class TestGeminiClientIntegration:
         not os.environ.get("GEMINI_API_KEY"),
         reason="GEMINI_API_KEY not set",
     )
+    @pytest.mark.asyncio
     async def test_async_completion(self):
         """Test async completion."""
         client = GeminiClient(model_name="gemini-2.5-flash")
