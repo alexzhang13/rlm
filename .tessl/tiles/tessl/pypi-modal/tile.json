@@ -1,7 +1,0 @@
-{
-  "name": "tessl/pypi-modal",
-  "version": "1.1.0",
-  "docs": "docs/index.md",
-  "describes": "pkg:pypi/modal@1.1.4",
-  "summary": "Python client library for Modal, a serverless cloud computing platform that enables developers to run Python code in the cloud with on-demand access to compute resources."
-}

@@ -1,7 +1,0 @@
-{
-  "name": "tessl/pypi-rich",
-  "version": "14.1.0",
-  "docs": "docs/index.md",
-  "describes": "pkg:pypi/rich@14.1.0",
-  "summary": "Render rich text, tables, progress bars, syntax highlighting, markdown and more to the terminal"
-}

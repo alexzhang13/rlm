@@ -1,7 +1,0 @@
-{
-  "name": "tessl/pypi-portkey-ai",
-  "version": "1.14.0",
-  "docs": "docs/index.md",
-  "describes": "pkg:pypi/portkey-ai@1.14.4",
-  "summary": "Python client library for the Portkey API - Control Panel for AI Apps with unified API signature, automated fallbacks, retries, load balancing, semantic caching, virtual keys, and comprehensive observability features."
-}

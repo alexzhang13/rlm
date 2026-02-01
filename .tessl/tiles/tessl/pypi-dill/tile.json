@@ -1,7 +1,0 @@
-{
-  "name": "tessl/pypi-dill",
-  "version": "0.4.0",
-  "docs": "docs/index.md",
-  "describes": "pkg:pypi/dill@0.4.0",
-  "summary": "Extended Python serialization library that can serialize functions, classes, and complex objects that standard pickle cannot handle."
-}

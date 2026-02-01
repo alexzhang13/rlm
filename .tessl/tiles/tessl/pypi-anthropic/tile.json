@@ -1,8 +1,0 @@
-{
-  "name": "tessl/pypi-anthropic",
-  "version": "0.75.0",
-  "docs": "docs/index.md",
-  "describes": "pkg:pypi/anthropic@0.75.0",
-  "summary": "The official Python library for the anthropic API",
-  "private": false
-}

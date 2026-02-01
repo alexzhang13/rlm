@@ -1,8 +1,0 @@
-{
-  "name": "tessl/pypi-google-genai",
-  "version": "1.51.0",
-  "docs": "docs/index.md",
-  "describes": "pkg:pypi/google-genai@1.51.0",
-  "summary": "GenAI Python SDK for Google's generative models supporting both Gemini Developer API and Vertex AI APIs",
-  "private": false
-}

@@ -1,7 +1,0 @@
-{
-  "name": "tessl/pypi-python-dotenv",
-  "version": "1.1.0",
-  "docs": "docs/index.md",
-  "describes": "pkg:pypi/python-dotenv@1.1.1",
-  "summary": "Read key-value pairs from a .env file and set them as environment variables"
-}
