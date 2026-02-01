@@ -1,0 +1,8 @@
+{
+  "name": "tessl/pypi-openai",
+  "version": "2.11.0",
+  "docs": "docs/index.md",
+  "describes": "pkg:pypi/openai@2.11.0",
+  "summary": "The official Python library for the openai API",
+  "private": false
+}

@@ -1,0 +1,7 @@
+{
+  "name": "tessl/pypi-pytest",
+  "version": "8.4.0",
+  "docs": "docs/index.md",
+  "describes": "pkg:pypi/pytest@8.4.2",
+  "summary": "pytest: simple powerful testing with Python"
+}

@@ -1,0 +1,7 @@
+{
+  "name": "tessl/pypi-pre-commit",
+  "version": "4.3.0",
+  "docs": "docs/index.md",
+  "describes": "pkg:pypi/pre-commit@4.3.0",
+  "summary": "A framework for managing and maintaining multi-language pre-commit hooks."
+}

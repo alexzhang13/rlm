@@ -1,0 +1,7 @@
+{
+  "name": "tessl/pypi-ty",
+  "version": "0.0.0",
+  "docs": "docs/index.md",
+  "describes": "pkg:pypi/ty@0.0.1-alpha.20",
+  "summary": "An extremely fast Python type checker and language server, written in Rust."
+}

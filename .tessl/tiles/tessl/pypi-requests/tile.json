@@ -1,0 +1,7 @@
+{
+  "name": "tessl/pypi-requests",
+  "version": "2.32.0",
+  "docs": "docs/index.md",
+  "describes": "pkg:pypi/requests@2.32.4",
+  "summary": "Python HTTP library for making HTTP requests with elegant API for humans."
+}
