@@ -60,7 +60,7 @@ class RLM:
             environment: The environment to use for the RLM.
             environment_kwargs: The kwargs to pass to the environment.
             depth: The current depth of the RLM (0-indexed).
-            max_depth: The maximum depth of the RLM. Currently, only depth 1 is supported.
+            max_depth: The maximum depth of recursion. When depth >= max_depth, falls back to plain LM completion.
             max_iterations: The maximum number of iterations of the RLM.
             custom_system_prompt: The custom system prompt to use for the RLM.
             other_backends: A list of other client backends that the environments can use to make sub-calls.
@@ -165,6 +165,9 @@ class RLM:
             env_kwargs["lm_handler_address"] = (lm_handler.host, lm_handler.port)
             env_kwargs["context_payload"] = prompt
             env_kwargs["depth"] = self.depth + 1  # Environment depth is RLM depth + 1
+            # For local environment with max_depth > 1, pass subcall callback for recursive RLM calls
+            if self.environment_type == "local" and self.max_depth > 1:
+                env_kwargs["subcall_fn"] = self._subcall
             environment: BaseEnv = get_environment(self.environment_type, env_kwargs)
 
             if self.persistent:
@@ -353,6 +356,69 @@ class RLM:
         client: BaseLM = get_client(self.backend, self.backend_kwargs)
         response = client.completion(message)
         return response
+
+    def _subcall(self, prompt: str, model: str | None = None) -> str:
+        """
+        Handle a subcall from the environment, potentially spawning a child RLM.
+
+        This method is passed as a callback to LocalREPL to enable recursive RLM calls.
+        When depth allows, it spawns a child RLM with its own REPL. At max depth,
+        it falls back to a plain LM completion.
+
+        Args:
+            prompt: The prompt to process.
+            model: Optional model name. If specified, the child RLM will use this model
+                instead of inheriting the parent's default backend.
+
+        Returns:
+            The response string from either a child RLM or plain LM completion.
+            On error, returns an error message string (does not raise).
+        """
+        next_depth = self.depth + 1
+
+        # Determine which backend/kwargs to use (model override or parent's default)
+        if model is not None:
+            child_backend_kwargs = (self.backend_kwargs or {}).copy()
+            child_backend_kwargs["model_name"] = model
+        else:
+            child_backend_kwargs = self.backend_kwargs
+
+        # If we'd hit/exceed the cap, do a normal LM completion (no REPL)
+        if next_depth >= self.max_depth:
+            # Use other_backend if available, otherwise use main backend
+            if self.other_backends and self.other_backend_kwargs:
+                client = get_client(self.other_backends[0], self.other_backend_kwargs[0])
+            else:
+                client = get_client(self.backend, child_backend_kwargs or {})
+            try:
+                return client.completion(prompt)
+            except Exception as e:
+                return f"Error: LM query failed at max depth - {e}"
+
+        # Otherwise: spawn a child RLM with its own LocalREPL
+        child = RLM(
+            backend=self.backend,
+            backend_kwargs=child_backend_kwargs,
+            environment=self.environment_type,
+            environment_kwargs=self.environment_kwargs,
+            depth=next_depth,
+            max_depth=self.max_depth,
+            max_iterations=self.max_iterations,
+            custom_system_prompt=self.system_prompt,
+            other_backends=self.other_backends,
+            other_backend_kwargs=self.other_backend_kwargs,
+            # Don't propagate logger/verbose to children to reduce noise
+            logger=None,
+            verbose=False,
+        )
+        try:
+            result = child.completion(prompt, root_prompt=None)
+            return result.response
+        except Exception as e:
+            return f"Error: Child RLM completion failed - {e}"
+        finally:
+            # Ensure child resources are cleaned up
+            child.close()
 
     def _validate_persistent_environment_support(self) -> None:
         """
