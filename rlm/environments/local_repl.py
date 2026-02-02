@@ -125,7 +125,7 @@ class LocalREPL(NonIsolatedEnv):
         setup_code: str | None = None,
         persistent: bool = False,
         depth: int = 1,
-        subcall_fn: Callable[[str, str | None], str] | None = None,
+        subcall_fn: Callable[[str, str | None], RLMChatCompletion] | None = None,
         **kwargs,
     ):
         super().__init__(persistent=persistent, depth=depth, **kwargs)
@@ -204,7 +204,9 @@ class LocalREPL(NonIsolatedEnv):
         # If we have a subcall callback, use it for recursive RLM calls
         if self.subcall_fn is not None:
             try:
-                return self.subcall_fn(prompt, model)
+                completion = self.subcall_fn(prompt, model)
+                self._pending_llm_calls.append(completion)
+                return completion.response
             except Exception as e:
                 return f"Error: LM query failed - {e}"
 
@@ -242,7 +244,9 @@ class LocalREPL(NonIsolatedEnv):
             results = []
             for prompt in prompts:
                 try:
-                    results.append(self.subcall_fn(prompt, model))
+                    completion = self.subcall_fn(prompt, model)
+                    self._pending_llm_calls.append(completion)
+                    results.append(completion.response)
                 except Exception as e:
                     results.append(f"Error: LM query failed - {e}")
             return results

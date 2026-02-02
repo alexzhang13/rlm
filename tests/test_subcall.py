@@ -122,7 +122,7 @@ class TestSubcallTimeoutPropagation:
 
             result = parent._subcall("test prompt")
 
-            assert "Error: Timeout exhausted" in result
+            assert "Error: Timeout exhausted" in result.response
 
             parent.close()
 
@@ -384,7 +384,7 @@ class TestSubcallModelOverrideAtLeafDepth:
                         break
 
             assert found_override_call, f"Expected get_client to be called with model_name='leaf-override-model', got calls: {call_args}"
-            assert result == "leaf response"
+            assert result.response == "leaf response"
 
             parent.close()
 
