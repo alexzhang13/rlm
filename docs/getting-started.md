@@ -133,6 +133,10 @@ This will display:
 | `environment_kwargs` | `dict` | `None` | Environment configuration |
 | `max_depth` | `int` | `1` | Maximum recursion depth |
 | `max_iterations` | `int` | `30` | Max REPL iterations per call |
+| `max_budget` | `float` | `None` | Max total USD cost (if provider reports cost) |
+| `max_timeout` | `float` | `None` | Max wall-clock seconds per completion |
+| `max_tokens` | `int` | `None` | Max total tokens (input + output) per completion |
+| `max_errors` | `int` | `None` | Max consecutive REPL errors before abort |
 | `custom_system_prompt` | `str` | `None` | Override default system prompt |
 | `other_backends` | `list` | `None` | Additional backends for sub-calls |
 | `other_backend_kwargs` | `list` | `None` | Configs for additional backends |
@@ -158,6 +162,18 @@ result = rlm.completion(
 - `execution_time`: Total time in seconds
 - `root_model`: Model name used
 - `prompt`: Original input
+
+### Depth>1 Recursion
+
+Depth>1 recursive subcalls are supported. When code inside the REPL calls `llm_query()` and `max_depth` allows it, RLM spawns a child RLM with its own REPL. When `depth >= max_depth`, it falls back to a plain LM completion.
+
+### Limits and Exceptions
+
+RLM raises explicit exceptions when limits are exceeded:
+- `BudgetExceededError`
+- `TimeoutExceededError`
+- `TokenLimitExceededError`
+- `ErrorThresholdExceededError`
 
 ---
 
@@ -340,4 +356,3 @@ Upload `.jsonl` log files to visualize:
 - [API Reference](api/rlm.md) - Complete RLM class documentation
 - [Environments](environments/) - Deep dive into each environment
 - [Backends](backends.md) - Detailed backend configuration
-
