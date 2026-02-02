@@ -1,3 +1,17 @@
-from rlm.core.rlm import RLM, BudgetExceededError
+from rlm.core.rlm import (
+    RLM,
+    BudgetExceededError,
+    TimeoutExceededError,
+    TokenLimitExceededError,
+    ErrorThresholdExceededError,
+    CancellationError,
+)
 
-__all__ = ["RLM", "BudgetExceededError"]
+__all__ = [
+    "RLM",
+    "BudgetExceededError",
+    "TimeoutExceededError",
+    "TokenLimitExceededError",
+    "ErrorThresholdExceededError",
+    "CancellationError",
+]

@@ -45,13 +45,17 @@ class ModelUsageSummary:
     total_calls: int
     total_input_tokens: int
     total_output_tokens: int
+    total_cost: float | None = None  # Cost in USD, if available from provider
 
     def to_dict(self):
-        return {
+        result = {
             "total_calls": self.total_calls,
             "total_input_tokens": self.total_input_tokens,
             "total_output_tokens": self.total_output_tokens,
         }
+        if self.total_cost is not None:
+            result["total_cost"] = self.total_cost
+        return result
 
     @classmethod
     def from_dict(cls, data: dict) -> "ModelUsageSummary":
@@ -59,6 +63,7 @@ class ModelUsageSummary:
             total_calls=data.get("total_calls"),
             total_input_tokens=data.get("total_input_tokens"),
             total_output_tokens=data.get("total_output_tokens"),
+            total_cost=data.get("total_cost"),
         )
 
 
@@ -66,13 +71,36 @@ class ModelUsageSummary:
 class UsageSummary:
     model_usage_summaries: dict[str, ModelUsageSummary]
 
+    @property
+    def total_cost(self) -> float | None:
+        """Aggregate cost across all models. Returns None if no cost data available."""
+        costs = [
+            summary.total_cost
+            for summary in self.model_usage_summaries.values()
+            if summary.total_cost is not None
+        ]
+        return sum(costs) if costs else None
+
+    @property
+    def total_input_tokens(self) -> int:
+        """Aggregate input tokens across all models."""
+        return sum(summary.total_input_tokens for summary in self.model_usage_summaries.values())
+
+    @property
+    def total_output_tokens(self) -> int:
+        """Aggregate output tokens across all models."""
+        return sum(summary.total_output_tokens for summary in self.model_usage_summaries.values())
+
     def to_dict(self):
-        return {
+        result = {
             "model_usage_summaries": {
                 model: usage_summary.to_dict()
                 for model, usage_summary in self.model_usage_summaries.items()
             },
         }
+        if self.total_cost is not None:
+            result["total_cost"] = self.total_cost
+        return result
 
     @classmethod
     def from_dict(cls, data: dict) -> "UsageSummary":
