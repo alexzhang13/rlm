@@ -1,0 +1,12 @@
+{
+    "crystal_golem": {
+        "hp": 50,
+        "resistances": [
+            "physical"
+        ],
+        "weaknesses": [
+            "resonance"
+        ],
+        "notes": "Impervious to metal blades."
+    }
+}

@@ -1,3 +1,6 @@
+# MUD engine
+game_world/
+
 # MacOS
 .DS_Store
 

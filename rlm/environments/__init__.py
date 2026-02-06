@@ -7,12 +7,12 @@ __all__ = ["BaseEnv", "LocalREPL", "SupportsPersistence", "get_environment"]
 
 
 def get_environment(
-    environment: Literal["local", "modal", "docker", "daytona", "prime"],
+    environment: Literal["local", "modal", "docker", "daytona", "prime", "game"],
     environment_kwargs: dict[str, Any],
 ) -> BaseEnv:
     """
     Routes a specific environment and the args (as a dict) to the appropriate environment if supported.
-    Currently supported environments: ['local', 'modal', 'docker', 'daytona', 'prime']
+    Currently supported environments: ['local', 'modal', 'docker', 'daytona', 'prime', 'game']
     """
     if environment == "local":
         return LocalREPL(**environment_kwargs)
@@ -32,6 +32,10 @@ def get_environment(
         from rlm.environments.prime_repl import PrimeREPL
 
         return PrimeREPL(**environment_kwargs)
+    elif environment == "game":
+        from rlm.environments.game_repl import GameREPL
+
+        return GameREPL(**environment_kwargs)
     else:
         raise ValueError(
             f"Unknown environment: {environment}. Supported: ['local', 'modal', 'docker', 'daytona', 'prime']"

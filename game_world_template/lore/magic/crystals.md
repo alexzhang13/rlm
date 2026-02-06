@@ -1,0 +1,1 @@
+Blue Crystals vibrate at 440Hz. They explode if touched by metal.
