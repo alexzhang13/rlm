@@ -36,6 +36,7 @@ Issues = "https://github.com/alexzhang13/rlm/issues"
 
 [project.optional-dependencies]
 modal = ["modal>=0.73.0", "dill>=0.3.7"]
+e2b = ["e2b-code-interpreter>=0.0.11", "dill>=0.3.7"]
 daytona = ["daytona>=0.128.1", "dill>=0.3.7"]
 prime = ["prime-sandboxes>=0.2.0", "dill>=0.3.7"]
 monty = ["pydantic-monty>=0.0.4"]

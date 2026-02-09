@@ -7,12 +7,12 @@ __all__ = ["BaseEnv", "LocalREPL", "SupportsPersistence", "get_environment"]
 
 
 def get_environment(
-    environment: Literal["local", "modal", "docker", "daytona", "prime", "monty"],
+    environment: Literal["local", "modal", "docker", "daytona", "prime", "e2b", "monty"],
     environment_kwargs: dict[str, Any],
 ) -> BaseEnv:
     """
     Routes a specific environment and the args (as a dict) to the appropriate environment if supported.
-    Currently supported environments: ['local', 'modal', 'docker', 'daytona', 'prime', 'monty']
+    Currently supported environments: ['local', 'modal', 'docker', 'daytona', 'prime', 'e2b', 'monty']
     """
     if environment == "local":
         return LocalREPL(**environment_kwargs)
@@ -32,6 +32,10 @@ def get_environment(
         from rlm.environments.prime_repl import PrimeREPL
 
         return PrimeREPL(**environment_kwargs)
+    elif environment == "e2b":
+        from rlm.environments.e2b_repl import E2BREPL
+
+        return E2BREPL(**environment_kwargs)
     elif environment == "monty":
         from rlm.environments.monty_repl import MontyREPL
 
@@ -39,5 +43,5 @@ def get_environment(
     else:
         raise ValueError(
             f"Unknown environment: {environment}. Supported: "
-            "['local', 'modal', 'docker', 'daytona', 'prime', 'monty']"
+            "['local', 'modal', 'docker', 'daytona', 'prime', 'e2b', 'monty']"
         )
