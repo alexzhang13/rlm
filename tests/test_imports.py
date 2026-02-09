@@ -182,6 +182,13 @@ class TestEnvironmentImports:
 
         assert PrimeREPL is not None
 
+    def test_monty_repl_import(self):
+        """Test MontyREPL import."""
+        pytest.importorskip("pydantic_monty")
+        from rlm.environments.monty_repl import MontyREPL
+
+        assert MontyREPL is not None
+
     def test_get_environment_function(self):
         """Test get_environment function import."""
         from rlm.environments import get_environment
@@ -325,6 +332,7 @@ class TestImportConflicts:
             ("rlm.clients.litellm", "litellm"),
             ("rlm.environments.modal_repl", "modal"),
             ("rlm.environments.prime_repl", "prime_sandboxes"),
+            ("rlm.environments.monty_repl", "pydantic_monty"),
         ]
 
         # Test core modules
@@ -499,5 +507,14 @@ class TestImportCompleteness:
             from rlm.environments.prime_repl import PrimeREPL
 
             assert isinstance(PrimeREPL, type)
+        except Exception:
+            pass
+
+        # Test optional MontyREPL
+        try:
+            pytest.importorskip("pydantic_monty")
+            from rlm.environments.monty_repl import MontyREPL
+
+            assert isinstance(MontyREPL, type)
         except Exception:
             pass
