@@ -39,6 +39,11 @@ class TestMontyREPLBasic:
         repl.handle_print_callback("stderr", "oops")
         assert "oops" in repl.stderr_parts
 
+    def test_stderr_from_execution(self):
+        repl = MontyREPL()
+        result = repl.execute_code("1 / 0")
+        assert "ZeroDivisionError" in result.stderr
+
     def test_context_and_history_counts(self):
         repl = MontyREPL()
         assert repl.get_context_count() == 0

@@ -267,7 +267,8 @@ class MontyREPL(NonIsolatedEnv):
             if name.isidentifier() and not name.startswith("_") and name not in RESERVED_NAMES
         }
         for name in sorted(persisted_names):
-            lines.append(f"{name} = __rlm_state.get({name!r})")
+            lines.append(f"if {name!r} in __rlm_state:")
+            lines.append(f"    {name} = __rlm_state[{name!r}]")
 
         lines.append("def FINAL_VAR(variable_name):")
         lines.append('    variable_name = variable_name.strip().strip("\\"\'")')
@@ -386,32 +387,6 @@ class MontyREPL(NonIsolatedEnv):
         """Return the number of conversation histories stored."""
         return self._history_count
 
-    def final_var(self, variable_name: str) -> str:
-        """Return the value of a variable as a final answer."""
-        variable_name = variable_name.strip().strip("\"'")
-        if variable_name in self.locals:
-            return str(self.locals[variable_name])
-
-        available = [k for k in self.locals.keys() if not k.startswith("_")]
-        if available:
-            return (
-                f"Error: Variable '{variable_name}' not found. "
-                f"Available variables: {available}. "
-                "You must create and assign a variable BEFORE calling FINAL_VAR on it."
-            )
-        return (
-            f"Error: Variable '{variable_name}' not found. "
-            "No variables have been created yet. "
-            "You must create and assign a variable in a REPL block BEFORE calling FINAL_VAR on it."
-        )
-
-    def show_vars(self) -> str:
-        """Show all available variables in the REPL environment."""
-        available = {k: type(v).__name__ for k, v in self.locals.items() if not k.startswith("_")}
-        if not available:
-            return "No variables created yet. Use ```repl``` blocks to create variables."
-        return f"Available variables: {available}"
-
     def llm_query(self, prompt: str, model: str | None = None) -> str:
         """Query the LM via socket connection to the handler."""
         if not self.lm_handler_address:
@@ -455,6 +430,9 @@ class MontyREPL(NonIsolatedEnv):
         self.locals.clear()
         self.pending_llm_calls.clear()
         self.stdout_parts.clear()
+        self.stderr_parts.clear()
+        self._context_count = 0
+        self._history_count = 0
 
     def __enter__(self) -> MontyREPL:
         return self
