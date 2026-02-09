@@ -40,8 +40,20 @@ def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | 
     Returns:
         The final answer string, or None if no final answer pattern is found
     """
-    # Check for FINAL_VAR pattern first - must be at start of line
-    final_var_pattern = r"^\s*FINAL_VAR\((.*?)\)"
+    # Check if finish() or finish_var() were used programmatically (preferred)
+    if environment is not None:
+        try:
+            answer = getattr(environment, "_finish_answer", None)
+            if answer is not None and isinstance(answer, str):
+                return answer
+        except Exception:
+            pass  # Fall through to regex patterns
+
+    # Fallback to regex patterns for backward compatibility with models trained on FINAL() convention
+
+    # Check for FINAL_VAR pattern first - must be at start of line, non-greedy
+    # Use DOTALL to allow newlines within parentheses, but non-greedy to stop at first )
+    final_var_pattern = r"^\s*FINAL_VAR\((.*?)\)\s*$"
     match = re.search(final_var_pattern, text, re.MULTILINE | re.DOTALL)
     if match:
         variable_name = match.group(1).strip().strip('"').strip("'")
@@ -54,8 +66,9 @@ def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | 
         return None
 
     # Check for FINAL pattern - must be at start of line
-    # Use greedy matching to capture content with nested parentheses
-    final_pattern = r"^\s*FINAL\((.*)\)\s*$"
+    # Non-greedy (.*?) with DOTALL allows multiline but stops at first closing )
+    # This fixes the over-capture bug while still supporting multiline content
+    final_pattern = r"^\s*FINAL\((.*?)\)\s*$"
     match = re.search(final_pattern, text, re.MULTILINE | re.DOTALL)
     if match:
         return match.group(1).strip()
