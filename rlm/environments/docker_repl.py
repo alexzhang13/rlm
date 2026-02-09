@@ -142,9 +142,20 @@ _locals = load_state()
 
 def FINAL_VAR(name):
     name = name.strip().strip("\\"\\'")
-    return str(_locals.get(name, f"Error: Variable '{{name}}' not found"))
+    if name in _locals:
+        return str(_locals[name])
+    available = [k for k in _locals.keys() if not k.startswith("_")]
+    if available:
+        return f"Error: Variable '{{name}}' not found. Available variables: {{available}}. You must create and assign a variable BEFORE calling FINAL_VAR on it."
+    return f"Error: Variable '{{name}}' not found. No variables have been created yet. You must create and assign a variable in a REPL block BEFORE calling FINAL_VAR on it."
 
-_globals = {{"__builtins__": __builtins__, "__name__": "__main__", "llm_query": llm_query, "llm_query_batched": llm_query_batched, "FINAL_VAR": FINAL_VAR}}
+def SHOW_VARS():
+    available = {{k: type(v).__name__ for k, v in _locals.items() if not k.startswith("_")}}
+    if not available:
+        return "No variables created yet. Use ```repl``` blocks to create variables."
+    return f"Available variables: {{available}}"
+
+_globals = {{"__builtins__": __builtins__, "__name__": "__main__", "llm_query": llm_query, "llm_query_batched": llm_query_batched, "FINAL_VAR": FINAL_VAR, "SHOW_VARS": SHOW_VARS}}
 
 code = base64.b64decode("{code_b64}").decode()
 stdout_buf, stderr_buf = io.StringIO(), io.StringIO()
@@ -197,7 +208,11 @@ class DockerREPL(NonIsolatedEnv):
         self.proxy_server: HTTPServer | None = None
         self.proxy_thread: threading.Thread | None = None
         self.proxy_port: int = 0
-        self.temp_dir = tempfile.mkdtemp(prefix="docker_repl_")
+        base_dir = os.environ.get(
+            "RLM_DOCKER_WORKSPACE_DIR", os.path.join(os.getcwd(), ".rlm_workspace")
+        )
+        os.makedirs(base_dir, exist_ok=True)
+        self.temp_dir = tempfile.mkdtemp(prefix="docker_repl_", dir=base_dir)
         self.pending_calls: list[RLMChatCompletion] = []
         self._calls_lock = threading.Lock()
 
@@ -257,11 +272,21 @@ class DockerREPL(NonIsolatedEnv):
         )
 
     def load_context(self, context_payload: dict | list | str):
+        """Load context by writing to a file in the mounted workspace."""
         if isinstance(context_payload, str):
-            escaped = context_payload.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
-            self.execute_code(f'context = """{escaped}"""')
+            context_path = os.path.join(self.temp_dir, "context.txt")
+            with open(context_path, "w") as f:
+                f.write(context_payload)
+            self.execute_code(
+                "with open('/workspace/context.txt', 'r') as f:\n    context = f.read()"
+            )
         else:
-            self.execute_code(f"import json; context = json.loads('{json.dumps(context_payload)}')")
+            context_path = os.path.join(self.temp_dir, "context.json")
+            with open(context_path, "w") as f:
+                json.dump(context_payload, f)
+            self.execute_code(
+                "import json\nwith open('/workspace/context.json', 'r') as f:\n    context = json.load(f)"
+            )
 
     def execute_code(self, code: str) -> REPLResult:
         start = time.perf_counter()

@@ -128,6 +128,33 @@ multiline answer)"""
         result = find_final_answer(text)
         assert result == "answer with spaces"
 
+    def test_final_with_nested_parentheses_greedy_matching(self):
+        """Test that greedy matching captures content with nested parentheses correctly.
+        Greedy matching (.*) matches to the last closing parenthesis, correctly handling
+        nested parentheses in FINAL() content. Non-greedy (.*?) would incorrectly stop
+        at the first closing parenthesis, breaking functions, tuples, and nested structures.
+        """
+        # Function call with nested parentheses
+        text = "FINAL(func(arg1, arg2))"
+        result = find_final_answer(text)
+        assert result == "func(arg1, arg2)"
+
+        # List and tuple with multiple closing parentheses
+        text = "FINAL([1, 2, 3], (4, 5))"
+        result = find_final_answer(text)
+        assert result == "[1, 2, 3], (4, 5)"
+
+        # Complex nested dictionary
+        text = "FINAL({'key': 'value', 'nested': {'a': 1, 'b': 2}})"
+        result = find_final_answer(text)
+        assert "'key': 'value'" in result
+        assert "'nested':" in result
+
+        # Multiple function calls with nested parentheses
+        text = "FINAL(calculate(10, 20) + process(data))"
+        result = find_final_answer(text)
+        assert result == "calculate(10, 20) + process(data)"
+
     def test_final_and_final_var_parsing(self):
         """Test that both FINAL and FINAL_VAR patterns are parsed correctly."""
         # Test FINAL with various content types

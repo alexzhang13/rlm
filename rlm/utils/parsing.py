@@ -54,7 +54,8 @@ def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | 
         return None
 
     # Check for FINAL pattern - must be at start of line
-    final_pattern = r"^\s*FINAL\((.*?)\)"
+    # Use greedy matching to capture content with nested parentheses
+    final_pattern = r"^\s*FINAL\((.*)\)\s*$"
     match = re.search(final_pattern, text, re.MULTILINE | re.DOTALL)
     if match:
         return match.group(1).strip()

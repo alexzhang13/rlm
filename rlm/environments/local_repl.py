@@ -161,6 +161,7 @@ class LocalREPL(NonIsolatedEnv):
 
         # Add helper functions
         self.globals["FINAL_VAR"] = self._final_var
+        self.globals["SHOW_VARS"] = self._show_vars
         self.globals["llm_query"] = self._llm_query
         self.globals["llm_query_batched"] = self._llm_query_batched
 
@@ -169,7 +170,27 @@ class LocalREPL(NonIsolatedEnv):
         variable_name = variable_name.strip().strip("\"'")
         if variable_name in self.locals:
             return str(self.locals[variable_name])
-        return f"Error: Variable '{variable_name}' not found"
+
+        # Provide helpful error message with available variables
+        available = [k for k in self.locals.keys() if not k.startswith("_")]
+        if available:
+            return (
+                f"Error: Variable '{variable_name}' not found. "
+                f"Available variables: {available}. "
+                f"You must create and assign a variable BEFORE calling FINAL_VAR on it."
+            )
+        return (
+            f"Error: Variable '{variable_name}' not found. "
+            f"No variables have been created yet. "
+            f"You must create and assign a variable in a REPL block BEFORE calling FINAL_VAR on it."
+        )
+
+    def _show_vars(self) -> str:
+        """Show all available variables in the REPL environment."""
+        available = {k: type(v).__name__ for k, v in self.locals.items() if not k.startswith("_")}
+        if not available:
+            return "No variables created yet. Use ```repl``` blocks to create variables."
+        return f"Available variables: {available}"
 
     def _llm_query(self, prompt: str, model: str | None = None) -> str:
         """Query the LM via socket connection to the handler.

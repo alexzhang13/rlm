@@ -1,32 +1,73 @@
 """
-Prime Intellect REPL environment that runs Python code in Prime Sandboxes.
+Daytona REPL environment that runs Python code in Daytona sandboxes.
 
-Uses the Prime SDK (https://docs.primeintellect.ai/sandboxes/sdk) for sandbox management.
-Follows the same HTTP broker pattern as ModalREPL for LLM communication.
+Uses the Daytona API (https://daytona.io/docs) for sandbox management.
 """
 
 import base64
 import json
+import os
 import textwrap
 import threading
 import time
-from typing import Any
 
 import requests
-from dotenv import load_dotenv
-from prime_sandboxes import (
-    APIClient,
-    BackgroundJob,
-    CreateSandboxRequest,
-    SandboxClient,
+from daytona import (
+    CreateSandboxFromImageParams,
+    Daytona,
+    DaytonaConfig,
+    Image,
+    Resources,
+    SessionExecuteRequest,
 )
 
 from rlm.core.comms_utils import LMRequest, send_lm_request, send_lm_request_batched
 from rlm.core.types import REPLResult, RLMChatCompletion
 from rlm.environments.base_env import IsolatedEnv
-from rlm.environments.constants import APT_PACKAGES, PIP_PACKAGES
 
-load_dotenv()
+# =============================================================================
+# Default Daytona Image
+# =============================================================================
+
+
+def get_default_image() -> Image:
+    """
+    Build a default Daytona image with common libraries for data science,
+    math, and general Python work.
+    """
+    return (
+        Image.debian_slim("3.11")
+        .run_commands(
+            "apt-get update && apt-get install -y build-essential \
+                 git \
+                 curl \
+                 wget \
+                 libopenblas-dev \
+                 liblapack-dev",
+        )
+        .pip_install(
+            # Data science essentials
+            "numpy>=1.26.0",
+            "pandas>=2.1.0",
+            "scipy>=1.11.0",
+            # Math & symbolic computation
+            "sympy>=1.12",
+            # HTTP & APIs
+            "requests>=2.31.0",
+            "httpx>=0.25.0",
+            "flask>=3.0.0",
+            # Data formats
+            "pyyaml>=6.0",
+            "toml>=0.10.2",
+            # Utilities
+            "tqdm>=4.66.0",
+            "python-dateutil>=2.8.2",
+            "regex>=2023.0.0",
+            # For state serialization
+            "dill>=0.3.7",
+        )
+    )
+
 
 # =============================================================================
 # Broker Server Script (runs inside sandbox, handles LLM request queue)
@@ -41,13 +82,13 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# Request queue: {{request_id: {{"request": {{...}}, "response": None, "event": Event}}}}
-pending_requests = {{}}
+# Request queue: {request_id: {"request": {...}, "response": None, "event": Event}}
+pending_requests = {}
 lock = threading.Lock()
 
 @app.route("/health")
 def health():
-    return jsonify({{"status": "ok"}})
+    return jsonify({"status": "ok"})
 
 @app.route("/enqueue", methods=["POST"])
 def enqueue():
@@ -57,11 +98,11 @@ def enqueue():
     event = threading.Event()
 
     with lock:
-        pending_requests[request_id] = {{
+        pending_requests[request_id] = {
             "request": data,
             "response": None,
             "event": event,
-        }}
+        }
 
     # Wait for response (with timeout)
     event.wait(timeout=300)
@@ -72,22 +113,22 @@ def enqueue():
     if entry and entry["response"] is not None:
         return jsonify(entry["response"])
     else:
-        return jsonify({{"error": "Request timed out"}}), 504
+        return jsonify({"error": "Request timed out"}), 504
 
 @app.route("/pending")
 def get_pending():
-    """Called by PrimeREPL to get pending requests."""
+    """Called by DaytonaREPL to get pending requests."""
     with lock:
         pending = [
-            {{"id": rid, "request": entry["request"]}}
+            {"id": rid, "request": entry["request"]}
             for rid, entry in pending_requests.items()
             if entry["response"] is None
         ]
-    return jsonify({{"pending": pending}})
+    return jsonify({"pending": pending})
 
 @app.route("/respond", methods=["POST"])
 def respond():
-    """Called by PrimeREPL to submit a response."""
+    """Called by DaytonaREPL to submit a response."""
     data = request.json
     request_id = data.get("id")
     response = data.get("response")
@@ -96,12 +137,12 @@ def respond():
         if request_id in pending_requests:
             pending_requests[request_id]["response"] = response
             pending_requests[request_id]["event"].set()
-            return jsonify({{"status": "ok"}})
+            return jsonify({"status": "ok"})
 
-    return jsonify({{"error": "Request not found"}}), 404
+    return jsonify({"error": "Request not found"}), 404
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port={broker_port}, threaded=True)
+    app.run(host="0.0.0.0", port=8080, threaded=True)
 '''
 )
 
@@ -111,7 +152,7 @@ if __name__ == "__main__":
 # =============================================================================
 
 
-def _build_exec_script(code: str, broker_port: int = 8888, depth: int = 1) -> str:
+def _build_exec_script(code: str, broker_port: int = 8080, depth: int = 1) -> str:
     """
     Build a script that executes code with state persistence.
     LLM queries go through the local broker server.
@@ -272,52 +313,77 @@ print(json.dumps(result))
     )
 
 
-class PrimeREPL(IsolatedEnv):
+class DaytonaREPL(IsolatedEnv):
     """
-    Prime Intellect REPL environment that runs Python code in Prime Sandboxes.
+    Daytona REPL environment that runs Python code in a Daytona Sandbox.
 
-    Uses Prime's port exposure for LLM communication:
-    - Sandbox runs a broker server exposed via sandboxes.expose()
-    - PrimeREPL polls the broker for pending LLM requests
-    - PrimeREPL forwards requests to the LM handler and posts responses back
+    Uses Daytona preview URLs for LLM communication:
+    - Sandbox runs a broker server exposed via preview URL (port 8080)
+    - DaytonaREPL polls the broker for pending LLM requests
+    - DaytonaREPL forwards requests to the LM handler and posts responses back
     """
 
-    BROKER_PORT = 8888
+    BROKER_PORT = 8080
 
     def __init__(
         self,
+        api_key: str | None = None,
+        target: str = "us",
         name: str = "rlm-sandbox",
-        docker_image: str = "python:3.11-slim",
-        timeout_minutes: int = 60,
+        timeout: int = 600,
+        cpu: int = 1,
+        memory: int = 2,
+        disk: int = 5,
+        auto_stop_interval: int = 0,
+        image: Image | None = None,
         lm_handler_address: tuple[str, int] | None = None,
         context_payload: dict | list | str | None = None,
         setup_code: str | None = None,
-        network_access: bool = True,
         persistent: bool = False,
         depth: int = 1,
-        **kwargs: Any,
+        **kwargs,
     ):
-        super().__init__(persistent=persistent, depth=depth, **kwargs)
+        """
+        Initialize a Daytona REPL environment.
 
+        Args:
+            api_key: Daytona API key. If None, uses DAYTONA_API_KEY env var.
+            target: Daytona target region (e.g., "us", "eu").
+            name: Unique identifier for the sandbox.
+            timeout: Sandbox timeout in seconds.
+            cpu: Number of CPU cores for the sandbox.
+            memory: Memory in GB for the sandbox.
+            disk: Disk space in GB for the sandbox.
+            auto_stop_interval: Minutes of inactivity before auto-stop. 0 = run indefinitely.
+            image: Daytona Image object for declarative building. If None, uses default image.
+            lm_handler_address: (host, port) tuple for LM Handler server.
+            context_payload: Initial context to load into the environment.
+            setup_code: Optional code to run during setup.
+            persistent: Whether to persist state across calls (not yet supported).
+            depth: Depth level for LLM request routing (used by LMHandler).
+            **kwargs: Additional arguments passed to base class.
+        """
         if persistent:
             raise NotImplementedError(
-                "Persistent REPLs are currently not supported for environment: PrimeREPL"
+                "Persistent REPLs are currently not supported for environment: DaytonaREPL"
             )
+        super().__init__(persistent=persistent, depth=depth, **kwargs)
 
+        self.api_key = api_key or os.getenv("DAYTONA_API_KEY")
+        self.target = target
         self.name = name
-        self.docker_image = docker_image
-        self.timeout_minutes = timeout_minutes
+        self.timeout = timeout
+        self.cpu = cpu
+        self.memory = memory
+        self.disk = disk
+        self.auto_stop_interval = auto_stop_interval
+        self.image = image or get_default_image()
         self.lm_handler_address = lm_handler_address
-        self.network_access = network_access
 
-        # Client and sandbox state
-        self.client: SandboxClient | None = None
-        self.sandbox_id: str | None = None
-        self.broker_job: BackgroundJob | None = None
+        self.daytona = None
+        self.sandbox = None
+        self.broker_session_id: str = "rlm-broker-session"
         self.broker_url: str | None = None
-        self.broker_exposure_id: str | None = None
-
-        # Polling thread for LLM requests
         self.poller_thread: threading.Thread | None = None
         self.poller_stop = threading.Event()
         self.pending_llm_calls: list[RLMChatCompletion] = []
@@ -332,55 +398,60 @@ class PrimeREPL(IsolatedEnv):
             self.execute_code(setup_code)
 
     def setup(self):
-        """Create the Prime sandbox, broker, and start polling."""
-        # Create the client
-        self.client = SandboxClient(APIClient())
+        """Create the Daytona sandbox, broker, and start polling."""
+        # Initialize Daytona client
+        config_kwargs = {"target": self.target}
+        if self.api_key:
+            config_kwargs["api_key"] = self.api_key
 
-        # Create the sandbox
-        request = CreateSandboxRequest(
+        config = DaytonaConfig(**config_kwargs)
+        self.daytona = Daytona(config)
+
+        # Create sandbox with specified resources
+        resources = Resources(
+            cpu=self.cpu,
+            memory=self.memory,
+            disk=self.disk,
+        )
+
+        params = CreateSandboxFromImageParams(
             name=self.name,
-            docker_image=self.docker_image,
-            timeout_minutes=self.timeout_minutes,
-            network_access=self.network_access,
-        )
-        sandbox = self.client.create(request)
-        self.sandbox_id = sandbox.id
-
-        # Wait for sandbox to be ready
-        self.client.wait_for_creation(self.sandbox_id, max_attempts=self.timeout_minutes * 60)
-
-        # Install apt dependencies
-        apt_cmd = "apt-get update && apt-get install -y " + " ".join(APT_PACKAGES)
-        self.client.execute_command(self.sandbox_id, apt_cmd)
-
-        # Install pip dependencies
-        pip_cmd = "pip install " + " ".join(f'"{pkg}"' for pkg in PIP_PACKAGES)
-        self.client.execute_command(self.sandbox_id, pip_cmd)
-
-        # Write the broker script to the sandbox.
-        # Unlike Modal's sandbox.exec() which accepts separate args, Prime's
-        # start_background_job() takes a shell command string. We write to a file
-        # to avoid shell escaping issues with quotes/special chars in the script.
-        broker_script = _BROKER_SCRIPT.format(broker_port=self.BROKER_PORT)
-        broker_script_b64 = base64.b64encode(broker_script.encode()).decode()
-        self.client.execute_command(
-            self.sandbox_id,
-            f"echo '{broker_script_b64}' | base64 -d > /tmp/broker.py",
+            image=self.image,
+            resources=resources,
+            auto_stop_interval=self.auto_stop_interval,
         )
 
-        # Start the broker as a background job
-        self.broker_job = self.client.start_background_job(
-            self.sandbox_id,
-            "python /tmp/broker.py",
+        self.sandbox = self.daytona.create(params)
+
+        # Upload the broker script
+        self.sandbox.fs.upload_file(
+            _BROKER_SCRIPT.encode("utf-8"),
+            "broker_server.py",
         )
 
-        # Wait for broker to be ready with health check
-        self._wait_for_broker()
+        # Create a session for the broker server
+        self.sandbox.process.create_session(self.broker_session_id)
 
-        # Expose the broker port
-        exposed = self.client.expose(self.sandbox_id, port=self.BROKER_PORT, name="rlm-broker")
-        self.broker_url = exposed.url
-        self.broker_exposure_id = exposed.exposure_id
+        # Start the broker server in the session (async execution)
+        self.sandbox.process.execute_session_command(
+            self.broker_session_id,
+            SessionExecuteRequest(
+                command="python broker_server.py",
+                var_async=True,
+            ),
+        )
+
+        # Wait for broker to be ready
+        time.sleep(3)
+
+        # Get the preview URL for the broker port
+        try:
+            preview_info = self.sandbox.get_preview_link(self.BROKER_PORT)
+            self.broker_url = preview_info.url
+            self._preview_token = preview_info.token
+        except Exception:
+            self.broker_url = None
+            self._preview_token = None
 
         # Start polling thread if we have an LM handler
         if self.lm_handler_address and self.broker_url:
@@ -388,43 +459,12 @@ class PrimeREPL(IsolatedEnv):
             self.poller_thread = threading.Thread(target=self._poll_broker, daemon=True)
             self.poller_thread.start()
 
-    def _wait_for_broker(self, max_attempts: int = 30):
-        """Wait for the broker to be ready by checking health endpoint."""
-        # Use Python to check health (curl may not be installed in slim images)
-        health_check_cmd = (
-            f'python -c "import requests; '
-            f"r = requests.get('http://127.0.0.1:{self.BROKER_PORT}/health', timeout=2); "
-            f'print(r.text)"'
-        )
-
-        for _ in range(max_attempts):
-            time.sleep(1)
-            try:
-                result = self.client.execute_command(
-                    self.sandbox_id,
-                    health_check_cmd,
-                )
-                if "ok" in result.stdout.lower():
-                    return
-            except Exception:
-                pass
-
-        # Get broker logs for debugging by reading log files directly
-        error_info = "Broker failed to start."
-        if self.broker_job:
-            try:
-                stdout_result = self.client.execute_command(
-                    self.sandbox_id,
-                    f"cat {self.broker_job.stdout_log_file} 2>/dev/null || echo 'No stdout log'",
-                )
-                stderr_result = self.client.execute_command(
-                    self.sandbox_id,
-                    f"cat {self.broker_job.stderr_log_file} 2>/dev/null || echo 'No stderr log'",
-                )
-                error_info += f"\nstdout: {stdout_result.stdout}\nstderr: {stderr_result.stdout}"
-            except Exception as e:
-                error_info += f"\nFailed to read logs: {e}"
-        raise RuntimeError(error_info)
+    def _get_headers(self) -> dict:
+        """Get headers for broker requests including auth token."""
+        headers = {"Content-Type": "application/json"}
+        if hasattr(self, "_preview_token") and self._preview_token:
+            headers["x-daytona-preview-token"] = self._preview_token
+        return headers
 
     def _poll_broker(self):
         """Poll the broker for pending LLM requests and handle them."""
@@ -433,7 +473,8 @@ class PrimeREPL(IsolatedEnv):
                 # Get pending requests
                 resp = requests.get(
                     f"{self.broker_url}/pending",
-                    timeout=10,
+                    headers=self._get_headers(),
+                    timeout=5,
                 )
                 pending = resp.json().get("pending", [])
 
@@ -447,6 +488,7 @@ class PrimeREPL(IsolatedEnv):
                     # Send response back
                     requests.post(
                         f"{self.broker_url}/respond",
+                        headers=self._get_headers(),
                         json={"id": request_id, "response": response},
                         timeout=10,
                     )
@@ -509,27 +551,29 @@ class PrimeREPL(IsolatedEnv):
         self.execute_code(context_code)
 
     def execute_code(self, code: str) -> REPLResult:
-        """Execute code in the Prime sandbox and return result."""
+        """Execute code in the Daytona sandbox and return result."""
         start_time = time.perf_counter()
 
         # Clear pending LLM calls
         with self._calls_lock:
             self.pending_llm_calls.clear()
 
-        # Build and write the script
+        # Build and execute the script
         script = _build_exec_script(code, self.BROKER_PORT, self.depth)
-        script_b64 = base64.b64encode(script.encode()).decode()
-        self.client.execute_command(
-            self.sandbox_id,
-            f"echo '{script_b64}' | base64 -d > /tmp/exec_script.py",
+
+        # Upload the script as a temporary file
+        script_path = "/tmp/rlm_exec_script.py"
+        self.sandbox.fs.upload_file(
+            script.encode("utf-8"),
+            script_path,
         )
 
         # Execute the script
-        result = self.client.execute_command(
-            self.sandbox_id, "python /tmp/exec_script.py", timeout=60 * 10
-        )
-        stdout = result.stdout
-        stderr = result.stderr
+        response = self.sandbox.process.exec(f"python {script_path}", timeout=self.timeout)
+
+        # Read output
+        stdout = response.result if response.exit_code == 0 else ""
+        stderr = response.result if response.exit_code != 0 else ""
 
         # Collect LLM calls made during this execution
         with self._calls_lock:
@@ -542,12 +586,12 @@ class PrimeREPL(IsolatedEnv):
         try:
             lines = stdout.strip().split("\n")
             result_json = lines[-1] if lines else "{}"
-            parsed = json.loads(result_json)
+            result = json.loads(result_json)
 
             return REPLResult(
-                stdout=parsed.get("stdout", ""),
-                stderr=parsed.get("stderr", "") + stderr,
-                locals=parsed.get("locals", {}),
+                stdout=result.get("stdout", ""),
+                stderr=result.get("stderr", "") + stderr,
+                locals=result.get("locals", {}),
                 execution_time=execution_time,
                 rlm_calls=pending_calls,
             )
@@ -568,24 +612,19 @@ class PrimeREPL(IsolatedEnv):
             self.poller_thread.join(timeout=2)
             self.poller_thread = None
 
-        # Cleanup sandbox resources
-        if self.client is None or self.sandbox_id is None:
-            return
-
-        # Unexpose the broker port
-        if self.broker_exposure_id:
+        # Delete the broker session
+        if self.sandbox is not None:
             try:
-                self.client.unexpose(self.sandbox_id, self.broker_exposure_id)
+                self.sandbox.process.delete_session(self.broker_session_id)
             except Exception:
                 pass
 
-        # Delete the sandbox
-        try:
-            self.client.delete(self.sandbox_id)
-        except Exception:
-            pass
-
-        self.sandbox_id = None
+            # Delete the sandbox
+            try:
+                self.sandbox.delete()
+            except Exception:
+                pass
+            self.sandbox = None
 
     def __enter__(self):
         return self

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from rlm.core.types import UsageSummary
+from rlm.core.types import ModelUsageSummary, UsageSummary
 
 
 class BaseLM(ABC):
@@ -28,6 +28,6 @@ class BaseLM(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def get_last_usage(self) -> UsageSummary:
+    def get_last_usage(self) -> ModelUsageSummary:
         """Get the last cost summary of the model."""
         raise NotImplementedError
