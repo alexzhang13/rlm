@@ -175,10 +175,6 @@ class MontyREPL(NonIsolatedEnv):
         resource_limits: pydantic_monty.ResourceLimits | None = None,
         **kwargs: Any,
     ) -> None:
-        if persistent:
-            raise NotImplementedError(
-                "Persistent REPLs are currently not supported for environment: MontyREPL"
-            )
         super().__init__(persistent=persistent, depth=depth, **kwargs)
 
         self.lm_handler_address = lm_handler_address
