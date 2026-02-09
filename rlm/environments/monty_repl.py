@@ -7,6 +7,7 @@ Requires: pydantic-monty
 from __future__ import annotations
 
 import ast
+import copy
 import time
 from typing import Any, Literal
 
@@ -148,6 +149,8 @@ class MontyREPL(NonIsolatedEnv):
         self.locals: dict[str, Any] = {}
         self.pending_llm_calls: list[RLMChatCompletion] = []
         self.stdout_parts: list[str] = []
+        self._context_count = 0
+        self._history_count = 0
 
         self.setup()
 
@@ -162,11 +165,12 @@ class MontyREPL(NonIsolatedEnv):
         self.locals = {}
         self.pending_llm_calls = []
         self.stdout_parts = []
+        self._context_count = 0
+        self._history_count = 0
 
     def load_context(self, context_payload: dict | list | str) -> None:
         """Load context into the environment as context_0 (and 'context' alias)."""
-        self.locals["context_0"] = context_payload
-        self.locals["context"] = context_payload
+        self.add_context(context_payload, 0)
 
     def execute_code(self, code: str) -> REPLResult:
         """Execute code in the Monty sandbox and return result."""
@@ -260,6 +264,48 @@ class MontyREPL(NonIsolatedEnv):
         collector = AssignedNameCollector()
         collector.visit(tree)
         return collector.names
+
+    def update_handler_address(self, address: tuple[str, int]) -> None:
+        """Update the LM handler address for a new completion call."""
+        self.lm_handler_address = address
+
+    def add_context(
+        self, context_payload: dict | list | str, context_index: int | None = None
+    ) -> int:
+        """Add a context with versioned variable name."""
+        if context_index is None:
+            context_index = self._context_count
+
+        var_name = f"context_{context_index}"
+        self.locals[var_name] = context_payload
+        if context_index == 0:
+            self.locals["context"] = context_payload
+
+        self._context_count = max(self._context_count, context_index + 1)
+        return context_index
+
+    def get_context_count(self) -> int:
+        """Return the number of contexts loaded."""
+        return self._context_count
+
+    def add_history(
+        self, message_history: list[dict[str, Any]], history_index: int | None = None
+    ) -> int:
+        """Store a conversation's message history as a versioned variable."""
+        if history_index is None:
+            history_index = self._history_count
+
+        var_name = f"history_{history_index}"
+        self.locals[var_name] = copy.deepcopy(message_history)
+        if history_index == 0:
+            self.locals["history"] = self.locals[var_name]
+
+        self._history_count = max(self._history_count, history_index + 1)
+        return history_index
+
+    def get_history_count(self) -> int:
+        """Return the number of conversation histories stored."""
+        return self._history_count
 
     def final_var(self, variable_name: str) -> str:
         """Return the value of a variable as a final answer."""

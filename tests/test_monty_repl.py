@@ -28,3 +28,18 @@ class TestMontyREPLBasic:
         repl.execute_code("x = 10")
         result = repl.execute_code("print(FINAL_VAR('x'))")
         assert "10" in result.stdout
+
+    def test_context_and_history_counts(self):
+        repl = MontyREPL()
+        assert repl.get_context_count() == 0
+        assert repl.get_history_count() == 0
+
+        repl.add_context({"a": 1})
+        assert repl.get_context_count() == 1
+        assert "context_0" in repl.locals
+        assert "context" in repl.locals
+
+        repl.add_history([{"role": "user", "content": "hi"}])
+        assert repl.get_history_count() == 1
+        assert "history_0" in repl.locals
+        assert "history" in repl.locals

@@ -90,7 +90,7 @@ rlm = RLM(
 The default `local` environment `LocalREPL` runs in the same process as the RLM itself, with specified global and local namespaces for minimal security. Using this REPL is generally safe, but should not be used for production settings. It also shares the same virtual environment (e.g. Conda or uv) as the host process.
 
 #### Monty
-We also support a Monty-based environment called `MontyREPL` that runs code inside the Monty sandboxed interpreter. Monty is fast and sandboxed, but it supports only a limited subset of Python and a small standard library.
+We also support a Monty-based environment called `MontyREPL` that runs code inside the Monty sandboxed interpreter. Monty is fast and sandboxed, but it supports only a limited subset of Python and a small standard library. Monty also supports `persistent=True` for multi-turn mode (state retained via host-side locals).
 
 To install Monty support:
 ```bash

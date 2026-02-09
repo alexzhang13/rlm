@@ -345,6 +345,17 @@ class TestPersistentModeValidation:
         )
         assert rlm.persistent is True
 
+    def test_monty_environment_supported(self):
+        """Monty environment should support persistent mode."""
+        pytest.importorskip("pydantic_monty")
+        rlm = RLM(
+            backend="openai",
+            backend_kwargs={"model_name": "test"},
+            environment="monty",
+            persistent=True,
+        )
+        assert rlm.persistent is True
+
 
 class TestMultiTurnEndToEnd:
     """End-to-end tests simulating realistic multi-turn usage."""
