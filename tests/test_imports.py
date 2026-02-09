@@ -517,4 +517,5 @@ class TestImportCompleteness:
 
             assert isinstance(MontyREPL, type)
         except Exception:
+            # Optional dependency may not be available in CI.
             pass

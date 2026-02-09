@@ -119,6 +119,43 @@ class AssignedNameCollector(ast.NodeVisitor):
         self.generic_visit(node)
         self.scope_depth -= 1
 
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
+        if self.scope_depth == 0:
+            self.add_target(node.target)
+        self.generic_visit(node)
+
+    def visit_Match(self, node: ast.Match) -> None:
+        if self.scope_depth == 0:
+            for case in node.cases:
+                self.collect_match_pattern(case.pattern)
+        self.generic_visit(node)
+
+    def collect_match_pattern(self, pattern: ast.pattern) -> None:
+        if isinstance(pattern, ast.MatchAs):
+            if pattern.name:
+                self.names.add(pattern.name)
+            if pattern.pattern is not None:
+                self.collect_match_pattern(pattern.pattern)
+        elif isinstance(pattern, ast.MatchStar):
+            if pattern.name:
+                self.names.add(pattern.name)
+        elif isinstance(pattern, ast.MatchMapping):
+            if pattern.rest:
+                self.names.add(pattern.rest)
+            for subpattern in pattern.patterns:
+                self.collect_match_pattern(subpattern)
+        elif isinstance(pattern, ast.MatchSequence):
+            for subpattern in pattern.patterns:
+                self.collect_match_pattern(subpattern)
+        elif isinstance(pattern, ast.MatchClass):
+            for subpattern in pattern.patterns:
+                self.collect_match_pattern(subpattern)
+            for subpattern in pattern.kwd_patterns:
+                self.collect_match_pattern(subpattern)
+        elif isinstance(pattern, ast.MatchOr):
+            for subpattern in pattern.patterns:
+                self.collect_match_pattern(subpattern)
+
 
 class MontyREPL(NonIsolatedEnv):
     """
@@ -149,6 +186,7 @@ class MontyREPL(NonIsolatedEnv):
         self.locals: dict[str, Any] = {}
         self.pending_llm_calls: list[RLMChatCompletion] = []
         self.stdout_parts: list[str] = []
+        self.stderr_parts: list[str] = []
         self._context_count = 0
         self._history_count = 0
 
@@ -165,6 +203,7 @@ class MontyREPL(NonIsolatedEnv):
         self.locals = {}
         self.pending_llm_calls = []
         self.stdout_parts = []
+        self.stderr_parts = []
         self._context_count = 0
         self._history_count = 0
 
@@ -176,13 +215,12 @@ class MontyREPL(NonIsolatedEnv):
         """Execute code in the Monty sandbox and return result."""
         start_time = time.perf_counter()
         self.stdout_parts = []
+        self.stderr_parts = []
         self.pending_llm_calls = []
 
         wrapper_script = self.build_wrapper_script(code)
         external_functions = {
             "__rlm_capture_locals": self.capture_locals,
-            "FINAL_VAR": self.final_var,
-            "SHOW_VARS": self.show_vars,
             "llm_query": self.llm_query,
             "llm_query_batched": self.llm_query_batched,
         }
@@ -204,15 +242,20 @@ class MontyREPL(NonIsolatedEnv):
 
             return REPLResult(
                 stdout="".join(self.stdout_parts),
-                stderr="",
+                stderr="".join(self.stderr_parts),
                 locals=self.locals.copy(),
                 execution_time=time.perf_counter() - start_time,
                 rlm_calls=self.pending_llm_calls.copy(),
             )
         except Exception as exc:
+            stderr = "".join(self.stderr_parts)
+            if stderr:
+                stderr = f"{stderr.rstrip()}\n{type(exc).__name__}: {exc}"
+            else:
+                stderr = f"{type(exc).__name__}: {exc}"
             return REPLResult(
                 stdout="".join(self.stdout_parts),
-                stderr=f"{type(exc).__name__}: {exc}",
+                stderr=stderr,
                 locals=self.locals.copy(),
                 execution_time=time.perf_counter() - start_time,
                 rlm_calls=self.pending_llm_calls.copy(),
@@ -221,18 +264,56 @@ class MontyREPL(NonIsolatedEnv):
     def build_wrapper_script(self, user_code: str) -> str:
         """Build a wrapper script that restores state, captures output, and persists locals."""
         lines: list[str] = []
-        for key in self.locals:
-            if key.isidentifier():
-                lines.append(f"{key} = __rlm_state.get({key!r})")
-
-        lines.append(user_code)
-
         assigned_names = self.collect_assigned_names(user_code)
         persisted_names = {
             name
             for name in set(self.locals) | assigned_names
             if name.isidentifier() and not name.startswith("_") and name not in RESERVED_NAMES
         }
+        for name in sorted(persisted_names):
+            lines.append(f"{name} = __rlm_state.get({name!r})")
+
+        lines.append("def FINAL_VAR(variable_name):")
+        lines.append('    variable_name = variable_name.strip().strip("\\"\'")')
+        for name in sorted(persisted_names):
+            lines.append(f"    if variable_name == {name!r}:")
+            lines.append("        try:")
+            lines.append(f"            return str({name})")
+            lines.append("        except NameError:")
+            lines.append("            pass")
+        lines.append("    available = []")
+        for name in sorted(persisted_names):
+            lines.append("    try:")
+            lines.append(f"        {name}")
+            lines.append(f"        available.append({name!r})")
+            lines.append("    except NameError:")
+            lines.append("        pass")
+        lines.append("    if available:")
+        lines.append(
+            "        return f\"Error: Variable '{variable_name}' not found. "
+            "Available variables: {available}. "
+            'You must create and assign a variable BEFORE calling FINAL_VAR on it."'
+        )
+        lines.append(
+            "    return f\"Error: Variable '{variable_name}' not found. "
+            "No variables have been created yet. "
+            'You must create and assign a variable in a REPL block BEFORE calling FINAL_VAR on it."'
+        )
+
+        lines.append("def SHOW_VARS():")
+        lines.append("    available = {}")
+        for name in sorted(persisted_names):
+            lines.append("    try:")
+            lines.append(f"        available[{name!r}] = type({name}).__name__")
+            lines.append("    except NameError:")
+            lines.append("        pass")
+        lines.append("    if not available:")
+        lines.append(
+            '        return "No variables created yet. Use ```repl``` blocks to create variables."'
+        )
+        lines.append('    return f"Available variables: {available}"')
+
+        lines.append(user_code)
 
         lines.append("__rlm_state_out = {}")
         for name in sorted(persisted_names):
@@ -248,6 +329,8 @@ class MontyREPL(NonIsolatedEnv):
         """Collect printed output from Monty."""
         if stream == "stdout":
             self.stdout_parts.append(text)
+        elif stream == "stderr":
+            self.stderr_parts.append(text)
 
     def capture_locals(self, vars_dict: dict[str, Any]) -> None:
         """Capture locals after execution."""

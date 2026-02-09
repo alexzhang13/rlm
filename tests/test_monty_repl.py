@@ -29,6 +29,16 @@ class TestMontyREPLBasic:
         result = repl.execute_code("print(FINAL_VAR('x'))")
         assert "10" in result.stdout
 
+    def test_final_var_same_block(self):
+        repl = MontyREPL()
+        result = repl.execute_code("x = 3\nprint(FINAL_VAR('x'))")
+        assert "3" in result.stdout
+
+    def test_stderr_capture(self):
+        repl = MontyREPL()
+        repl.handle_print_callback("stderr", "oops")
+        assert "oops" in repl.stderr_parts
+
     def test_context_and_history_counts(self):
         repl = MontyREPL()
         assert repl.get_context_count() == 0
