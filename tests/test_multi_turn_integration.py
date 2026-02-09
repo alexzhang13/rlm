@@ -345,6 +345,33 @@ class TestPersistentModeValidation:
         )
         assert rlm.persistent is True
 
+    def test_monty_environment_supported(self):
+        """Monty environment should support persistent mode."""
+        pytest.importorskip("pydantic_monty")
+        responses = [
+            "```repl\nx = 2\nprint(x)\n```\nFINAL(done)",
+            "```repl\nprint(x)\n```\nFINAL(done)",
+        ]
+
+        with patch.object(rlm_module, "get_client") as mock_get_client:
+            mock_lm = create_mock_lm(responses)
+            mock_get_client.return_value = mock_lm
+
+            with RLM(
+                backend="openai",
+                backend_kwargs={"model_name": "test"},
+                environment="monty",
+                persistent=True,
+            ) as rlm:
+                rlm.completion("First turn")
+                mock_lm.completion.side_effect = list(responses[1:])
+                rlm.completion("Second turn")
+
+                env = rlm._persistent_env
+                assert env is not None
+                assert env.get_context_count() == 2
+                assert "x" in env.locals
+
 
 class TestMultiTurnEndToEnd:
     """End-to-end tests simulating realistic multi-turn usage."""
