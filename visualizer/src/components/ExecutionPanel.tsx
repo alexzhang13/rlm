@@ -33,47 +33,13 @@ export function ExecutionPanel({ iteration }: ExecutionPanelProps) {
   );
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-background">
-      {/* Header */}
-      <div className="flex-shrink-0 p-4 border-b border-border bg-muted/30">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
-              <span className="text-emerald-500 text-sm">⟨⟩</span>
-            </div>
-            <div>
-              <h2 className="font-semibold text-sm">Code & Sub-LM Calls</h2>
-              <p className="text-[11px] text-muted-foreground">
-                Iteration {iteration.iteration} • {new Date(iteration.timestamp).toLocaleString()}
-              </p>
-            </div>
-          </div>
-        </div>
-        
-        {/* Quick stats */}
-        <div className="flex gap-2 flex-wrap">
-          <Badge variant="outline" className="text-xs">
-            {iteration.code_blocks.length} code block{iteration.code_blocks.length !== 1 ? 's' : ''}
-          </Badge>
-          {totalSubCalls > 0 && (
-            <Badge className="bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400 border-fuchsia-500/30 text-xs">
-              {totalSubCalls} sub-LM call{totalSubCalls !== 1 ? 's' : ''}
-            </Badge>
-          )}
-          {iteration.final_answer && (
-            <Badge className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 text-xs">
-              Has Final Answer
-            </Badge>
-          )}
-        </div>
-      </div>
-
+    <div className="h-full flex flex-col overflow-hidden">
       {/* Tabs - Code Execution and Sub-LM Calls only */}
       <Tabs defaultValue="code" className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex-shrink-0 px-4 pt-3">
+        <div className="flex-shrink-0 px-4 pt-3 border-b border-border bg-muted/30">
           <TabsList className="w-full grid grid-cols-2">
             <TabsTrigger value="code" className="text-xs">
-              Code Execution
+              Code Blocks ({iteration.code_blocks.length})
             </TabsTrigger>
             <TabsTrigger value="sublm" className="text-xs">
               Sub-LM Calls ({totalSubCalls})
@@ -84,7 +50,7 @@ export function ExecutionPanel({ iteration }: ExecutionPanelProps) {
         <div className="flex-1 overflow-hidden">
           <TabsContent value="code" className="h-full m-0 data-[state=active]:flex data-[state=active]:flex-col">
             <ScrollArea className="flex-1 h-full">
-              <div className="p-4 space-y-4">
+              <div className="p-4">
                 {iteration.code_blocks.length > 0 ? (
                   iteration.code_blocks.map((block, idx) => (
                     <CodeBlock key={idx} block={block} index={idx} />
