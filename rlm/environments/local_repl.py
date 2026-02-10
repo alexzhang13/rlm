@@ -203,8 +203,9 @@ class LocalREPL(NonIsolatedEnv):
             return "Error: No LM handler configured"
 
         try:
+            timeout = self.llm_query_timeout
             request = LMRequest(prompt=prompt, model=model, depth=self.depth)
-            response = send_lm_request(self.lm_handler_address, request)
+            response = send_lm_request(self.lm_handler_address, request, timeout=timeout)
 
             if not response.success:
                 return f"Error: {response.error}"
@@ -232,8 +233,9 @@ class LocalREPL(NonIsolatedEnv):
             return ["Error: No LM handler configured"] * len(prompts)
 
         try:
+            timeout = self.llm_query_timeout
             responses = send_lm_request_batched(
-                self.lm_handler_address, prompts, model=model, depth=self.depth
+                self.lm_handler_address, prompts, model=model, depth=self.depth, timeout=timeout
             )
 
             results = []

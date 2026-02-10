@@ -172,7 +172,7 @@ class TestRLMMetadata:
     def test_to_dict(self):
         meta = RLMMetadata(
             root_model="gpt-4",
-            max_depth=2,
+            recursive_max_depth=2,
             max_iterations=10,
             backend="openai",
             backend_kwargs={"api_key": "secret"},
@@ -181,5 +181,5 @@ class TestRLMMetadata:
         )
         d = meta.to_dict()
         assert d["root_model"] == "gpt-4"
-        assert d["max_depth"] == 2
+        assert d["recursive_max_depth"] == 2
         assert d["backend"] == "openai"

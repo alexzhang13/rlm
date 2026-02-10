@@ -14,6 +14,32 @@ class BaseEnv(ABC):
         self.persistent = persistent
         self.depth = depth
         self.kwargs = kwargs
+        self.llm_query_timeout = self.get_llm_query_timeout()
+
+    def get_llm_query_timeout(self) -> int:
+        root_timeout = self.kwargs.get("llm_query_timeout", 900)
+        step = self.kwargs.get("llm_query_timeout_step", 120)
+        min_timeout = self.kwargs.get("llm_query_timeout_min", 300)
+
+        for name, value in (
+            ("llm_query_timeout", root_timeout),
+            ("llm_query_timeout_step", step),
+            ("llm_query_timeout_min", min_timeout),
+        ):
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise ValueError(f"{name} must be an int")
+
+        if root_timeout <= 0:
+            raise ValueError("llm_query_timeout must be > 0")
+        if step < 0:
+            raise ValueError("llm_query_timeout_step must be >= 0")
+        if min_timeout <= 0:
+            raise ValueError("llm_query_timeout_min must be > 0")
+        if not isinstance(self.depth, int) or self.depth < 0:
+            raise ValueError("depth must be >= 0")
+
+        timeout = root_timeout - (self.depth * step)
+        return max(min_timeout, timeout)
 
     @abstractmethod
     def setup(self):

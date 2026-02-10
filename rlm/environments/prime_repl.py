@@ -64,7 +64,7 @@ def enqueue():
         }}
 
     # Wait for response (with timeout)
-    event.wait(timeout=300)
+    event.wait(timeout={llm_query_timeout})
 
     with lock:
         entry = pending_requests.pop(request_id, None)
@@ -111,7 +111,7 @@ if __name__ == "__main__":
 # =============================================================================
 
 
-def _build_exec_script(code: str, broker_port: int = 8888, depth: int = 1) -> str:
+def _build_exec_script(code: str, broker_port: int, depth: int, llm_query_timeout: int) -> str:
     """
     Build a script that executes code with state persistence.
     LLM queries go through the local broker server.
@@ -145,7 +145,7 @@ def llm_query(prompt, model=None):
         response = requests.post(
             f"{{BROKER_URL}}/enqueue",
             json={{"type": "single", "prompt": prompt, "model": model, "depth": {depth}}},
-            timeout=300,
+            timeout={llm_query_timeout},
         )
         data = response.json()
         if data.get("error"):
@@ -161,7 +161,7 @@ def llm_query_batched(prompts, model=None):
         response = requests.post(
             f"{{BROKER_URL}}/enqueue",
             json={{"type": "batched", "prompts": prompts, "model": model, "depth": {depth}}},
-            timeout=300,
+            timeout={llm_query_timeout},
         )
         data = response.json()
         if data.get("error"):
@@ -361,7 +361,10 @@ class PrimeREPL(IsolatedEnv):
         # Unlike Modal's sandbox.exec() which accepts separate args, Prime's
         # start_background_job() takes a shell command string. We write to a file
         # to avoid shell escaping issues with quotes/special chars in the script.
-        broker_script = _BROKER_SCRIPT.format(broker_port=self.BROKER_PORT)
+        broker_script = _BROKER_SCRIPT.format(
+            broker_port=self.BROKER_PORT,
+            llm_query_timeout=self.llm_query_timeout,
+        )
         broker_script_b64 = base64.b64encode(broker_script.encode()).decode()
         self.client.execute_command(
             self.sandbox_id,
@@ -466,7 +469,9 @@ class PrimeREPL(IsolatedEnv):
         if req_type == "single":
             prompt = req_data.get("prompt")
             request = LMRequest(prompt=prompt, model=model, depth=self.depth)
-            response = send_lm_request(self.lm_handler_address, request)
+            response = send_lm_request(
+                self.lm_handler_address, request, timeout=self.llm_query_timeout
+            )
 
             if not response.success:
                 return {"error": response.error}
@@ -480,7 +485,11 @@ class PrimeREPL(IsolatedEnv):
         elif req_type == "batched":
             prompts = req_data.get("prompts", [])
             responses = send_lm_request_batched(
-                self.lm_handler_address, prompts, model=model, depth=self.depth
+                self.lm_handler_address,
+                prompts,
+                model=model,
+                depth=self.depth,
+                timeout=self.llm_query_timeout,
             )
 
             results = []
@@ -517,7 +526,9 @@ class PrimeREPL(IsolatedEnv):
             self.pending_llm_calls.clear()
 
         # Build and write the script
-        script = _build_exec_script(code, self.BROKER_PORT, self.depth)
+        script = _build_exec_script(
+            code, self.BROKER_PORT, self.depth, self.llm_query_timeout
+        )
         script_b64 = base64.b64encode(script.encode()).decode()
         self.client.execute_command(
             self.sandbox_id,

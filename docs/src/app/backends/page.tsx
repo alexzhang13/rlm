@@ -94,31 +94,27 @@ python -m vllm.entrypoints.openai.api_server \\
 
       <hr className="my-8 border-border" />
 
-      <h2 className="text-2xl font-semibold mb-4">Multiple Backends (Experimental)</h2>
+      <h2 className="text-2xl font-semibold mb-4">Depth-Specific Backends</h2>
       <p className="text-muted-foreground mb-4">
-        <strong>Experimental:</strong> This feature allows you to specify <em>ordered</em> lists of backends and model kwargs, so that RLMs can sub-call different language models from within execution code. 
-        The order of <code>other_backends</code> and <code>other_backend_kwargs</code> must match: e.g., the 0th element of <code>other_backends</code> is used with the 0th dict in <code>other_backend_kwargs</code>.
+        Provide an ordered list of backends and model kwargs, one per recursion depth.
+        The order of <code>other_backends</code> and <code>other_backend_kwargs</code> must match: the 0th
+        entry is used at depth 1, the 1st entry at depth 2, and so on. Missing depths fall back to the
+        root backend.
         <br />
         <br />
-        <span className="font-medium">
-          This functionality is for advanced use and is currently experimental.
-        </span>
-        It will become more useful as RLMs get the ability to orchestrate and delegate between different LMs within a workflow.
+        This is an advanced feature for controlling cost/quality across recursive calls.
       </p>
       <CodeBlock code={`rlm = RLM(
     backend="openai",
     backend_kwargs={"model_name": "gpt-5-mini"},
-    other_backends=["anthropic", "openai"],  # ORDER MATTERS!
+    recursive_max_depth=3,
+    other_backends=["anthropic", "openai", "openai"],  # depth 1..3
     other_backend_kwargs=[
         {"model_name": "claude-sonnet-4-20250514"},
         {"model_name": "gpt-4o-mini"},
+        {"model_name": "gpt-4o-nano"},
     ],  # ORDER MATCHES other_backends
 )`} />
-      <p className="text-muted-foreground mt-4">Inside REPL (future releases):</p>
-      <CodeBlock code={`llm_query("prompt")  # Uses default (gpt-5-mini)
-llm_query("prompt", model="claude-sonnet-4-20250514")  # Uses Claude 
-llm_query("prompt", model="gpt-4o-mini")  # Uses GPT-4o-mini`} />
     </div>
   );
 }
-
