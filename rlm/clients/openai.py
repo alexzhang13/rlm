@@ -15,6 +15,8 @@ DEFAULT_OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DEFAULT_OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 DEFAULT_VERCEL_API_KEY = os.getenv("AI_GATEWAY_API_KEY")
 DEFAULT_PRIME_INTELLECT_BASE_URL = "https://api.pinference.ai/api/v1/"
+DEFAULT_GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+DEFAULT_GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 
 class OpenAIClient(BaseLM):
@@ -38,6 +40,8 @@ class OpenAIClient(BaseLM):
                 api_key = DEFAULT_OPENROUTER_API_KEY
             elif base_url == "https://ai-gateway.vercel.sh/v1":
                 api_key = DEFAULT_VERCEL_API_KEY
+            elif base_url == "https://api.groq.com/openai/v1":
+                api_key = DEFAULT_GROQ_API_KEY
 
         # For vLLM, set base_url to local vLLM server address.
         self.client = openai.OpenAI(api_key=api_key, base_url=base_url)
@@ -66,9 +70,13 @@ class OpenAIClient(BaseLM):
         if self.client.base_url == DEFAULT_PRIME_INTELLECT_BASE_URL:
             extra_body["usage"] = {"include": True}
 
-        response = self.client.chat.completions.create(
-            model=model, messages=messages, extra_body=extra_body
-        )
+        create_kwargs = {"model": model, "messages": messages, "extra_body": extra_body}
+        if str(self.client.base_url) == DEFAULT_GROQ_BASE_URL:
+            # Disable Groq built-in tools; RLM uses REPL code blocks instead.
+            create_kwargs["tool_choice"] = "none"
+            create_kwargs["tools"] = []
+
+        response = self.client.chat.completions.create(**create_kwargs)
         self._track_cost(response, model)
         return response.choices[0].message.content
 
@@ -90,9 +98,13 @@ class OpenAIClient(BaseLM):
         if self.client.base_url == DEFAULT_PRIME_INTELLECT_BASE_URL:
             extra_body["usage"] = {"include": True}
 
-        response = await self.async_client.chat.completions.create(
-            model=model, messages=messages, extra_body=extra_body
-        )
+        create_kwargs = {"model": model, "messages": messages, "extra_body": extra_body}
+        if str(self.async_client.base_url) == DEFAULT_GROQ_BASE_URL:
+            # Disable Groq built-in tools; RLM uses REPL code blocks instead.
+            create_kwargs["tool_choice"] = "none"
+            create_kwargs["tools"] = []
+
+        response = await self.async_client.chat.completions.create(**create_kwargs)
         self._track_cost(response, model)
         return response.choices[0].message.content
 

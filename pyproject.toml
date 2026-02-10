@@ -20,6 +20,7 @@ classifiers = [
 
 dependencies = [
     "anthropic>=0.75.0",
+    "cerebras_cloud_sdk",
     "google-genai>=1.56.0",
     "openai>=2.14.0",
     "portkey-ai>=2.1.0",

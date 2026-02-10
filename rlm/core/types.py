@@ -4,6 +4,7 @@ from typing import Any, Literal
 
 ClientBackend = Literal[
     "openai",
+    "groq",
     "portkey",
     "openrouter",
     "vercel",
@@ -12,6 +13,7 @@ ClientBackend = Literal[
     "anthropic",
     "azure_openai",
     "gemini",
+    "cerebras",
 ]
 EnvironmentType = Literal["local", "docker", "modal", "prime", "daytona", "e2b"]
 
