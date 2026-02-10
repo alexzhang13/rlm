@@ -318,3 +318,6 @@ When building a new isolated environment (e.g., for a new cloud provider):
 
 See `rlm/environments/modal_repl.py` as the canonical reference implementation.
 
+# Agent Rules <!-- tessl-managed -->
+
+@.tessl/RULES.md follow the [instructions](.tessl/RULES.md)
