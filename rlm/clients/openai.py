@@ -43,12 +43,14 @@ class OpenAIClient(BaseLM):
         self.client = openai.OpenAI(api_key=api_key, base_url=base_url)
         self.async_client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
+        self.base_url = base_url  # Track for cost extraction
 
         # Per-model usage tracking
         self.model_call_counts: dict[str, int] = defaultdict(int)
         self.model_input_tokens: dict[str, int] = defaultdict(int)
         self.model_output_tokens: dict[str, int] = defaultdict(int)
         self.model_total_tokens: dict[str, int] = defaultdict(int)
+        self.model_costs: dict[str, float] = defaultdict(float)  # Cost in USD
 
     def completion(self, prompt: str | list[dict[str, Any]], model: str | None = None) -> str:
         if isinstance(prompt, str):
@@ -111,13 +113,37 @@ class OpenAIClient(BaseLM):
         self.last_prompt_tokens = usage.prompt_tokens
         self.last_completion_tokens = usage.completion_tokens
 
+        # Extract cost from OpenRouter responses (cost is in USD)
+        # OpenRouter returns cost in usage.model_extra for pydantic models
+        self.last_cost: float | None = None
+        cost = None
+
+        # Try direct attribute first
+        if hasattr(usage, "cost") and usage.cost:
+            cost = usage.cost
+        # Then try model_extra (OpenRouter uses this)
+        elif hasattr(usage, "model_extra") and usage.model_extra:
+            extra = usage.model_extra
+            # Primary cost field (may be 0 for BYOK)
+            if extra.get("cost"):
+                cost = extra["cost"]
+            # Fallback to upstream cost details
+            elif extra.get("cost_details", {}).get("upstream_inference_cost"):
+                cost = extra["cost_details"]["upstream_inference_cost"]
+
+        if cost is not None and cost > 0:
+            self.last_cost = float(cost)
+            self.model_costs[model] += self.last_cost
+
     def get_usage_summary(self) -> UsageSummary:
         model_summaries = {}
         for model in self.model_call_counts:
+            cost = self.model_costs.get(model)
             model_summaries[model] = ModelUsageSummary(
                 total_calls=self.model_call_counts[model],
                 total_input_tokens=self.model_input_tokens[model],
                 total_output_tokens=self.model_output_tokens[model],
+                total_cost=cost if cost else None,
             )
         return UsageSummary(model_usage_summaries=model_summaries)
 
@@ -126,4 +152,5 @@ class OpenAIClient(BaseLM):
             total_calls=1,
             total_input_tokens=self.last_prompt_tokens,
             total_output_tokens=self.last_completion_tokens,
+            total_cost=getattr(self, "last_cost", None),
         )

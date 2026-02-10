@@ -45,11 +45,20 @@ RLM(
     depth: int = 0,
     max_depth: int = 1,
     max_iterations: int = 30,
+    max_budget: float | None = None,
+    max_timeout: float | None = None,
+    max_tokens: int | None = None,
+    max_errors: int | None = None,
     custom_system_prompt: str | None = None,
     other_backends: list[str] | None = None,
     other_backend_kwargs: list[dict] | None = None,
     logger: RLMLogger | None = None,
     verbose: bool = False,
+    persistent: bool = False,
+    on_subcall_start: Callable[[int, str, str], None] | None = None,
+    on_subcall_complete: Callable[[int, str, float, str | None], None] | None = None,
+    on_iteration_start: Callable[[int, int], None] | None = None,
+    on_iteration_complete: Callable[[int, int, float], None] | None = None,
 )
 ```
 
@@ -158,7 +167,7 @@ environment_kwargs = {
 **Type:** `int`  
 **Default:** `1`
 
-Maximum recursion depth for nested RLM calls. Currently only depth 1 is fully supported.
+Maximum recursion depth for nested RLM calls. Depth>1 recursive subcalls are supported in the local environment via `llm_query()`.
 
 When `depth >= max_depth`, the RLM falls back to a regular LM completion.
 
@@ -184,6 +193,46 @@ rlm = RLM(
     max_iterations=50,
 )
 ```
+
+---
+
+#### `max_budget`
+{: .no_toc }
+
+**Type:** `float | None`  
+**Default:** `None`
+
+Maximum total USD cost for a completion. If exceeded, RLM raises `BudgetExceededError`. This requires a backend that reports cost.
+
+---
+
+#### `max_timeout`
+{: .no_toc }
+
+**Type:** `float | None`  
+**Default:** `None`
+
+Maximum wall-clock seconds for a completion. If exceeded, RLM raises `TimeoutExceededError`.
+
+---
+
+#### `max_tokens`
+{: .no_toc }
+
+**Type:** `int | None`  
+**Default:** `None`
+
+Maximum total tokens (input + output) for a completion. If exceeded, RLM raises `TokenLimitExceededError`.
+
+---
+
+#### `max_errors`
+{: .no_toc }
+
+**Type:** `int | None`  
+**Default:** `None`
+
+Maximum consecutive REPL errors before aborting. If exceeded, RLM raises `ErrorThresholdExceededError`.
 
 ---
 
@@ -401,6 +450,12 @@ rlm = RLM(backend="unknown")
 
 If the RLM exhausts `max_iterations` without finding a `FINAL()` answer, it prompts the LM one more time to provide a final answer based on the conversation history.
 
+RLM also raises explicit exceptions when limits are exceeded:
+- `BudgetExceededError`
+- `TimeoutExceededError`
+- `TokenLimitExceededError`
+- `ErrorThresholdExceededError`
+
 ---
 
 ## Thread Safety
@@ -458,4 +513,3 @@ result = rlm.completion(
     root_prompt="Summarize the key findings"
 )
 ```
-

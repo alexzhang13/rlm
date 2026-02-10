@@ -324,6 +324,67 @@ class VerbosePrinter:
                     execution_time=call.execution_time,
                 )
 
+    def print_budget_exceeded(self, spent: float, budget: float) -> None:
+        """Print a budget exceeded warning."""
+        if not self.enabled:
+            return
+
+        # Title
+        title = Text()
+        title.append("⚠ ", style=STYLE_ERROR)
+        title.append("Budget Exceeded", style=Style(color=COLORS["error"], bold=True))
+
+        # Content
+        content = Text()
+        content.append(f"Spent: ${spent:.6f}\n", style=STYLE_ERROR)
+        content.append(f"Budget: ${budget:.6f}", style=STYLE_MUTED)
+
+        panel = Panel(
+            content,
+            title=title,
+            title_align="left",
+            border_style=COLORS["error"],
+            padding=(0, 2),
+        )
+
+        self.console.print()
+        self.console.print(panel)
+        self.console.print()
+
+    def print_limit_exceeded(self, limit_type: str, details: str) -> None:
+        """Print a limit exceeded warning (timeout, tokens, errors, cancellation)."""
+        if not self.enabled:
+            return
+
+        # Map limit type to display name
+        limit_names = {
+            "timeout": "Timeout Exceeded",
+            "tokens": "Token Limit Exceeded",
+            "errors": "Error Threshold Exceeded",
+            "cancelled": "Execution Cancelled",
+        }
+        display_name = limit_names.get(limit_type, f"{limit_type.title()} Limit Exceeded")
+
+        # Title
+        title = Text()
+        title.append("⚠ ", style=STYLE_ERROR)
+        title.append(display_name, style=Style(color=COLORS["error"], bold=True))
+
+        # Content
+        content = Text(details, style=STYLE_ERROR)
+
+        panel = Panel(
+            content,
+            title=title,
+            title_align="left",
+            border_style=COLORS["error"],
+            padding=(0, 2),
+        )
+
+        self.console.print()
+        self.console.print(panel)
+        self.console.print()
+
     def print_final_answer(self, answer: Any) -> None:
         """Print the final answer."""
         if not self.enabled:
@@ -381,9 +442,12 @@ class VerbosePrinter:
                 m.get("total_output_tokens", 0)
                 for m in usage_summary.get("model_usage_summaries", {}).values()
             )
+            total_cost = usage_summary.get("total_cost")
             if total_input or total_output:
                 summary_table.add_row("Input Tokens", f"{total_input:,}")
                 summary_table.add_row("Output Tokens", f"{total_output:,}")
+            if total_cost is not None:
+                summary_table.add_row("Total Cost", f"${total_cost:.6f}")
 
         # Wrap in rule
         self.console.print()
