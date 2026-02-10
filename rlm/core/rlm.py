@@ -21,6 +21,7 @@ from rlm.utils.parsing import (
     format_iteration,
 )
 from rlm.utils.prompts import (
+    RLM_MULTIMODAL_SYSTEM_PROMPT,
     RLM_SYSTEM_PROMPT,
     QueryMetadata,
     build_rlm_system_prompt,
@@ -52,6 +53,7 @@ class RLM:
         logger: RLMLogger | None = None,
         verbose: bool = False,
         persistent: bool = False,
+        enable_multimodal: bool = False,
     ):
         """
         Args:
@@ -68,6 +70,7 @@ class RLM:
             logger: The logger to use for the RLM.
             verbose: Whether to print verbose output in rich to console.
             persistent: If True, reuse the environment across completion() calls for multi-turn conversations.
+            enable_multimodal: If True, enable multimodal functions (vision_query, audio_query, speak) in the REPL environment.
         """
         # Store config for spawning per-completion
         self.backend = backend
@@ -90,7 +93,16 @@ class RLM:
         self.depth = depth
         self.max_depth = max_depth
         self.max_iterations = max_iterations
-        self.system_prompt = custom_system_prompt if custom_system_prompt else RLM_SYSTEM_PROMPT
+        self.enable_multimodal = enable_multimodal
+        
+        # Select system prompt: custom > multimodal > base
+        if custom_system_prompt:
+            self.system_prompt = custom_system_prompt
+        elif enable_multimodal:
+            self.system_prompt = RLM_MULTIMODAL_SYSTEM_PROMPT
+        else:
+            self.system_prompt = RLM_SYSTEM_PROMPT
+        
         self.logger = logger
         self.verbose = VerbosePrinter(enabled=verbose)
 
@@ -165,6 +177,7 @@ class RLM:
             env_kwargs["lm_handler_address"] = (lm_handler.host, lm_handler.port)
             env_kwargs["context_payload"] = prompt
             env_kwargs["depth"] = self.depth + 1  # Environment depth is RLM depth + 1
+            env_kwargs["enable_multimodal"] = self.enable_multimodal  # Pass multimodal flag to environment
             environment: BaseEnv = get_environment(self.environment_type, env_kwargs)
 
             if self.persistent:

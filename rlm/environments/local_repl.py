@@ -125,6 +125,7 @@ class LocalREPL(NonIsolatedEnv):
         setup_code: str | None = None,
         persistent: bool = False,
         depth: int = 1,
+        enable_multimodal: bool = False,
         **kwargs,
     ):
         super().__init__(persistent=persistent, depth=depth, **kwargs)
@@ -135,6 +136,7 @@ class LocalREPL(NonIsolatedEnv):
         self._lock = threading.Lock()
         self._context_count: int = 0
         self._history_count: int = 0
+        self.enable_multimodal = enable_multimodal
 
         # Setup globals, locals, and modules in environment.
         self.setup()
@@ -159,11 +161,18 @@ class LocalREPL(NonIsolatedEnv):
         # Track LLM calls made during code execution
         self._pending_llm_calls: list[RLMChatCompletion] = []
 
-        # Add helper functions
+        # Add core helper functions (always available)
         self.globals["FINAL_VAR"] = self._final_var
         self.globals["SHOW_VARS"] = self._show_vars
         self.globals["llm_query"] = self._llm_query
         self.globals["llm_query_batched"] = self._llm_query_batched
+        
+        # Add multimodal helper functions only if multimodal is enabled
+        if self.enable_multimodal:
+            self.globals["vision_query"] = self._vision_query
+            self.globals["vision_query_batched"] = self._vision_query_batched
+            self.globals["audio_query"] = self._audio_query
+            self.globals["speak"] = self._speak
 
     def _final_var(self, variable_name: str) -> str:
         """Return the value of a variable as a final answer."""
@@ -248,6 +257,215 @@ class LocalREPL(NonIsolatedEnv):
             return results
         except Exception as e:
             return [f"Error: LM query failed - {e}"] * len(prompts)
+
+    def _vision_query(
+        self, prompt: str, images: list[str], model: str | None = None
+    ) -> str:
+        """Query a vision-capable LM with text and images.
+
+        Args:
+            prompt: The text prompt describing what to analyze.
+            images: List of image paths or URLs to analyze.
+            model: Optional model name to use (if handler has multiple clients).
+
+        Returns:
+            The LM's response analyzing the images.
+        
+        Example:
+            description = vision_query("What objects are in this image?", ["photo.jpg"])
+        """
+        if not self.lm_handler_address:
+            return "Error: No LM handler configured"
+
+        try:
+            # Build multimodal content list
+            content = [{"type": "text", "text": prompt}]
+            for img in images:
+                if img.startswith(("http://", "https://")):
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {"url": img}
+                    })
+                else:
+                    content.append({
+                        "type": "image_path",
+                        "path": img
+                    })
+
+            # Send as a message with multimodal content
+            multimodal_prompt = [{"role": "user", "content": content}]
+            request = LMRequest(prompt=multimodal_prompt, model=model, depth=self.depth)
+            response = send_lm_request(self.lm_handler_address, request)
+
+            if not response.success:
+                return f"Error: {response.error}"
+
+            # Track this LLM call
+            self._pending_llm_calls.append(response.chat_completion)
+            return response.chat_completion.response
+        except Exception as e:
+            return f"Error: Vision query failed - {e}"
+
+    def _vision_query_batched(
+        self, prompts: list[str], images_list: list[list[str]], model: str | None = None
+    ) -> list[str]:
+        """Query a vision-capable LM with multiple prompts and images concurrently.
+
+        Args:
+            prompts: List of text prompts.
+            images_list: List of image lists, one per prompt.
+            model: Optional model name to use.
+
+        Returns:
+            List of responses in the same order as input prompts.
+        
+        Example:
+            results = vision_query_batched(
+                ["What's in image 1?", "What's in image 2?"],
+                [["img1.jpg"], ["img2.jpg"]]
+            )
+        """
+        if not self.lm_handler_address:
+            return ["Error: No LM handler configured"] * len(prompts)
+
+        if len(prompts) != len(images_list):
+            return ["Error: prompts and images_list must have same length"] * len(prompts)
+
+        try:
+            # Build multimodal prompts
+            multimodal_prompts = []
+            for prompt, images in zip(prompts, images_list):
+                content = [{"type": "text", "text": prompt}]
+                for img in images:
+                    if img.startswith(("http://", "https://")):
+                        content.append({
+                            "type": "image_url",
+                            "image_url": {"url": img}
+                        })
+                    else:
+                        content.append({
+                            "type": "image_path",
+                            "path": img
+                        })
+                multimodal_prompts.append([{"role": "user", "content": content}])
+
+            responses = send_lm_request_batched(
+                self.lm_handler_address, multimodal_prompts, model=model, depth=self.depth
+            )
+
+            results = []
+            for response in responses:
+                if not response.success:
+                    results.append(f"Error: {response.error}")
+                else:
+                    self._pending_llm_calls.append(response.chat_completion)
+                    results.append(response.chat_completion.response)
+
+            return results
+        except Exception as e:
+            return [f"Error: Vision query failed - {e}"] * len(prompts)
+
+    def _audio_query(
+        self, prompt: str, audio_files: list[str], model: str | None = None
+    ) -> str:
+        """Query an LM with audio files for transcription or analysis.
+
+        Args:
+            prompt: The text prompt describing what to do with the audio.
+            audio_files: List of audio file paths or URLs to analyze.
+            model: Optional model name to use (if handler has multiple clients).
+
+        Returns:
+            The LM's response analyzing or transcribing the audio.
+        
+        Example:
+            transcript = audio_query("Transcribe this audio", ["recording.mp3"])
+            analysis = audio_query("What is the speaker's tone?", ["speech.wav"])
+        """
+        if not self.lm_handler_address:
+            return "Error: No LM handler configured"
+
+        try:
+            # Build multimodal content list with audio
+            content = [{"type": "text", "text": prompt}]
+            for audio_file in audio_files:
+                if audio_file.startswith(("http://", "https://")):
+                    content.append({
+                        "type": "audio_url",
+                        "url": audio_file
+                    })
+                else:
+                    content.append({
+                        "type": "audio_path",
+                        "path": audio_file
+                    })
+
+            # Send as a message with multimodal content
+            multimodal_prompt = [{"role": "user", "content": content}]
+            request = LMRequest(prompt=multimodal_prompt, model=model, depth=self.depth)
+            response = send_lm_request(self.lm_handler_address, request)
+
+            if not response.success:
+                return f"Error: {response.error}"
+
+            # Track this LLM call
+            self._pending_llm_calls.append(response.chat_completion)
+            return response.chat_completion.response
+        except Exception as e:
+            return f"Error: Audio query failed - {e}"
+
+    def _speak(self, text: str, output_path: str | None = None) -> str:
+        """Generate speech from text using text-to-speech.
+
+        Args:
+            text: The text to convert to speech.
+            output_path: Optional path to save the audio file. 
+                        If not provided, saves to temp directory.
+
+        Returns:
+            Path to the generated audio file.
+        
+        Example:
+            audio_path = speak("Hello, this is a test.")
+            print(f"Audio saved to: {audio_path}")
+        
+        Note: This uses the system's TTS capabilities or Gemini's TTS if available.
+        """
+        import subprocess
+        
+        # Generate output path if not provided
+        if output_path is None:
+            output_path = os.path.join(self.temp_dir, f"speech_{uuid.uuid4().hex[:8]}.aiff")
+        
+        try:
+            # Use macOS 'say' command for TTS (works on Mac)
+            # This is a fallback - ideally we'd use Gemini's TTS API
+            result = subprocess.run(
+                ["say", "-o", output_path, text],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode == 0:
+                return output_path
+            else:
+                return f"Error: TTS failed - {result.stderr}"
+        except FileNotFoundError:
+            # 'say' command not available (not macOS)
+            # Try using pyttsx3 or other TTS libraries
+            try:
+                import pyttsx3
+                engine = pyttsx3.init()
+                if output_path is None:
+                    output_path = os.path.join(self.temp_dir, f"speech_{uuid.uuid4().hex[:8]}.mp3")
+                engine.save_to_file(text, output_path)
+                engine.runAndWait()
+                return output_path
+            except ImportError:
+                return "Error: TTS not available. Install pyttsx3 or use macOS."
+        except Exception as e:
+            return f"Error: TTS failed - {e}"
 
     def load_context(self, context_payload: dict | list | str):
         """Load context into the environment as context_0 (and 'context' alias)."""
