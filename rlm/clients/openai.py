@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import threading
@@ -5,6 +6,7 @@ import time as _time
 from collections import defaultdict
 from typing import Any
 
+import httpx
 import openai
 from dotenv import load_dotenv
 from openai import APIConnectionError, APITimeoutError, RateLimitError
@@ -166,6 +168,13 @@ def _get_semaphore(model: str) -> threading.BoundedSemaphore:
     return _semaphores[model]
 
 
+def _synthetic_rate_limit_error(message: str) -> RateLimitError:
+    """Create a synthetic RateLimitError for semaphore timeouts."""
+    request = httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
+    response = httpx.Response(status_code=429, text=message, request=request)
+    return RateLimitError(message=message, response=response, body=None)
+
+
 # Retry configuration for rate limits and timeouts
 _RETRY_CONFIG = {
     "retry": retry_if_exception_type((RateLimitError, APITimeoutError)),
@@ -254,9 +263,28 @@ class OpenAIClient(BaseLM):
         if response_format is not None:
             kwargs["response_format"] = response_format
 
-        response = self.client.chat.completions.create(**kwargs)
-        self._track_cost(response, model)
-        return response.choices[0].message.content
+        sem = _get_semaphore(model)
+        if not sem.acquire(timeout=120):
+            raise _synthetic_rate_limit_error(
+                f"Semaphore timeout waiting for {model} slot"
+            )
+        try:
+            t0 = request_tracker.start_request(model)
+            try:
+                response = self.client.chat.completions.create(**kwargs)
+                self._track_cost(response, model)
+                usage = getattr(response, "usage", None)
+                request_tracker.end_request(
+                    model, t0,
+                    input_tokens=usage.prompt_tokens if usage else 0,
+                    output_tokens=usage.completion_tokens if usage else 0,
+                )
+                return response.choices[0].message.content
+            except BaseException as exc:
+                request_tracker.end_request(model, t0, error=exc)
+                raise
+        finally:
+            sem.release()
 
     @retry(**_RETRY_CONFIG)
     async def acompletion(
@@ -289,11 +317,10 @@ class OpenAIClient(BaseLM):
             kwargs["response_format"] = response_format
 
         sem = _get_semaphore(model)
-        if not sem.acquire(timeout=120):
-            raise RateLimitError(
-                message=f"Semaphore timeout waiting for {model} slot",
-                response=None,
-                body=None,
+        acquired = await asyncio.to_thread(sem.acquire, timeout=120)
+        if not acquired:
+            raise _synthetic_rate_limit_error(
+                f"Semaphore timeout waiting for {model} slot"
             )
         try:
             t0 = request_tracker.start_request(model)
