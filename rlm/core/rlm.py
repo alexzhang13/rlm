@@ -213,6 +213,7 @@ class RLM:
 
         with self._spawn_completion_context(prompt) as (lm_handler, environment):
             message_history = self._setup_prompt(prompt)
+            code_executed = False  # Track whether any REPL code has run
 
             for i in range(self.max_iterations):
                 # Current prompt = message history + additional prompt suffix
@@ -236,9 +237,19 @@ class RLM:
                     environment=environment,
                 )
 
+                # Update code execution tracking
+                if iteration.code_blocks:
+                    code_executed = True
+
                 # Check if RLM is done and has a final answer.
                 final_answer = find_final_answer(iteration.response, environment=environment)
                 iteration.final_answer = final_answer
+
+                # Guard: reject FINAL_VAR if no REPL code has been executed yet.
+                # Catches LLM echoing FINAL_VAR from prompt without running code.
+                if final_answer is not None and not code_executed:
+                    final_answer = None
+                    iteration.final_answer = None
 
                 # If logger is used, log the iteration.
                 if self.logger:
