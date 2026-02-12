@@ -17,6 +17,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.repository == 'alexzhang13/rlm'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
