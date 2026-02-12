@@ -115,7 +115,12 @@ class RequestTracker:
         err_detail = f" | {type(error).__name__}: {str(error)[:200]}" if error else ""
         log_fn(
             "OpenAI %s | model=%s | %.2fs | active=%d%s%s",
-            status, model, duration, concurrent, tok_detail, err_detail,
+            status,
+            model,
+            duration,
+            concurrent,
+            tok_detail,
+            err_detail,
         )
 
     @property
@@ -265,9 +270,7 @@ class OpenAIClient(BaseLM):
 
         sem = _get_semaphore(model)
         if not sem.acquire(timeout=120):
-            raise _synthetic_rate_limit_error(
-                f"Semaphore timeout waiting for {model} slot"
-            )
+            raise _synthetic_rate_limit_error(f"Semaphore timeout waiting for {model} slot")
         try:
             t0 = request_tracker.start_request(model)
             try:
@@ -275,7 +278,8 @@ class OpenAIClient(BaseLM):
                 self._track_cost(response, model)
                 usage = getattr(response, "usage", None)
                 request_tracker.end_request(
-                    model, t0,
+                    model,
+                    t0,
                     input_tokens=usage.prompt_tokens if usage else 0,
                     output_tokens=usage.completion_tokens if usage else 0,
                 )
@@ -319,9 +323,7 @@ class OpenAIClient(BaseLM):
         sem = _get_semaphore(model)
         acquired = await asyncio.to_thread(sem.acquire, timeout=120)
         if not acquired:
-            raise _synthetic_rate_limit_error(
-                f"Semaphore timeout waiting for {model} slot"
-            )
+            raise _synthetic_rate_limit_error(f"Semaphore timeout waiting for {model} slot")
         try:
             t0 = request_tracker.start_request(model)
             try:
@@ -329,7 +331,8 @@ class OpenAIClient(BaseLM):
                 self._track_cost(response, model)
                 usage = getattr(response, "usage", None)
                 request_tracker.end_request(
-                    model, t0,
+                    model,
+                    t0,
                     input_tokens=usage.prompt_tokens if usage else 0,
                     output_tokens=usage.completion_tokens if usage else 0,
                 )
