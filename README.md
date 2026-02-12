@@ -2,159 +2,124 @@
 ---
 
 <h1 align="center" style="font-size:2.8em">
-<span>Recursive Language Models (<span style="color:orange">RLM</span>s)</span>
+<span>Recursive Language Models (<span style="color:orange">RLM</span>s) — Delta-Labs Fork</span>
 </h1>
 
 <p align="center" style="font-size:1.3em">
-  <a href="https://arxiv.org/abs/2512.24601">Full Paper</a> •
-  <a href="https://alexzhang13.github.io/blog/2025/rlm/">Blogpost</a> •
-  <a href="https://alexzhang13.github.io/rlm/">Documentation</a> •
-  <a href="https://github.com/alexzhang13/rlm-minimal">RLM Minimal</a>
+  <a href="https://arxiv.org/abs/2512.24601">Paper</a> •
+  <a href="https://alexzhang13.github.io/rlm/">Upstream Docs</a> •
+  <a href="https://github.com/alexzhang13/rlm">Upstream Repo</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/alexzhang13/rlm/actions/workflows/style.yml">
-    <img src="https://github.com/alexzhang13/rlm/actions/workflows/style.yml/badge.svg" alt="Style" />
+  <a href="https://github.com/Delta-Labs-AG/rlm/actions/workflows/style.yml">
+    <img src="https://github.com/Delta-Labs-AG/rlm/actions/workflows/style.yml/badge.svg" alt="Style" />
   </a>
-  <a href="https://github.com/alexzhang13/rlm/actions/workflows/test.yml">
-    <img src="https://github.com/alexzhang13/rlm/actions/workflows/test.yml/badge.svg" alt="Test" />
+  <a href="https://github.com/Delta-Labs-AG/rlm/actions/workflows/test.yml">
+    <img src="https://github.com/Delta-Labs-AG/rlm/actions/workflows/test.yml/badge.svg" alt="Test" />
   </a>
-</p>
-
-<p align="center">
-  <a href="https://arxiv.org/abs/2512.24601">
-    <img src="media/paper_preview.png" alt="Paper Preview" width="300"/>
+  <a href="https://github.com/Delta-Labs-AG/rlm/releases">
+    <img src="https://img.shields.io/github/v/release/Delta-Labs-AG/rlm?label=release" alt="Release" />
   </a>
 </p>
 
-## Overview
-Recursive Language Models (RLMs) are a task-agnostic inference paradigm for language models (LMs) to handle near-infinite length contexts by enabling the LM to *programmatically* examine, decompose, and recursively call itself over its input. RLMs replace the canonical `llm.completion(prompt, model)` call with a `rlm.completion(prompt, model)` call. RLMs offload the context as a variable in a REPL environment that the LM can interact with and launch sub-LM calls inside of.
+## What is this?
 
-This repository provides an extensible inference engine for using RLMs around standard API-based and local LLMs. The initial experiments and idea were proposed in a [blogpost](https://alexzhang13.github.io/blog/2025/rlm/) in 2025, with expanded results in an [arXiv preprint](https://arxiv.org/abs/2512.24601).
+This is [Delta-Labs'](https://github.com/Delta-Labs-AG) maintained fork of [alexzhang13/rlm](https://github.com/alexzhang13/rlm) with production hardening for our [rlm-service](https://github.com/Delta-Labs-AG/rlm-service). All changes are backward-compatible with the upstream API.
 
-> [!NOTE]
-> This repository contains inference code for RLMs with support for various sandbox environments. Open-source contributions are welcome. This repository is maintained by the authors of the paper from the MIT OASYS lab.
+## Installation
 
-## Quick Setup
-You can try out RLMs quickly by installing from PyPi:
+Pin to a release tag:
 ```bash
-pip install rlms
+pip install "rlms @ git+https://github.com/Delta-Labs-AG/rlm.git@v0.1.0-delta.1"
 ```
 
-The default RLM client uses a REPL environment that runs on the host process through Python `exec` calls. It uses the same virtual environment as the host process (i.e. it will have access to the same dependencies), but with some limitations in its available global modules. As an example, we can call RLM completions using GPT-5-nano:
+Or track `main`:
+```bash
+pip install "rlms @ git+https://github.com/Delta-Labs-AG/rlm.git@main"
+```
+
+In `requirements.txt`:
+```
+rlms @ git+https://github.com/Delta-Labs-AG/rlm.git@v0.1.0-delta.1
+```
+
+## Changes from upstream
+
+### Thread-safe REPL environment
+The upstream `LocalREPL` calls `os.chdir()` which is process-global and unsafe when multiple REPL instances run concurrently in threads. This fork replaces `_temp_cwd()` with a no-op and uses stable per-instance directories under `/tmp/rlm_repl_envs/`. Also adds multimodal prompt support to `llm_query` and `llm_query_batched`.
+
+### Resilient OpenAI client
+Adds [tenacity](https://github.com/jd/tenacity) retry with exponential jitter for `RateLimitError` and `APITimeoutError`, httpx timeout of 600s, `max_retries=3` on the OpenAI client, and `reasoning_effort` parameter support.
+
+### Per-prompt batch error handling
+Uses `asyncio.gather(*tasks, return_exceptions=True)` so a single failed prompt in a batch returns an error string instead of killing the entire batch.
+
+### Minimal system prompt
+`rlm.utils.rlm_system_prompt.RLM_SYSTEM_PROMPT_MINIMAL` — a concise prompt focused on `FINAL_VAR`-only returns and JSON schema compliance, used via `custom_system_prompt` for structured output use cases.
+
+### response_format plumbing
+Threads OpenAI structured outputs (`response_format`) through the entire stack: `llm_query()` → socket protocol → `LMHandler` → OpenAI client. Supports both single and per-prompt batched formats.
+
+## Quick start
+
 ```python
 from rlm import RLM
+from rlm.utils.rlm_system_prompt import RLM_SYSTEM_PROMPT_MINIMAL
 
 rlm = RLM(
     backend="openai",
-    backend_kwargs={"model_name": "gpt-5-nano"},
-    verbose=True,  # For printing to console with rich, disabled by default.
+    backend_kwargs={
+        "model_name": "gpt-4.1-mini",
+        "reasoning_effort": "medium",  # Delta-Labs addition
+    },
+    custom_system_prompt=RLM_SYSTEM_PROMPT_MINIMAL,
+    verbose=True,
 )
 
-print(rlm.completion("Print me the first 100 powers of two, each on a newline.").response)
+print(rlm.completion("Summarize the key themes in the context.").response)
 ```
 
-<details>
-<summary><b>Manual Setup</b></summary>
+### Using response_format (structured output)
 
-Set up the dependencies with `uv` (or your virtual environment of choice):
+In REPL setup code passed to the RLM:
+```python
+result = llm_query(prompt, response_format={
+    "type": "json_schema",
+    "json_schema": {
+        "name": "my_output",
+        "strict": True,
+        "schema": { ... }
+    }
+})
+```
+
+## Releases
+
+Releases are created automatically on push to `main` via the [Release Delta](.github/workflows/release-delta.yml) workflow. Tags follow `v{version}-delta.{n}` (e.g. `v0.1.0-delta.1`).
+
+## Development
+
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv init && uv venv --python 3.12  # change version as needed
+uv venv --python 3.12
 uv pip install -e .
+uv pip install pytest pytest-asyncio pytest-cov ruff
 ```
 
-This project includes a `Makefile` to simplify common tasks.
-
-- `make install`: Install base dependencies.
-- `make check`: Run linter, formatter, and tests.
-
-To run a quick test, the following will run an RLM query with the OpenAI client using your environment variable `OPENAI_API_KEY` (feel free to change this). This will generate console output as well as a log which you can use with the visualizer to explore the trajectories.
 ```bash
-make quickstart
+ruff check .                 # lint
+ruff format --check .        # format check
+pytest tests/ -v             # test
 ```
 
-</details>
+## Upstream sync
 
-## REPL Environments
-We support two types of REPL environments -- isolated, and non-isolated. Non-isolated environments (default) run code execution on the same machine as the RLM (e.g. through `exec`), which is pretty reasonable for some local low-risk tasks, like simple benchmarking, but can be problematic if the prompts or tool calls can interact with malicious users. Fully isolated environments used Cloud-based sandboxes (e.g. Prime Sandboxes, [Modal Sandboxes](https://modal.com/docs/guide/sandboxes)) to run code generated by the RLM, ensuring completely isolation from the host process. Environments can be added, but we natively support the following: `local` (default), `modal`, `prime`.
-
-```python
-rlm = RLM(
-    environment="...", # "local", "docker", "modal", "prime"
-    environment_kwargs={...},
-)
-```
-
-### Local Environments
-The default `local` environment `LocalREPL` runs in the same process as the RLM itself, with specified global and local namespaces for minimal security. Using this REPL is generally safe, but should not be used for production settings. It also shares the same virtual environment (e.g. Conda or uv) as the host process.
-
-#### Docker <img src="https://github.com/docker.png" alt="Docker" height="20" style="vertical-align: middle;"/> (*requires [Docker installed](https://docs.docker.com/desktop/setup/install/)*)
-We also support a Docker-based environment called `DockerREPL` that launches the REPL environment as a Docker image. By default, we use the `python:3.11-slim` image, but the user can specify custom images as well.
-
-### Isolated Environments
-We support several different REPL environments that run on separate, cloud-based machines. Whenever a recursive sub-call is made in these instances, it is requested from the host process.
-
-#### Modal Sandboxes <img src="https://github.com/modal-labs.png" alt="Modal" height="20" style="vertical-align: middle;"/>
-To use [Modal Sandboxes](https://modal.com/docs/guide/sandboxes) as the REPL environment, you need to install and authenticate your Modal account.
 ```bash
-uv add modal  # add modal library
-modal setup   # authenticate account
+git remote add upstream https://github.com/alexzhang13/rlm.git
+git fetch upstream
+git merge upstream/main      # resolve conflicts as needed
 ```
 
-#### Prime Intellect Sandboxes <img src="https://github.com/PrimeIntellect-ai.png" alt="Prime Intellect" height="20" style="vertical-align: middle;"/>
-> [!NOTE]
-> **Prime Intellect Sandboxes** are currently a beta feature. See the [documentation](https://docs.primeintellect.ai/sandboxes/overview) for more information. We noticed slow runtimes when using these sandboxes, which is currently an open issue.
+## License
 
-
-To use [Prime Sandboxes](https://docs.primeintellect.ai/sandboxes/sdk), install the SDK and set your API key:
-```bash
-uv pip install -e ".[prime]"
-export PRIME_API_KEY=...
-```
-
-
-### Model Providers
-We currently support most major clients (OpenAI, Anthropic), as well as the router platforms (OpenRouter, Portkey, LiteLLM). For local models, we recommend using vLLM (which interfaces with the [OpenAI client](https://github.com/alexzhang13/rlm/blob/main/rlm/clients/openai.py)). To view or add support for more clients, start by looking at [`rlm/clients/`](https://github.com/alexzhang13/rlm/tree/main/rlm/clients).
-
-## Relevant Reading
-* **[Dec '25]** [Recursive Language Models arXiv](https://arxiv.org/abs/2512.24601)
-* **[Oct '25]** [Recursive Language Models Blogpost](https://alexzhang13.github.io/blog/2025/rlm/)
-
-If you use this code or repository in your research, please cite:
-
-```bibtex
-@misc{zhang2025recursivelanguagemodels,
-      title={Recursive Language Models}, 
-      author={Alex L. Zhang and Tim Kraska and Omar Khattab},
-      year={2025},
-      eprint={2512.24601},
-      archivePrefix={arXiv},
-      primaryClass={cs.AI},
-      url={https://arxiv.org/abs/2512.24601}, 
-}
-```
-
-## Optional Debugging: Visualizing RLM Trajectories
-We additionally provide a simple visualizer tool to examine and view the code, sub-LM, and root-LM calls of an RLM trajectory. To save log files (`.jsonl`) on every completion call that can be viewed in the visualizer, initialize the `RLMLogger` object and pass it into the `RLM` on initialization:
-```python
-from rlm.logger import RLMLogger
-from rlm import RLM
-
-logger = RLMLogger(log_dir="./logs")
-rlm = RLM(
-    ...
-    logger=logger
-)
-```
-
-To run the visualizer locally, we use Node.js and shadcn/ui:
-```
-cd visualizer/
-npm run dev        # default localhost:3001
-```
-
-You'll have the option to select saved `.jsonl` files 
-<p align="center">
-  <img src="media/visualizer.png" alt="RLM Visualizer Example" width="800"/>
-</p>
+MIT — see upstream [LICENSE](https://github.com/alexzhang13/rlm/blob/main/LICENSE).
