@@ -58,7 +58,7 @@ RLM(
 #### `backend`
 {: .no_toc }
 
-**Type:** `Literal["openai", "portkey", "openrouter", "vllm", "litellm", "anthropic"]`  
+**Type:** `Literal["openai", "anthropic", "azure_anthropic", "azure_openai", "portkey", "openrouter", "vllm", "litellm", "gemini", "vercel"]`
 **Default:** `"openai"`
 
 The LM provider backend to use for the root model.
@@ -88,6 +88,8 @@ Configuration passed to the LM client. Required fields vary by backend:
 |:--------|:---------|:---------|
 | `openai` | `model_name` | `api_key`, `base_url` |
 | `anthropic` | `model_name` | `api_key` |
+| `azure_anthropic` | `model_name` | `api_key`, `resource`, `base_url` |
+| `azure_openai` | `model_name` | `api_key`, `azure_endpoint`, `azure_deployment`, `api_version` |
 | `portkey` | `model_name`, `api_key` | `base_url` |
 | `openrouter` | `model_name` | `api_key` |
 | `vllm` | `model_name`, `base_url` | — |

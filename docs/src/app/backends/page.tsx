@@ -7,7 +7,7 @@ export default function BackendsPage() {
       
       <p className="text-muted-foreground mb-6">
         <p>
-          RLMs natively support a wide range of language model providers, including <code>OpenAI</code>, <code>Anthropic</code>, <code>Portkey</code>, <code>OpenRouter</code>, and <code>LiteLLM</code>. Additional providers can be supported with minimal effort. The <code>backend_kwargs</code> are named arguments passed directly to the backend client.
+          RLMs natively support a wide range of language model providers, including <code>OpenAI</code>, <code>Anthropic</code>, <code>Azure Anthropic (Foundry)</code>, <code>Azure OpenAI</code>, <code>Portkey</code>, <code>OpenRouter</code>, and <code>LiteLLM</code>. Additional providers can be supported with minimal effort. The <code>backend_kwargs</code> are named arguments passed directly to the backend client.
         </p>
       </p>
 
@@ -31,6 +31,32 @@ export default function BackendsPage() {
     backend_kwargs={
         "api_key": os.getenv("ANTHROPIC_API_KEY"),
         "model_name": "claude-sonnet-4-20250514",
+    },
+)`} />
+
+      <hr className="my-8 border-border" />
+
+      <h2 className="text-2xl font-semibold mb-4">Azure Anthropic (Foundry)</h2>
+      <p className="text-muted-foreground mb-4">
+        For Anthropic models hosted on{" "}
+        <a href="https://ai.azure.com/" className="text-primary underline font-medium" target="_blank" rel="noopener noreferrer">Azure AI Foundry</a>.
+        Uses the same <code>ANTHROPIC_FOUNDRY_*</code> environment variable convention as{" "}
+        <a href="https://docs.anthropic.com/en/docs/claude-code" className="text-primary underline font-medium" target="_blank" rel="noopener noreferrer">Claude Code</a>,
+        so if you already have those env vars set, this backend picks them up automatically.
+      </p>
+      <CodeBlock language="bash" code={`# Set Foundry credentials (same vars Claude Code uses)
+export ANTHROPIC_FOUNDRY_API_KEY="your-key"
+export ANTHROPIC_FOUNDRY_RESOURCE="ml-platform-openai-stg-useast-2"
+# Or use a project-scoped endpoint instead of RESOURCE:
+# export ANTHROPIC_FOUNDRY_BASE_URL="https://res.services.ai.azure.com/api/projects/my-proj"`} />
+      <CodeBlock code={`rlm = RLM(
+    backend="azure_anthropic",
+    backend_kwargs={
+        "model_name": "claude-opus-4-6",
+        # Credentials read from ANTHROPIC_FOUNDRY_* env vars.
+        # Or pass explicitly:
+        # "resource": "ml-platform-openai-stg-useast-2",
+        # "api_key": "...",
     },
 )`} />
 
