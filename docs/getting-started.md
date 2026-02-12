@@ -247,6 +247,33 @@ rlm = RLM(
 )
 ```
 
+### Azure Anthropic (Foundry)
+
+For Anthropic models hosted on [Azure AI Foundry](https://ai.azure.com/).
+Uses the same `ANTHROPIC_FOUNDRY_*` environment variable convention as
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code):
+
+```bash
+# .env
+ANTHROPIC_FOUNDRY_API_KEY=...
+ANTHROPIC_FOUNDRY_RESOURCE=ml-platform-openai-stg-useast-2
+# Or use a project-scoped endpoint instead of RESOURCE:
+# ANTHROPIC_FOUNDRY_BASE_URL=https://res.services.ai.azure.com/api/projects/my-proj
+```
+
+```python
+rlm = RLM(
+    backend="azure_anthropic",
+    backend_kwargs={
+        "model_name": "claude-opus-4-6",
+        # Credentials read from ANTHROPIC_FOUNDRY_* env vars.
+        # Or pass explicitly:
+        # "resource": "ml-platform-openai-stg-useast-2",
+        # "api_key": "...",
+    },
+)
+```
+
 ### Portkey (Router)
 
 ```python
