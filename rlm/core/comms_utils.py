@@ -31,6 +31,8 @@ class LMRequest:
     depth: int = 0
     response_format: dict | None = None
     response_formats: list[dict | None] | None = None
+    tools: list[dict] | None = None
+    tool_choice: str | dict | None = None
 
     @property
     def is_batched(self) -> bool:
@@ -51,6 +53,10 @@ class LMRequest:
             d["response_format"] = self.response_format
         if self.response_formats is not None:
             d["response_formats"] = self.response_formats
+        if self.tools is not None:
+            d["tools"] = self.tools
+        if self.tool_choice is not None:
+            d["tool_choice"] = self.tool_choice
         return d
 
     @classmethod
@@ -63,6 +69,8 @@ class LMRequest:
             depth=data.get("depth", -1),  # TODO: Default should throw an error
             response_format=data.get("response_format"),
             response_formats=data.get("response_formats"),
+            tools=data.get("tools"),
+            tool_choice=data.get("tool_choice"),
         )
 
 

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import threading
@@ -244,7 +245,9 @@ class OpenAIClient(BaseLM):
         prompt: str | list[dict[str, Any]],
         model: str | None = None,
         response_format: dict | None = None,
-    ) -> str:
+        tools: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
+    ) -> str | dict:
         if isinstance(prompt, str):
             messages = [{"role": "user", "content": prompt}]
         elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
@@ -267,6 +270,10 @@ class OpenAIClient(BaseLM):
             kwargs["reasoning_effort"] = self.reasoning_effort
         if response_format is not None:
             kwargs["response_format"] = response_format
+        if tools is not None:
+            kwargs["tools"] = tools
+            if tool_choice is not None:
+                kwargs["tool_choice"] = tool_choice
 
         sem = _get_semaphore(model)
         if not sem.acquire(timeout=120):
@@ -283,7 +290,25 @@ class OpenAIClient(BaseLM):
                     input_tokens=usage.prompt_tokens if usage else 0,
                     output_tokens=usage.completion_tokens if usage else 0,
                 )
-                return response.choices[0].message.content
+
+                message = response.choices[0].message
+
+                # Check for tool calls
+                if hasattr(message, "tool_calls") and message.tool_calls:
+                    return {
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "name": tc.function.name,
+                                "arguments": json.loads(tc.function.arguments),
+                            }
+                            for tc in message.tool_calls
+                        ],
+                        "content": message.content,
+                    }
+
+                # Normal completion
+                return message.content or ""
             except BaseException as exc:
                 request_tracker.end_request(model, t0, error=exc)
                 raise
@@ -296,7 +321,9 @@ class OpenAIClient(BaseLM):
         prompt: str | list[dict[str, Any]],
         model: str | None = None,
         response_format: dict | None = None,
-    ) -> str:
+        tools: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
+    ) -> str | dict:
         if isinstance(prompt, str):
             messages = [{"role": "user", "content": prompt}]
         elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
@@ -319,6 +346,10 @@ class OpenAIClient(BaseLM):
             kwargs["reasoning_effort"] = self.reasoning_effort
         if response_format is not None:
             kwargs["response_format"] = response_format
+        if tools is not None:
+            kwargs["tools"] = tools
+            if tool_choice is not None:
+                kwargs["tool_choice"] = tool_choice
 
         sem = _get_semaphore(model)
         acquired = await asyncio.to_thread(sem.acquire, timeout=120)
@@ -336,7 +367,25 @@ class OpenAIClient(BaseLM):
                     input_tokens=usage.prompt_tokens if usage else 0,
                     output_tokens=usage.completion_tokens if usage else 0,
                 )
-                return response.choices[0].message.content
+
+                message = response.choices[0].message
+
+                # Check for tool calls
+                if hasattr(message, "tool_calls") and message.tool_calls:
+                    return {
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "name": tc.function.name,
+                                "arguments": json.loads(tc.function.arguments),
+                            }
+                            for tc in message.tool_calls
+                        ],
+                        "content": message.content,
+                    }
+
+                # Normal completion
+                return message.content or ""
             except BaseException as exc:
                 request_tracker.end_request(model, t0, error=exc)
                 raise

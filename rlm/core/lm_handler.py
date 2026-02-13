@@ -227,7 +227,12 @@ class LMHandler:
 
     def completion(self, prompt: str, model: str | None = None) -> str:
         """Direct completion call (for main process use)."""
-        return self.get_client(model).completion(prompt)
+        result = self.get_client(model).completion(prompt)
+        # Handle str | dict return from client (tools not supported in direct completion)
+        if isinstance(result, dict):
+            # Should not happen in direct completion (no tools), but handle gracefully
+            return result.get("content") or ""
+        return result
 
     def __enter__(self):
         self.start()

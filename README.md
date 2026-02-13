@@ -61,6 +61,14 @@ Uses `asyncio.gather(*tasks, return_exceptions=True)` so a single failed prompt 
 ### response_format plumbing
 Threads OpenAI structured outputs (`response_format`) through the entire stack: `llm_query()` → socket protocol → `LMHandler` → OpenAI client. Supports both single and per-prompt batched formats.
 
+### OpenAI function calling (tools) support
+Full support for OpenAI function calling API in REPL sub-LLM queries. The environment layer handles the complete agentic tool-calling loop: executing tool handlers, appending results, and iterating until the model returns final content. Enables LLM agents to access pre-computed statistics, database queries, or external APIs while maintaining backward compatibility.
+
+**Use cases:**
+- **Mixed qualitative/quantitative analysis**: Use tools for pre-computed stats (counts, averages) and sub-LLMs for semantic analysis (themes, sentiment)
+- **External data access**: Tools fetch data from APIs/databases, sub-LLMs process the results
+- **Efficient map-reduce**: Avoid unnecessary LLM calls for deterministic computations
+
 ## Quick start
 
 ```python
@@ -92,6 +100,62 @@ result = llm_query(prompt, response_format={
         "schema": { ... }
     }
 })
+```
+
+### Using tools (function calling)
+
+Define tools and a handler in your REPL setup code:
+
+```python
+# Define tool schemas (OpenAI format)
+TOOLS = [{
+    "type": "function",
+    "function": {
+        "name": "get_stats",
+        "description": "Get pre-computed statistics for a question",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question_index": {"type": "integer"}
+            },
+            "required": ["question_index"],
+        },
+    },
+}]
+
+# Define tool handler
+def tool_handler(tool_name, arguments):
+    if tool_name == "get_stats":
+        q_idx = arguments["question_index"]
+        # Return pre-computed stats (no LLM needed)
+        return json.dumps({
+            "total_responses": 500,
+            "choice_distribution": {"a": 245, "b": 180, "c": 75}
+        })
+    return "Unknown tool"
+
+# Use in llm_query - the environment handles the tool-calling loop automatically
+result = llm_query(
+    "Analyze the distribution for question 3 and provide insights",
+    tools=TOOLS,
+    tool_handler=tool_handler
+)
+```
+
+**Mixed analysis pattern** (tools + sub-LLMs):
+```python
+# 1. Tools for quantitative (pre-computed, no LLM)
+stats = json.loads(tool_handler("get_stats", {"question_index": 3}))
+
+# 2. Sub-LLM for qualitative (batched text analysis)
+themes = llm_query_batched(
+    [response["text"] for response in qualitative_responses],
+    model="gpt-4o-mini"  # Use cheaper model for sub-tasks
+)
+
+# 3. Combine in final report
+report = f"Distribution: {stats}\nThemes: {themes}"
+FINAL_VAR("report")
 ```
 
 ## Releases

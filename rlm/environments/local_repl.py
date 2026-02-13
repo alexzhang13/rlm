@@ -27,6 +27,9 @@ _LEAKED_ERROR_MARKERS = (
     "error: lm query failed",
 )
 
+# Maximum iterations for tool-calling loop (prevents infinite loops)
+MAX_TOOL_ITERATIONS = 10
+
 
 def _is_rate_limit_error(error_str: str) -> bool:
     """Check if an error string indicates a rate limit failure."""
@@ -210,17 +213,137 @@ class LocalREPL(NonIsolatedEnv):
         prompt: str | list[dict[str, Any]],
         model: str | None = None,
         response_format: dict | None = None,
+        tools: list[dict] | None = None,
+        tool_handler: Any | None = None,
     ) -> str:
         """Query the LM via socket connection to the handler.
 
         Args:
-            prompt: The prompt to send — string or list of message dicts (multimodal).
-            model: Optional model name to use (if handler has multiple clients).
+            prompt: The prompt to send — string or list of message dicts.
+            model: Optional model name to use.
             response_format: Optional OpenAI response_format dict for structured output.
+            tools: Optional list of OpenAI function calling tool definitions.
+            tool_handler: Required if tools provided. Called as handler(tool_name, arguments) -> str.
+
+        Returns:
+            String response from the model (after tool execution loop if tools used).
         """
+        # Validation
+        if tools is not None and tool_handler is None:
+            raise ValueError("tool_handler is required when tools are provided")
+
         if not self.lm_handler_address:
             return "Error: No LM handler configured"
 
+        # If no tools, use simple path (backward compatible)
+        if tools is None:
+            return self._llm_query_simple(prompt, model, response_format)
+
+        # Tool-calling loop
+        messages = self._ensure_messages_format(prompt)
+
+        for _iteration in range(MAX_TOOL_ITERATIONS):
+            try:
+                request = LMRequest(
+                    prompt=messages,
+                    model=model,
+                    depth=self.depth,
+                    response_format=response_format,
+                    tools=tools,
+                )
+                response = send_lm_request(self.lm_handler_address, request)
+
+                if not response.success:
+                    return f"__LLM_ERROR__|socket_error|0|{response.error}"
+
+                cc = response.chat_completion
+                if cc.error:
+                    return f"__LLM_ERROR__|{cc.error_type}|{cc.status_code or 0}|{cc.error}"
+
+                content = cc.response
+
+                # Check if response is a tool_calls dict (JSON string from handler)
+                if content.startswith("{") and "tool_calls" in content:
+                    tool_response = json.loads(content)
+                    tool_calls = tool_response.get("tool_calls", [])
+
+                    if not tool_calls:
+                        # Model returned content (final response)
+                        self._pending_llm_calls.append(cc)
+                        return tool_response.get("content") or ""
+
+                    # Append assistant message with tool_calls to conversation
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "content": tool_response.get("content"),
+                            "tool_calls": [
+                                {
+                                    "id": tc["id"],
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc["name"],
+                                        "arguments": json.dumps(tc["arguments"]),
+                                    },
+                                }
+                                for tc in tool_calls
+                            ],
+                        }
+                    )
+
+                    # Execute each tool and append results
+                    for tool_call in tool_calls:
+                        tool_name = tool_call["name"]
+                        tool_args = tool_call["arguments"]
+                        tool_id = tool_call["id"]
+
+                        # Execute tool handler
+                        try:
+                            tool_result = tool_handler(tool_name, tool_args)
+                        except Exception as e:
+                            tool_result = f"Error executing {tool_name}: {str(e)}"
+
+                        # Append tool result message
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_id,
+                                "content": tool_result,
+                            }
+                        )
+
+                    # Continue loop to call model again with tool results
+
+                else:
+                    # Normal completion (no tool calls)
+                    if _content_is_leaked_error(content):
+                        return f"__LLM_ERROR__|leaked_error|0|LLM returned error content: {content[:200]}"
+
+                    self._pending_llm_calls.append(cc)
+                    return content
+
+            except Exception as e:
+                return f"__LLM_ERROR__|socket_error|0|LM query failed - {e}"
+
+        # Max iterations reached
+        return f"__LLM_ERROR__|tool_loop_error|0|Maximum tool iterations ({MAX_TOOL_ITERATIONS}) exceeded"
+
+    def _ensure_messages_format(self, prompt: str | list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Convert string prompt to messages format, or return as-is if already messages."""
+        if isinstance(prompt, str):
+            return [{"role": "user", "content": prompt}]
+        elif isinstance(prompt, list):
+            return prompt
+        else:
+            raise ValueError(f"Invalid prompt type: {type(prompt)}")
+
+    def _llm_query_simple(
+        self,
+        prompt: str | list[dict[str, Any]],
+        model: str | None = None,
+        response_format: dict | None = None,
+    ) -> str:
+        """Simple query path without tools (original implementation)."""
         try:
             request = LMRequest(
                 prompt=prompt,
@@ -241,7 +364,6 @@ class LocalREPL(NonIsolatedEnv):
             if _content_is_leaked_error(content):
                 return f"__LLM_ERROR__|leaked_error|0|LLM returned error content: {content[:200]}"
 
-            # Track this LLM call
             self._pending_llm_calls.append(cc)
             return content
         except Exception as e:
@@ -252,20 +374,48 @@ class LocalREPL(NonIsolatedEnv):
         prompts: list[str | list[dict[str, Any]]],
         model: str | None = None,
         response_formats: list[dict | None] | None = None,
+        tools: list[dict] | None = None,
+        tool_handler: Any | None = None,
     ) -> list[str]:
         """Query the LM with multiple prompts concurrently.
 
         Args:
-            prompts: List of prompts — each is a string or list of message dicts (multimodal).
-            model: Optional model name to use (if handler has multiple clients).
-            response_formats: Optional per-prompt response_format dicts. Length must match prompts.
+            prompts: List of prompts.
+            model: Optional model name.
+            response_formats: Optional per-prompt response_format dicts.
+            tools: Optional tool definitions (shared across all prompts).
+            tool_handler: Required if tools provided (shared handler).
 
         Returns:
-            List of responses in the same order as input prompts.
+            List of responses in same order as input prompts.
         """
+        # Validation
+        if tools is not None and tool_handler is None:
+            raise ValueError("tool_handler is required when tools are provided")
+
         if not self.lm_handler_address:
             return ["Error: No LM handler configured"] * len(prompts)
 
+        # If no tools, use simple batched path
+        if tools is None:
+            return self._llm_query_batched_simple(prompts, model, response_formats)
+
+        # With tools: each prompt gets independent tool-calling loop
+        results = []
+        for i, prompt in enumerate(prompts):
+            response_format = response_formats[i] if response_formats else None
+            result = self._llm_query(prompt, model, response_format, tools, tool_handler)
+            results.append(result)
+
+        return results
+
+    def _llm_query_batched_simple(
+        self,
+        prompts: list[str | list[dict[str, Any]]],
+        model: str | None = None,
+        response_formats: list[dict | None] | None = None,
+    ) -> list[str]:
+        """Simple batched query without tools (original implementation)."""
         try:
             responses = send_lm_request_batched(
                 self.lm_handler_address,
