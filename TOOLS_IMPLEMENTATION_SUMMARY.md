@@ -25,5 +25,11 @@
     - `TraceContext`: Standard container for IDs.
     - `TracingLogger`: Bridge for Langfuse/OpenTelemetry.
 
-## 5. PEP 440 Versioning
-- Corrected versioning scheme to `0.1.0.post11` to be compliant with Python packaging standards.
+## 5. OpenAI-First Improvements (Pydantic & Responses API)
+- **Pydantic Support**: `llm_query` now accepts `response_model` (for structured output) and Pydantic classes in `tools`.
+    - Automatic schema generation using Pydantic's `model_json_schema`.
+    - Automatic validation and parsing of the response into typed objects.
+- **Responses API**: Added support for the new OpenAI `/v1/responses` endpoint via `use_responses_api=True`.
+    - Uses `instructions` for system guidance.
+    - Unified `output` handling for text and tool calls.
+- **PEP 440 Versioning**: Moved to `0.1.0.post13` for compatibility.

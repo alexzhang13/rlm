@@ -31,7 +31,7 @@ This is [Delta-Labs'](https://github.com/Delta-Labs-AG) maintained fork of [alex
 
 Pin to a release tag:
 ```bash
-pip install "rlms @ git+https://github.com/Delta-Labs-AG/rlm.git@v0.1.0.post11"
+pip install "rlms @ git+https://github.com/Delta-Labs-AG/rlm.git@v0.1.0.post13"
 ```
 
 Or track `main`:
@@ -41,7 +41,7 @@ pip install "rlms @ git+https://github.com/Delta-Labs-AG/rlm.git@main"
 
 In `requirements.txt`:
 ```
-rlms @ git+https://github.com/Delta-Labs-AG/rlm.git@v0.1.0.post11
+rlms @ git+https://github.com/Delta-Labs-AG/rlm.git@v0.1.0.post13
 ```
 
 ## Changes from upstream

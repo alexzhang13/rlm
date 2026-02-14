@@ -209,11 +209,13 @@ class OpenAIClient(BaseLM):
         base_url: str | None = None,
         reasoning_effort: str | None = None,
         beta_responses: bool = False,
+        use_responses_api: bool = False,
         **kwargs,
     ):
         super().__init__(model_name=model_name, **kwargs)
         self.reasoning_effort = reasoning_effort  # none, minimal, low, medium, high, xhigh
         self.beta_responses = beta_responses
+        self.use_responses_api = use_responses_api
 
         if api_key is None:
             if base_url == "https://api.openai.com/v1" or base_url is None:
@@ -240,6 +242,79 @@ class OpenAIClient(BaseLM):
         self.model_input_tokens: dict[str, int] = defaultdict(int)
         self.model_output_tokens: dict[str, int] = defaultdict(int)
         self.model_total_tokens: dict[str, int] = defaultdict(int)
+
+    def _prepare_responses_request(
+        self,
+        prompt: str | list[dict[str, Any]],
+        model: str,
+        tools: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
+        response_format: dict | None = None,
+    ) -> dict[str, Any]:
+        """Prepare request for the new Responses API (/v1/responses)."""
+        if isinstance(prompt, str):
+            messages = [{"role": "user", "content": prompt}]
+        else:
+            messages = prompt
+
+        instructions = ""
+        input_items = []
+
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content")
+            if role == "system" and not instructions:
+                instructions = content
+            else:
+                input_items.append({
+                    "type": "message",
+                    "role": role,
+                    "content": content
+                })
+
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "input": input_items,
+        }
+        if instructions:
+            kwargs["instructions"] = instructions
+        
+        if tools:
+            kwargs["tools"] = tools
+            if tool_choice:
+                kwargs["tool_choice"] = tool_choice
+        
+        if response_format:
+            kwargs["output_format"] = response_format
+
+        return kwargs
+
+    def _parse_responses_response(self, response: Any) -> str | dict:
+        """Parse the new Response object into RLM format."""
+        output_items = getattr(response, "output", [])
+        
+        tool_calls = []
+        final_content = ""
+
+        for item in output_items:
+            # Check for different item types in the new API
+            if hasattr(item, "type"):
+                if item.type == "message":
+                    final_content = getattr(item, "content", "")
+                elif item.type == "function_call":
+                    tool_calls.append({
+                        "id": item.id,
+                        "name": item.name,
+                        "arguments": item.arguments,
+                    })
+        
+        if tool_calls:
+            return {
+                "tool_calls": tool_calls,
+                "content": final_content or None
+            }
+        
+        return final_content
 
     @retry(**_RETRY_CONFIG)
     def completion(
@@ -285,34 +360,42 @@ class OpenAIClient(BaseLM):
         try:
             t0 = request_tracker.start_request(model)
             try:
-                response = self.client.chat.completions.create(**kwargs)
-                self._track_cost(response, model)
-                usage = getattr(response, "usage", None)
+                if self.use_responses_api:
+                    resp_kwargs = self._prepare_responses_request(
+                        prompt, model, tools, tool_choice, response_format
+                    )
+                    response = self.client.responses.create(**resp_kwargs)
+                    content = self._parse_responses_response(response)
+                    # Note: Usage tracking for Responses API might need adjustment
+                    usage = getattr(response, "usage", None)
+                else:
+                    response = self.client.chat.completions.create(**kwargs)
+                    self._track_cost(response, model)
+                    usage = getattr(response, "usage", None)
+                    
+                    message = response.choices[0].message
+                    if hasattr(message, "tool_calls") and message.tool_calls:
+                        content = {
+                            "tool_calls": [
+                                {
+                                    "id": tc.id,
+                                    "name": tc.function.name,
+                                    "arguments": json.loads(tc.function.arguments),
+                                }
+                                for tc in message.tool_calls
+                            ],
+                            "content": message.content,
+                        }
+                    else:
+                        content = message.content or ""
+
                 request_tracker.end_request(
                     model,
                     t0,
                     input_tokens=usage.prompt_tokens if usage else 0,
                     output_tokens=usage.completion_tokens if usage else 0,
                 )
-
-                message = response.choices[0].message
-
-                # Check for tool calls
-                if hasattr(message, "tool_calls") and message.tool_calls:
-                    return {
-                        "tool_calls": [
-                            {
-                                "id": tc.id,
-                                "name": tc.function.name,
-                                "arguments": json.loads(tc.function.arguments),
-                            }
-                            for tc in message.tool_calls
-                        ],
-                        "content": message.content,
-                    }
-
-                # Normal completion
-                return message.content or ""
+                return content
             except BaseException as exc:
                 request_tracker.end_request(model, t0, error=exc)
                 raise
@@ -364,34 +447,41 @@ class OpenAIClient(BaseLM):
         try:
             t0 = request_tracker.start_request(model)
             try:
-                response = await self.async_client.chat.completions.create(**kwargs)
-                self._track_cost(response, model)
-                usage = getattr(response, "usage", None)
+                if self.use_responses_api:
+                    resp_kwargs = self._prepare_responses_request(
+                        prompt, model, tools, tool_choice, response_format
+                    )
+                    response = await self.async_client.responses.create(**resp_kwargs)
+                    content = self._parse_responses_response(response)
+                    usage = getattr(response, "usage", None)
+                else:
+                    response = await self.async_client.chat.completions.create(**kwargs)
+                    self._track_cost(response, model)
+                    usage = getattr(response, "usage", None)
+                    
+                    message = response.choices[0].message
+                    if hasattr(message, "tool_calls") and message.tool_calls:
+                        content = {
+                            "tool_calls": [
+                                {
+                                    "id": tc.id,
+                                    "name": tc.function.name,
+                                    "arguments": json.loads(tc.function.arguments),
+                                }
+                                for tc in message.tool_calls
+                            ],
+                            "content": message.content,
+                        }
+                    else:
+                        content = message.content or ""
+
                 request_tracker.end_request(
                     model,
                     t0,
                     input_tokens=usage.prompt_tokens if usage else 0,
                     output_tokens=usage.completion_tokens if usage else 0,
                 )
-
-                message = response.choices[0].message
-
-                # Check for tool calls
-                if hasattr(message, "tool_calls") and message.tool_calls:
-                    return {
-                        "tool_calls": [
-                            {
-                                "id": tc.id,
-                                "name": tc.function.name,
-                                "arguments": json.loads(tc.function.arguments),
-                            }
-                            for tc in message.tool_calls
-                        ],
-                        "content": message.content,
-                    }
-
-                # Normal completion
-                return message.content or ""
+                return content
             except BaseException as exc:
                 request_tracker.end_request(model, t0, error=exc)
                 raise
