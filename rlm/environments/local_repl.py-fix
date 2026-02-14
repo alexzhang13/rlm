@@ -1,3 +1,0 @@
-# Maintain LocalREPL as an alias to SocketREPL for backward compatibility, 
-# but DirectREPL is preferred for microservices.
-LocalREPL = SocketREPL
