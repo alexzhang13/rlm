@@ -33,6 +33,7 @@ class LMRequest:
     response_formats: list[dict | None] | None = None
     tools: list[dict] | None = None
     tool_choice: str | dict | None = None
+    previous_response_id: str | None = None
     metadata: dict[str, Any] | None = None
 
     @property
@@ -58,6 +59,8 @@ class LMRequest:
             d["tools"] = self.tools
         if self.tool_choice is not None:
             d["tool_choice"] = self.tool_choice
+        if self.previous_response_id is not None:
+            d["previous_response_id"] = self.previous_response_id
         if self.metadata is not None:
             d["metadata"] = self.metadata
         return d
@@ -74,6 +77,7 @@ class LMRequest:
             response_formats=data.get("response_formats"),
             tools=data.get("tools"),
             tool_choice=data.get("tool_choice"),
+            previous_response_id=data.get("previous_response_id"),
             metadata=data.get("metadata"),
         )
 

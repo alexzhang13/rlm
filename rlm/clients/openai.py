@@ -209,7 +209,7 @@ class OpenAIClient(BaseLM):
         base_url: str | None = None,
         reasoning_effort: str | None = None,
         beta_responses: bool = False,
-        use_responses_api: bool = False,
+        use_responses_api: bool = True,
         **kwargs,
     ):
         super().__init__(model_name=model_name, **kwargs)
@@ -250,6 +250,7 @@ class OpenAIClient(BaseLM):
         tools: list[dict] | None = None,
         tool_choice: str | dict | None = None,
         response_format: dict | None = None,
+        previous_response_id: str | None = None,
     ) -> dict[str, Any]:
         """Prepare request for the new Responses API (/v1/responses)."""
         if isinstance(prompt, str):
@@ -287,20 +288,26 @@ class OpenAIClient(BaseLM):
         if response_format:
             kwargs["output_format"] = response_format
 
+        if previous_response_id:
+            kwargs["previous_response_id"] = previous_response_id
+
         return kwargs
 
-    def _parse_responses_response(self, response: Any) -> str | dict:
+    def _parse_responses_response(self, response: Any) -> dict[str, Any]:
         """Parse the new Response object into RLM format."""
         output_items = getattr(response, "output", [])
         
         tool_calls = []
         final_content = ""
+        thought = ""
 
         for item in output_items:
             # Check for different item types in the new API
             if hasattr(item, "type"):
                 if item.type == "message":
-                    final_content = getattr(item, "content", "")
+                    final_content += getattr(item, "content", "")
+                    if hasattr(item, "reasoning_content") and item.reasoning_content:
+                        thought += item.reasoning_content
                 elif item.type == "function_call":
                     tool_calls.append({
                         "id": item.id,
@@ -308,13 +315,12 @@ class OpenAIClient(BaseLM):
                         "arguments": item.arguments,
                     })
         
-        if tool_calls:
-            return {
-                "tool_calls": tool_calls,
-                "content": final_content or None
-            }
-        
-        return final_content
+        return {
+            "content": final_content,
+            "thought": thought or None,
+            "tool_calls": tool_calls or None,
+            "response_id": getattr(response, "id", None)
+        }
 
     @retry(**_RETRY_CONFIG)
     def completion(
@@ -324,6 +330,7 @@ class OpenAIClient(BaseLM):
         response_format: dict | None = None,
         tools: list[dict] | None = None,
         tool_choice: str | dict | None = None,
+        previous_response_id: str | None = None,
     ) -> str | dict:
         if isinstance(prompt, str):
             messages = [{"role": "user", "content": prompt}]
@@ -362,7 +369,7 @@ class OpenAIClient(BaseLM):
             try:
                 if self.use_responses_api:
                     resp_kwargs = self._prepare_responses_request(
-                        prompt, model, tools, tool_choice, response_format
+                        prompt, model, tools, tool_choice, response_format, previous_response_id
                     )
                     response = self.client.responses.create(**resp_kwargs)
                     content = self._parse_responses_response(response)
@@ -410,6 +417,7 @@ class OpenAIClient(BaseLM):
         response_format: dict | None = None,
         tools: list[dict] | None = None,
         tool_choice: str | dict | None = None,
+        previous_response_id: str | None = None,
     ) -> str | dict:
         if isinstance(prompt, str):
             messages = [{"role": "user", "content": prompt}]
@@ -449,7 +457,7 @@ class OpenAIClient(BaseLM):
             try:
                 if self.use_responses_api:
                     resp_kwargs = self._prepare_responses_request(
-                        prompt, model, tools, tool_choice, response_format
+                        prompt, model, tools, tool_choice, response_format, previous_response_id
                     )
                     response = await self.async_client.responses.create(**resp_kwargs)
                     content = self._parse_responses_response(response)

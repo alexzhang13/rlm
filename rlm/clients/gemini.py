@@ -49,7 +49,15 @@ class GeminiClient(BaseLM):
         self.last_prompt_tokens = 0
         self.last_completion_tokens = 0
 
-    def completion(self, prompt: str | list[dict[str, Any]], model: str | None = None) -> str:
+    def completion(
+        self,
+        prompt: str | list[dict[str, Any]],
+        model: str | None = None,
+        response_format: dict | None = None,
+        tools: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
+        previous_response_id: str | None = None,
+    ) -> dict[str, Any]:
         contents, system_instruction = self._prepare_contents(prompt)
 
         model = model or self.model_name
@@ -57,8 +65,12 @@ class GeminiClient(BaseLM):
             raise ValueError("Model name is required for Gemini client.")
 
         config = None
-        if system_instruction:
-            config = types.GenerateContentConfig(system_instruction=system_instruction)
+        if system_instruction or response_format:
+            config = types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                response_mime_type="application/json" if response_format else None,
+                response_schema=response_format if response_format else None,
+            )
 
         response = self.client.models.generate_content(
             model=model,
@@ -67,11 +79,17 @@ class GeminiClient(BaseLM):
         )
 
         self._track_cost(response, model)
-        return response.text
+        return self._parse_gemini_response(response)
 
     async def acompletion(
-        self, prompt: str | list[dict[str, Any]], model: str | None = None
-    ) -> str:
+        self,
+        prompt: str | list[dict[str, Any]],
+        model: str | None = None,
+        response_format: dict | None = None,
+        tools: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
+        previous_response_id: str | None = None,
+    ) -> dict[str, Any]:
         contents, system_instruction = self._prepare_contents(prompt)
 
         model = model or self.model_name
@@ -79,8 +97,12 @@ class GeminiClient(BaseLM):
             raise ValueError("Model name is required for Gemini client.")
 
         config = None
-        if system_instruction:
-            config = types.GenerateContentConfig(system_instruction=system_instruction)
+        if system_instruction or response_format:
+            config = types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                response_mime_type="application/json" if response_format else None,
+                response_schema=response_format if response_format else None,
+            )
 
         # google-genai SDK supports async via aio interface
         response = await self.client.aio.models.generate_content(
@@ -90,7 +112,35 @@ class GeminiClient(BaseLM):
         )
 
         self._track_cost(response, model)
-        return response.text
+        return self._parse_gemini_response(response)
+
+    def _parse_gemini_response(self, response: types.GenerateContentResponse) -> dict[str, Any]:
+        """Parse Gemini response parts into unified format."""
+        content = ""
+        thought = ""
+        tool_calls = []
+
+        if response.candidates:
+            candidate = response.candidates[0]
+            if candidate.content and candidate.content.parts:
+                for part in candidate.content.parts:
+                    if part.text:
+                        content += part.text
+                    if part.thought:
+                        thought += part.text  # Gemini 2.0 uses 'thought' part
+                    if part.call:
+                        tool_calls.append({
+                            "id": None, # Gemini doesn't always provide IDs for calls in the same way
+                            "name": part.call.name,
+                            "arguments": part.call.args,
+                        })
+
+        return {
+            "content": content,
+            "thought": thought or None,
+            "tool_calls": tool_calls or None,
+            "response_id": None
+        }
 
     def _prepare_contents(
         self, prompt: str | list[dict[str, Any]]

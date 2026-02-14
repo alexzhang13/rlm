@@ -117,8 +117,19 @@ class TestGeminiClientUnit:
 
     def test_completion_with_mocked_response(self):
         """Test completion with mocked API response."""
+        mock_part = MagicMock()
+        mock_part.text = "Hello from Gemini!"
+        mock_part.thought = None
+        mock_part.call = None
+
+        mock_content = MagicMock()
+        mock_content.parts = [mock_part]
+
+        mock_candidate = MagicMock()
+        mock_candidate.content = mock_content
+
         mock_response = MagicMock()
-        mock_response.text = "Hello from Gemini!"
+        mock_response.candidates = [mock_candidate]
         mock_response.usage_metadata.prompt_token_count = 10
         mock_response.usage_metadata.candidates_token_count = 5
 
@@ -130,7 +141,9 @@ class TestGeminiClientUnit:
             client = GeminiClient(api_key="test-key", model_name="gemini-2.5-flash")
             result = client.completion("Hello")
 
-            assert result == "Hello from Gemini!"
+            assert result["content"] == "Hello from Gemini!"
+            assert result["thought"] is None
+            assert result["tool_calls"] is None
             assert client.model_call_counts["gemini-2.5-flash"] == 1
             assert client.model_input_tokens["gemini-2.5-flash"] == 10
             assert client.model_output_tokens["gemini-2.5-flash"] == 5

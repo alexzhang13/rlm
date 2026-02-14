@@ -78,7 +78,11 @@ def format_iteration(
     Returns:
         A list of messages to add to the next prompt
     """
-    messages = [{"role": "assistant", "content": iteration.response}]
+    content = iteration.response
+    if iteration.thought:
+        content = f"<thought>\n{iteration.thought}\n</thought>\n\n{content}"
+
+    messages = [{"role": "assistant", "content": content}]
 
     for code_block in iteration.code_blocks:
         code = code_block.code

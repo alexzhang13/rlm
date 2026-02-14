@@ -134,8 +134,26 @@ class LMHandler:
         client = self.get_client(request.model, request.depth)
 
         start_time = time.perf_counter()
-        content = client.completion(request.prompt, response_format=request.response_format)
+        result = client.completion(
+            request.prompt,
+            response_format=request.response_format,
+            tools=request.tools,
+            tool_choice=request.tool_choice,
+            previous_response_id=request.previous_response_id,
+        )
         end_time = time.perf_counter()
+
+        # Handle structured response from Responses API or standard string
+        if isinstance(result, dict):
+            content = result.get("content", "")
+            thought = result.get("thought")
+            tool_calls = result.get("tool_calls")
+            response_id = result.get("response_id")
+        else:
+            content = result
+            thought = None
+            tool_calls = None
+            response_id = None
 
         model_usage = client.get_last_usage()
         root_model = request.model or client.model_name
@@ -147,6 +165,9 @@ class LMHandler:
                 response=content,
                 usage_summary=usage_summary,
                 execution_time=end_time - start_time,
+                thought=thought,
+                tool_calls=tool_calls,
+                response_id=response_id,
             )
         )
 
@@ -193,13 +214,25 @@ class LMHandler:
                     )
                 )
             else:
+                # Handle structured response
+                if isinstance(result, dict):
+                    content = result.get("content", "")
+                    thought = result.get("thought")
+                    tool_calls = result.get("tool_calls")
+                else:
+                    content = result
+                    thought = None
+                    tool_calls = None
+
                 chat_completions.append(
                     RLMChatCompletion(
                         root_model=root_model,
                         prompt=prompt,
-                        response=result,
+                        response=content,
                         usage_summary=usage_summary,
                         execution_time=total_time / len(prompts),
+                        thought=thought,
+                        tool_calls=tool_calls,
                     )
                 )
 
@@ -253,6 +286,52 @@ class LMHandler:
             self._server.shutdown()
             self._server = None
             self._thread = None
+
+    def completion_full(
+        self,
+        prompt: str | list[dict[str, Any]],
+        model: str | None = None,
+        response_format: dict | None = None,
+        tools: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
+        previous_response_id: str | None = None,
+    ) -> RLMChatCompletion:
+        """Full completion call returning RLMChatCompletion object."""
+        request = LMRequest(
+            prompt=prompt,
+            model=model,
+            response_format=response_format,
+            tools=tools,
+            tool_choice=tool_choice,
+            previous_response_id=previous_response_id,
+        )
+        response = self._handle_single(request)
+        if not response.success or response.chat_completion is None:
+            raise RuntimeError(f"LM call failed: {response.error}")
+        return response.chat_completion
+
+    async def acompletion_full(
+        self,
+        prompt: str | list[dict[str, Any]],
+        model: str | None = None,
+        response_format: dict | None = None,
+        tools: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
+        previous_response_id: str | None = None,
+    ) -> RLMChatCompletion:
+        """Async full completion call returning RLMChatCompletion object."""
+        request = LMRequest(
+            prompt=prompt,
+            model=model,
+            response_format=response_format,
+            tools=tools,
+            tool_choice=tool_choice,
+            previous_response_id=previous_response_id,
+        )
+        response = await self._handle_request_async(request)
+        if not response.success or response.chat_completion is None:
+            raise RuntimeError(f"LM call failed: {response.error}")
+        return response.chat_completion
 
     def completion(self, prompt: str, model: str | None = None) -> str:
         """Direct completion call (for main process use)."""

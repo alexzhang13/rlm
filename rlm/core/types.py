@@ -96,6 +96,9 @@ class RLMChatCompletion:
     response: str
     usage_summary: UsageSummary
     execution_time: float
+    thought: str | None = None
+    tool_calls: list[dict[str, Any]] | None = None
+    response_id: str | None = None
     error: str | None = None
     error_type: str | None = None
     status_code: int | None = None
@@ -108,6 +111,12 @@ class RLMChatCompletion:
             "usage_summary": self.usage_summary.to_dict(),
             "execution_time": self.execution_time,
         }
+        if self.thought is not None:
+            d["thought"] = self.thought
+        if self.tool_calls is not None:
+            d["tool_calls"] = self.tool_calls
+        if self.response_id is not None:
+            d["response_id"] = self.response_id
         if self.error is not None:
             d["error"] = self.error
         if self.error_type is not None:
@@ -124,6 +133,9 @@ class RLMChatCompletion:
             response=data.get("response"),
             usage_summary=UsageSummary.from_dict(data.get("usage_summary")),
             execution_time=data.get("execution_time"),
+            thought=data.get("thought"),
+            tool_calls=data.get("tool_calls"),
+            response_id=data.get("response_id"),
             error=data.get("error"),
             error_type=data.get("error_type"),
             status_code=data.get("status_code"),
@@ -179,6 +191,8 @@ class RLMIteration:
     prompt: str | dict[str, Any]
     response: str
     code_blocks: list[CodeBlock]
+    thought: str | None = None
+    response_id: str | None = None
     final_answer: str | None = None
     iteration_time: float | None = None
 
@@ -187,6 +201,8 @@ class RLMIteration:
             "prompt": self.prompt,
             "response": self.response,
             "code_blocks": [code_block.to_dict() for code_block in self.code_blocks],
+            "thought": self.thought,
+            "response_id": self.response_id,
             "final_answer": self.final_answer,
             "iteration_time": self.iteration_time,
         }

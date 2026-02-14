@@ -283,9 +283,12 @@ class RLM:
         with self._spawn_completion_context(prompt, metadata=metadata) as (lm_handler, environment):
             message_history = self._setup_prompt(prompt)
             code_executed = False  # Track whether any REPL code has run
+            last_response_id = None
+            next_delta: list[dict[str, Any]] = []
 
             for i in range(self.max_iterations):
-                # Current prompt = message history + additional prompt suffix
+                # Current prompt logic:
+                # If we have a last_response_id, we only send the delta from the last turn.
                 context_count = (
                     environment.get_context_count()
                     if isinstance(environment, SupportsPersistence)
@@ -296,15 +299,25 @@ class RLM:
                     if isinstance(environment, SupportsPersistence)
                     else 0
                 )
-                current_prompt = message_history + [
-                    build_user_prompt(root_prompt, i, context_count, history_count)
-                ]
+                user_prompt = build_user_prompt(root_prompt, i, context_count, history_count)
+
+                if last_response_id:
+                    # Chained mode: delta is previous turn's REPL results + current user prompt.
+                    current_prompt = next_delta + [user_prompt]
+                else:
+                    # Initial mode or fallback: send whole history.
+                    current_prompt = message_history + [user_prompt]
 
                 iteration: RLMIteration = self._completion_turn(
                     prompt=current_prompt,
                     lm_handler=lm_handler,
                     environment=environment,
+                    previous_response_id=last_response_id,
                 )
+
+                # Update last_response_id if available (Responses API)
+                if iteration.response_id:
+                    last_response_id = iteration.response_id
 
                 # Update code execution tracking
                 if iteration.code_blocks:
@@ -345,11 +358,16 @@ class RLM:
                         response=final_answer,
                         usage_summary=usage,
                         execution_time=time_end - time_start,
+                        response_id=last_response_id,
                     )
 
                 # Format the iteration for the next prompt.
                 new_messages = format_iteration(iteration)
-
+                
+                # If we are chaining, next_delta is everything BUT the first message (the assistant response)
+                if last_response_id:
+                    next_delta = new_messages[1:]
+                
                 # Update message history with the new messages.
                 message_history.extend(new_messages)
 
@@ -393,6 +411,8 @@ class RLM:
         async with self._spawn_acompletion_context(prompt, metadata=metadata) as (lm_handler, environment):
             message_history = self._setup_prompt(prompt)
             code_executed = False  # Track whether any REPL code has run
+            last_response_id = None
+            next_delta: list[dict[str, Any]] = []
 
             for i in range(self.max_iterations):
                 # Current prompt = message history + additional prompt suffix
@@ -406,15 +426,22 @@ class RLM:
                     if isinstance(environment, SupportsPersistence)
                     else 0
                 )
-                current_prompt = message_history + [
-                    build_user_prompt(root_prompt, i, context_count, history_count)
-                ]
+                user_prompt = build_user_prompt(root_prompt, i, context_count, history_count)
+
+                if last_response_id:
+                    current_prompt = next_delta + [user_prompt]
+                else:
+                    current_prompt = message_history + [user_prompt]
 
                 iteration: RLMIteration = await self._acompletion_turn(
                     prompt=current_prompt,
                     lm_handler=lm_handler,
                     environment=environment,
+                    previous_response_id=last_response_id,
                 )
+
+                if iteration.response_id:
+                    last_response_id = iteration.response_id
 
                 # Update code execution tracking
                 if iteration.code_blocks:
@@ -461,10 +488,15 @@ class RLM:
                         response=final_answer,
                         usage_summary=usage,
                         execution_time=time_end - time_start,
+                        response_id=last_response_id,
                     )
 
                 # Format the iteration for the next prompt.
                 new_messages = format_iteration(iteration)
+
+                # If we are chaining, next_delta is everything BUT the first message (the assistant response)
+                if last_response_id:
+                    next_delta = new_messages[1:]
 
                 # Update message history with the new messages.
                 message_history.extend(new_messages)
@@ -495,13 +527,18 @@ class RLM:
         prompt: str | dict[str, Any],
         lm_handler: LMHandler,
         environment: BaseEnv,
+        previous_response_id: str | None = None,
     ) -> RLMIteration:
         """
         Perform a single iteration of the RLM, including prompting the model
         and code execution + tool execution.
         """
         iter_start = time.perf_counter()
-        response = lm_handler.completion(prompt)
+        chat_completion = lm_handler.completion_full(prompt, previous_response_id=previous_response_id)
+        response = chat_completion.response
+        thought = chat_completion.thought
+        response_id = chat_completion.response_id
+
         code_block_strs = find_code_blocks(response)
         code_blocks = []
 
@@ -514,6 +551,8 @@ class RLM:
             prompt=prompt,
             response=response,
             code_blocks=code_blocks,
+            thought=thought,
+            response_id=response_id,
             iteration_time=iteration_time,
         )
 
@@ -522,12 +561,19 @@ class RLM:
         prompt: str | dict[str, Any],
         lm_handler: LMHandler,
         environment: BaseEnv,
+        previous_response_id: str | None = None,
     ) -> RLMIteration:
         """
         Perform a single iteration of the RLM (async version).
         """
         iter_start = time.perf_counter()
-        response = await lm_handler.acompletion(prompt)
+        chat_completion = await lm_handler.acompletion_full(
+            prompt, previous_response_id=previous_response_id
+        )
+        response = chat_completion.response
+        thought = chat_completion.thought
+        response_id = chat_completion.response_id
+
         code_block_strs = find_code_blocks(response)
         code_blocks = []
 
@@ -541,6 +587,8 @@ class RLM:
             prompt=prompt,
             response=response,
             code_blocks=code_blocks,
+            thought=thought,
+            response_id=response_id,
             iteration_time=iteration_time,
         )
 
