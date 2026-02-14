@@ -19,6 +19,11 @@ except ImportError:
 from rlm.core.comms_utils import LMRequest, send_lm_request, send_lm_request_batched
 from rlm.core.types import REPLResult, RLMChatCompletion
 from rlm.environments.base_env import NonIsolatedEnv
+from rlm.utils.openai_utils import (
+    pydantic_to_tool,
+    pydantic_to_response_format,
+    parse_pydantic_response
+)
 
 # Rate limit detection markers for error strings returned by the LM handler
 _RATE_LIMIT_MARKERS = ("rate_limit", "rate limit", "ratelimit", "429", "[rate_limited]")
@@ -205,8 +210,16 @@ class DirectREPL(BaseLocalREPL):
         self.lm_handler = lm_handler
         super().__init__(**kwargs)
 
-    def _llm_query(self, prompt, model=None, response_format=None, tools=None, tool_handler=None) -> str:
+    def _llm_query(self, prompt, model=None, response_format=None, tools=None, tool_handler=None, response_model=None) -> Any:
         if tools is not None and tool_handler is None: raise ValueError("tool_handler is required")
+        if response_model and not response_format: response_format = pydantic_to_response_format(response_model)
+        if tools:
+            processed = []
+            for t in tools:
+                if isinstance(t, type) and hasattr(t, "model_json_schema"): processed.append(pydantic_to_tool(t))
+                else: processed.append(t)
+            tools = processed
+
         messages = self._ensure_messages_format(prompt)
         for _ in range(MAX_TOOL_ITERATIONS):
             request = LMRequest(prompt=messages, model=model, depth=self.depth, 
@@ -218,7 +231,10 @@ class DirectREPL(BaseLocalREPL):
             content = cc.response
             if tools and content.startswith("{") and "tool_calls" in content:
                 tr = json.loads(content); tc = tr.get("tool_calls", [])
-                if not tc: self._pending_llm_calls.append(cc); return tr.get("content") or ""
+                if not tc: 
+                    self._pending_llm_calls.append(cc)
+                    final = tr.get("content") or ""
+                    return parse_pydantic_response(response_model, final) if response_model else final
                 messages.append({"role": "assistant", "content": tr.get("content"), 
                                 "tool_calls": [{"id": t["id"], "type": "function", "function": {"name": t["name"], "arguments": json.dumps(t["arguments"])}} for t in tc]})
                 for t in tc:
@@ -227,11 +243,16 @@ class DirectREPL(BaseLocalREPL):
                     messages.append({"role": "tool", "tool_call_id": t["id"], "content": res})
                 continue
             if _content_is_leaked_error(content): return f"__LLM_ERROR__|leaked_error|0|Leaked error"
-            self._pending_llm_calls.append(cc); return content
+            self._pending_llm_calls.append(cc)
+            if response_model:
+                try: return parse_pydantic_response(response_model, content)
+                except Exception as e: return f"__LLM_ERROR__|pydantic_error|0|{e}"
+            return content
         return "__LLM_ERROR__|tool_loop_error|0|Max iterations"
 
-    def _llm_query_batched(self, prompts, model=None, response_formats=None, tools=None, tool_handler=None) -> list[str]:
-        if tools: return [self._llm_query(p, model, response_formats[i] if response_formats else None, tools, tool_handler) for i, p in enumerate(prompts)]
+    def _llm_query_batched(self, prompts, model=None, response_formats=None, tools=None, tool_handler=None, response_models=None) -> list[Any]:
+        if tools or response_models: 
+            return [self._llm_query(p, model, response_formats[i] if response_formats else None, tools, tool_handler, response_models[i] if response_models else None) for i, p in enumerate(prompts)]
         request = LMRequest(prompts=prompts, model=model, depth=self.depth, response_formats=response_formats, metadata=self.metadata)
         response = self.lm_handler.handle_request(request)
         if not response.success: return [f"Error: {response.error}"] * len(prompts)
@@ -248,9 +269,17 @@ class SocketREPL(BaseLocalREPL):
         self.lm_handler_address = lm_handler_address
         super().__init__(**kwargs)
 
-    def _llm_query(self, prompt, model=None, response_format=None, tools=None, tool_handler=None) -> str:
+    def _llm_query(self, prompt, model=None, response_format=None, tools=None, tool_handler=None, response_model=None) -> Any:
         if tools is not None and tool_handler is None: raise ValueError("tool_handler is required")
         if not self.lm_handler_address: return "Error: No address"
+        if response_model and not response_format: response_format = pydantic_to_response_format(response_model)
+        if tools:
+            processed = []
+            for t in tools:
+                if isinstance(t, type) and hasattr(t, "model_json_schema"): processed.append(pydantic_to_tool(t))
+                else: processed.append(t)
+            tools = processed
+
         messages = self._ensure_messages_format(prompt)
         for _ in range(MAX_TOOL_ITERATIONS):
             req = LMRequest(prompt=messages, model=model, depth=self.depth, response_format=response_format, tools=tools, metadata=self.metadata)
@@ -261,7 +290,10 @@ class SocketREPL(BaseLocalREPL):
             content = cc.response
             if tools and content.startswith("{") and "tool_calls" in content:
                 tr = json.loads(content); tc = tr.get("tool_calls", [])
-                if not tc: self._pending_llm_calls.append(cc); return tr.get("content") or ""
+                if not tc: 
+                    self._pending_llm_calls.append(cc)
+                    final = tr.get("content") or ""
+                    return parse_pydantic_response(response_model, final) if response_model else final
                 messages.append({"role": "assistant", "content": tr.get("content"), 
                                 "tool_calls": [{"id": t["id"], "type": "function", "function": {"name": t["name"], "arguments": json.dumps(t["arguments"])}} for t in tc]})
                 for t in tc:
@@ -270,11 +302,16 @@ class SocketREPL(BaseLocalREPL):
                     messages.append({"role": "tool", "tool_call_id": t["id"], "content": res})
                 continue
             if _content_is_leaked_error(content): return "__LLM_ERROR__|leaked_error|0|Leaked error"
-            self._pending_llm_calls.append(cc); return content
+            self._pending_llm_calls.append(cc)
+            if response_model:
+                try: return parse_pydantic_response(response_model, content)
+                except Exception as e: return f"__LLM_ERROR__|pydantic_error|0|{e}"
+            return content
         return "Max iterations"
 
-    def _llm_query_batched(self, prompts, model=None, response_formats=None, tools=None, tool_handler=None) -> list[str]:
-        if tools: return [self._llm_query(p, model, response_formats[i] if response_formats else None, tools, tool_handler) for i, p in enumerate(prompts)]
+    def _llm_query_batched(self, prompts, model=None, response_formats=None, tools=None, tool_handler=None, response_models=None) -> list[Any]:
+        if tools or response_models: 
+            return [self._llm_query(p, model, response_formats[i] if response_formats else None, tools, tool_handler, response_models[i] if response_models else None) for i, p in enumerate(prompts)]
         try:
             resps = send_lm_request_batched(self.lm_handler_address, prompts, model=model, depth=self.depth, response_formats=response_formats)
             res = []

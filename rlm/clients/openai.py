@@ -208,10 +208,12 @@ class OpenAIClient(BaseLM):
         model_name: str | None = None,
         base_url: str | None = None,
         reasoning_effort: str | None = None,
+        beta_responses: bool = False,
         **kwargs,
     ):
         super().__init__(model_name=model_name, **kwargs)
         self.reasoning_effort = reasoning_effort  # none, minimal, low, medium, high, xhigh
+        self.beta_responses = beta_responses
 
         if api_key is None:
             if base_url == "https://api.openai.com/v1" or base_url is None:
@@ -264,6 +266,8 @@ class OpenAIClient(BaseLM):
             extra_body["usage"] = {"include": True}
 
         kwargs = {"model": model, "messages": messages}
+        if self.beta_responses:
+            kwargs["extra_headers"] = {"OpenAI-Beta": "responses=true"}
         if extra_body:
             kwargs["extra_body"] = extra_body
         if self.reasoning_effort:
@@ -340,6 +344,8 @@ class OpenAIClient(BaseLM):
             extra_body["usage"] = {"include": True}
 
         kwargs = {"model": model, "messages": messages}
+        if self.beta_responses:
+            kwargs["extra_headers"] = {"OpenAI-Beta": "responses=true"}
         if extra_body:
             kwargs["extra_body"] = extra_body
         if self.reasoning_effort:
