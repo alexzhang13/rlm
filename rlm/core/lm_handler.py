@@ -5,13 +5,17 @@ Uses a multi-threaded socket server. Protocol: 4-byte length prefix + JSON paylo
 """
 
 import asyncio
+import os
 import time
 from socketserver import StreamRequestHandler, ThreadingTCPServer
 from threading import Thread
+from typing import Any
 
 from rlm.clients.base_lm import BaseLM
 from rlm.core.comms_utils import LMRequest, LMResponse, socket_recv, socket_send
 from rlm.core.types import RLMChatCompletion, UsageSummary
+
+_BATCH_CHUNK_SIZE = max(1, min(int(os.getenv("OPENAI_BATCH_CHUNK_SIZE", "40")), 500))
 
 
 class LMRequestHandler(StreamRequestHandler):
@@ -28,14 +32,8 @@ class LMRequestHandler(StreamRequestHandler):
             request = LMRequest.from_dict(request_data)
             handler: LMHandler = self.server.lm_handler  # type: ignore
 
-            if request.is_batched:
-                # Batched request: process multiple prompts concurrently
-                response = self._handle_batched(request, handler)
-            elif request.prompt:
-                # Single request: process one prompt
-                response = self._handle_single(request, handler)
-            else:
-                response = LMResponse.error_response("Missing 'prompt' or 'prompts' in request.")
+            # Use the unified handler logic
+            response = handler.handle_request(request)
 
             self._safe_send(response)
 
@@ -57,58 +55,6 @@ class LMRequestHandler(StreamRequestHandler):
         except (BrokenPipeError, ConnectionError, ConnectionResetError, OSError):
             # Client disconnected - silently ignore
             return False
-
-    def _handle_single(self, request: LMRequest, handler: "LMHandler") -> LMResponse:
-        """Handle a single prompt request."""
-        client = handler.get_client(request.model, request.depth)
-
-        start_time = time.perf_counter()
-        content = client.completion(request.prompt)
-        end_time = time.perf_counter()
-
-        model_usage = client.get_last_usage()
-        root_model = request.model or client.model_name
-        usage_summary = UsageSummary(model_usage_summaries={root_model: model_usage})
-        return LMResponse.success_response(
-            chat_completion=RLMChatCompletion(
-                root_model=root_model,
-                prompt=request.prompt,
-                response=content,
-                usage_summary=usage_summary,
-                execution_time=end_time - start_time,
-            )
-        )
-
-    def _handle_batched(self, request: LMRequest, handler: "LMHandler") -> LMResponse:
-        """Handle a batched prompts request using async for concurrency."""
-        client = handler.get_client(request.model, request.depth)
-
-        start_time = time.perf_counter()
-
-        async def run_all():
-            tasks = [client.acompletion(prompt) for prompt in request.prompts]
-            return await asyncio.gather(*tasks)
-
-        results = asyncio.run(run_all())
-        end_time = time.perf_counter()
-
-        total_time = end_time - start_time
-        model_usage = client.get_last_usage()
-        root_model = request.model or client.model_name
-        usage_summary = UsageSummary(model_usage_summaries={root_model: model_usage})
-
-        chat_completions = [
-            RLMChatCompletion(
-                root_model=root_model,
-                prompt=prompt,
-                response=content,
-                usage_summary=usage_summary,
-                execution_time=total_time / len(request.prompts),  # approximate per-prompt time
-            )
-            for prompt, content in zip(request.prompts, results, strict=True)
-        ]
-
-        return LMResponse.batched_success_response(chat_completions=chat_completions)
 
 
 class ThreadingLMServer(ThreadingTCPServer):
@@ -132,6 +78,7 @@ class LMHandler:
         host: str = "127.0.0.1",
         port: int = 0,  # auto-assign available port
         other_backend_client: BaseLM | None = None,
+        on_request: Any | None = None,
     ):
         self.default_client = client
         self.other_backend_client = other_backend_client
@@ -140,12 +87,136 @@ class LMHandler:
         self._server: ThreadingLMServer | None = None
         self._thread: Thread | None = None
         self._port = port
+        self.on_request = on_request
 
         self.register_client(client.model_name, client)
 
     def register_client(self, model_name: str, client: BaseLM) -> None:
         """Register a client for a specific model name."""
         self.clients[model_name] = client
+
+    def handle_request(self, request: LMRequest) -> LMResponse:
+        """Process an LM request synchronously."""
+        try:
+            if request.is_batched:
+                response = asyncio.run(self._handle_request_async(request))
+            elif request.prompt:
+                response = self._handle_single(request)
+            else:
+                response = LMResponse.error_response("Missing 'prompt' or 'prompts' in request.")
+
+            if self.on_request:
+                try:
+                    self.on_request(request, response)
+                except Exception:
+                    pass
+
+            return response
+        except Exception as e:
+            return LMResponse.error_response(str(e))
+
+    async def _handle_request_async(self, request: LMRequest) -> LMResponse:
+        """Process an LM request asynchronously."""
+        try:
+            if request.is_batched:
+                return await self._handle_batched_async(request)
+            elif request.prompt:
+                # Reuse synchronous handle_single for now, or implement async version
+                # For consistency with socket server which uses threads, we can run in executor if needed
+                return await asyncio.to_thread(self._handle_single, request)
+            else:
+                return LMResponse.error_response("Missing 'prompt' or 'prompts' in request.")
+        except Exception as e:
+            return LMResponse.error_response(str(e))
+
+    def _handle_single(self, request: LMRequest) -> LMResponse:
+        """Handle a single prompt request."""
+        client = self.get_client(request.model, request.depth)
+
+        start_time = time.perf_counter()
+        content = client.completion(
+            request.prompt,
+            response_format=request.response_format,
+            tools=request.tools,
+            tool_choice=request.tool_choice,
+        )
+        end_time = time.perf_counter()
+
+        model_usage = client.get_last_usage()
+        root_model = request.model or client.model_name
+        usage_summary = UsageSummary(model_usage_summaries={root_model: model_usage})
+        return LMResponse.success_response(
+            chat_completion=RLMChatCompletion(
+                root_model=root_model,
+                prompt=request.prompt,
+                response=content,
+                usage_summary=usage_summary,
+                execution_time=end_time - start_time,
+            )
+        )
+
+    async def _handle_batched_async(self, request: LMRequest) -> LMResponse:
+        """Handle a batched prompts request using async for concurrency."""
+        client = self.get_client(request.model, request.depth)
+        prompts = request.prompts or []
+
+        start_time = time.perf_counter()
+
+        formats = request.response_formats or [None] * len(prompts)
+        all_results = []
+        prompts_and_formats = list(zip(prompts, formats, strict=True))
+        for i in range(0, len(prompts_and_formats), _BATCH_CHUNK_SIZE):
+            chunk = prompts_and_formats[i : i + _BATCH_CHUNK_SIZE]
+            chunk_results = await asyncio.gather(
+                *[
+                    client.acompletion(
+                        prompt,
+                        response_format=fmt,
+                        tools=request.tools,
+                        tool_choice=request.tool_choice,
+                    )
+                    for prompt, fmt in chunk
+                ],
+                return_exceptions=True,
+            )
+            all_results.extend(chunk_results)
+
+        end_time = time.perf_counter()
+
+        total_time = end_time - start_time
+        model_usage = client.get_last_usage()
+        root_model = request.model or client.model_name
+        usage_summary = UsageSummary(model_usage_summaries={root_model: model_usage})
+
+        chat_completions = []
+        for prompt, result in zip(prompts, all_results, strict=True):
+            if isinstance(result, Exception):
+                error_type = type(result).__name__
+                status_code = getattr(result, "status_code", None)
+                chat_completions.append(
+                    RLMChatCompletion(
+                        root_model=root_model,
+                        prompt=prompt,
+                        response="",
+                        usage_summary=usage_summary,
+                        execution_time=total_time / len(prompts),
+                        error=str(result),
+                        error_type=error_type,
+                        status_code=status_code,
+                    )
+                )
+            else:
+                chat_completions.append(
+                    RLMChatCompletion(
+                        root_model=root_model,
+                        prompt=prompt,
+                        response=result,
+                        usage_summary=usage_summary,
+                        execution_time=total_time / len(prompts),
+                    )
+                )
+
+        return LMResponse.batched_success_response(chat_completions=chat_completions)
 
     def get_client(self, model: str | None = None, depth: int = 0) -> BaseLM:
         """Get client by model name or depth, or return default.
@@ -198,7 +269,23 @@ class LMHandler:
 
     def completion(self, prompt: str, model: str | None = None) -> str:
         """Direct completion call (for main process use)."""
-        return self.get_client(model).completion(prompt)
+        result = self.get_client(model).completion(prompt)
+        # Handle str | dict return from client (tools not supported in direct completion)
+        if isinstance(result, dict):
+            # Should not happen in direct completion (no tools), but handle gracefully
+            return result.get("content") or ""
+        return result
+
+    async def acompletion(
+        self, prompt: str | list[dict[str, Any]], model: str | None = None
+    ) -> str:
+        """Async direct completion call (for main process use)."""
+        result = await self.get_client(model).acompletion(prompt)
+        # Handle str | dict return from client (tools not supported in direct completion)
+        if isinstance(result, dict):
+            # Should not happen in direct completion (no tools), but handle gracefully
+            return result.get("content") or ""
+        return result
 
     def __enter__(self):
         self.start()

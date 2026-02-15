@@ -25,10 +25,15 @@ class LMRequest:
     Supports both single prompt (prompt field) and batched prompts (prompts field).
     """
 
-    prompt: str | dict[str, Any] | None = None
-    prompts: list[str | dict[str, Any]] | None = None
+    prompt: str | list[dict[str, Any]] | dict[str, Any] | None = None
+    prompts: list[str | list[dict[str, Any]] | dict[str, Any]] | None = None
     model: str | None = None
     depth: int = 0
+    response_format: dict | None = None
+    response_formats: list[dict | None] | None = None
+    tools: list[dict] | None = None
+    tool_choice: str | dict | None = None
+    metadata: dict[str, Any] | None = None
 
     @property
     def is_batched(self) -> bool:
@@ -45,6 +50,16 @@ class LMRequest:
         if self.model is not None:
             d["model"] = self.model
         d["depth"] = self.depth
+        if self.response_format is not None:
+            d["response_format"] = self.response_format
+        if self.response_formats is not None:
+            d["response_formats"] = self.response_formats
+        if self.tools is not None:
+            d["tools"] = self.tools
+        if self.tool_choice is not None:
+            d["tool_choice"] = self.tool_choice
+        if self.metadata is not None:
+            d["metadata"] = self.metadata
         return d
 
     @classmethod
@@ -55,6 +70,11 @@ class LMRequest:
             prompts=data.get("prompts"),
             model=data.get("model"),
             depth=data.get("depth", -1),  # TODO: Default should throw an error
+            response_format=data.get("response_format"),
+            response_formats=data.get("response_formats"),
+            tools=data.get("tools"),
+            tool_choice=data.get("tool_choice"),
+            metadata=data.get("metadata"),
         )
 
 
@@ -68,6 +88,7 @@ class LMResponse:
     error: str | None = None
     chat_completion: RLMChatCompletion | None = None
     chat_completions: list[RLMChatCompletion] | None = None
+    metadata: dict[str, Any] | None = None
 
     @property
     def success(self) -> bool:
@@ -81,29 +102,16 @@ class LMResponse:
 
     def to_dict(self) -> dict:
         """Convert to dict, excluding None values."""
+        d = {}
         if self.error is not None:
-            return {
-                "error": self.error,
-                "chat_completion": None,
-                "chat_completions": None,
-            }
+            d["error"] = self.error
         if self.chat_completions is not None:
-            return {
-                "chat_completions": [c.to_dict() for c in self.chat_completions],
-                "chat_completion": None,
-                "error": None,
-            }
+            d["chat_completions"] = [c.to_dict() for c in self.chat_completions]
         if self.chat_completion is not None:
-            return {
-                "chat_completion": self.chat_completion.to_dict(),
-                "chat_completions": None,
-                "error": None,
-            }
-        return {
-            "error": "No chat completion or error provided.",
-            "chat_completion": None,
-            "chat_completions": None,
-        }
+            d["chat_completion"] = self.chat_completion.to_dict()
+        if self.metadata is not None:
+            d["metadata"] = self.metadata
+        return d
 
     @classmethod
     def from_dict(cls, data: dict) -> "LMResponse":
@@ -120,6 +128,7 @@ class LMResponse:
             error=data.get("error"),
             chat_completion=chat_completion,
             chat_completions=chat_completions,
+            metadata=data.get("metadata"),
         )
 
     @classmethod
@@ -176,7 +185,7 @@ def socket_recv(sock: socket.socket) -> dict:
     return json.loads(payload.decode("utf-8"))
 
 
-def socket_request(address: tuple[str, int], data: dict, timeout: int = 300) -> dict:
+def socket_request(address: tuple[str, int], data: dict, timeout: int = 1200) -> dict:
     """Send a request and receive a response over a new socket connection.
 
     Opens a new TCP connection, sends the request, waits for response, then closes.
@@ -184,7 +193,7 @@ def socket_request(address: tuple[str, int], data: dict, timeout: int = 300) -> 
     Args:
         address: (host, port) tuple to connect to.
         data: Dictionary to send as JSON.
-        timeout: Socket timeout in seconds (default 300).
+        timeout: Socket timeout in seconds (default 1200).
 
     Returns:
         Response dictionary.
@@ -202,7 +211,7 @@ def socket_request(address: tuple[str, int], data: dict, timeout: int = 300) -> 
 
 
 def send_lm_request(
-    address: tuple[str, int], request: LMRequest, timeout: int = 300, depth: int | None = None
+    address: tuple[str, int], request: LMRequest, timeout: int = 1200, depth: int | None = None
 ) -> LMResponse:
     """Send an LM request and return typed response.
 
@@ -228,8 +237,9 @@ def send_lm_request_batched(
     address: tuple[str, int],
     prompts: list[str | dict[str, Any]],
     model: str | None = None,
-    timeout: int = 300,
+    timeout: int = 1200,
     depth: int = 0,
+    response_formats: list[dict | None] | None = None,
 ) -> list[LMResponse]:
     """Send a batched LM request and return a list of typed responses.
 
@@ -239,12 +249,18 @@ def send_lm_request_batched(
         model: Optional model name to use.
         timeout: Socket timeout in seconds.
         depth: Depth for routing (default 0).
+        response_formats: Optional per-prompt response_format dicts.
 
     Returns:
         List of LMResponse objects, one per prompt, in the same order.
     """
     try:
-        request = LMRequest(prompts=prompts, model=model, depth=depth)
+        request = LMRequest(
+            prompts=prompts,
+            model=model,
+            depth=depth,
+            response_formats=response_formats,
+        )
         response_data = socket_request(address, request.to_dict(), timeout)
         response = LMResponse.from_dict(response_data)
 

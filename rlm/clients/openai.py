@@ -1,115 +1,428 @@
+import asyncio
+import logging
 import os
+import threading
+import time as _time
 from collections import defaultdict
 from typing import Any
 
+import httpx
 import openai
 from dotenv import load_dotenv
+from openai import APIConnectionError, APITimeoutError, RateLimitError
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
 
 from rlm.clients.base_lm import BaseLM
 from rlm.core.types import ModelUsageSummary, UsageSummary
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Request Tracker — logs every OpenAI API call for diagnostics
+# =============================================================================
+
+
+class RequestTracker:
+    """Thread-safe tracker for all OpenAI API call attempts including token usage."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.total = 0
+        self.successful = 0
+        self.rate_limited = 0
+        self.timed_out = 0
+        self.connection_errors = 0
+        self.other_errors = 0
+        self._active = 0
+        self.peak_concurrent = 0
+        self.total_input_tokens = 0
+        self.total_output_tokens = 0
+        self.model_stats: dict[str, dict[str, int]] = {}
+
+    def _ensure_model(self, model: str) -> None:
+        if model not in self.model_stats:
+            self.model_stats[model] = {
+                "total": 0,
+                "success": 0,
+                "rate_limited": 0,
+                "timed_out": 0,
+                "conn_error": 0,
+                "other_error": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+            }
+
+    def start_request(self, model: str) -> float:
+        """Record a new API call attempt. Returns start timestamp."""
+        with self._lock:
+            self.total += 1
+            self._active += 1
+            self.peak_concurrent = max(self.peak_concurrent, self._active)
+            self._ensure_model(model)
+            self.model_stats[model]["total"] += 1
+        return _time.perf_counter()
+
+    def end_request(
+        self,
+        model: str,
+        start: float,
+        error: BaseException | None = None,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+    ) -> None:
+        """Record completion of an API call attempt with optional token usage."""
+        duration = _time.perf_counter() - start
+        with self._lock:
+            self._active -= 1
+            concurrent = self._active
+            self._ensure_model(model)
+            if error is None:
+                self.successful += 1
+                self.model_stats[model]["success"] += 1
+                status = "SUCCESS"
+            elif isinstance(error, RateLimitError):
+                self.rate_limited += 1
+                self.model_stats[model]["rate_limited"] += 1
+                status = "RATE_LIMITED"
+            elif isinstance(error, APITimeoutError):
+                self.timed_out += 1
+                self.model_stats[model]["timed_out"] += 1
+                status = "TIMEOUT"
+            elif isinstance(error, APIConnectionError):
+                self.connection_errors += 1
+                self.model_stats[model]["conn_error"] += 1
+                status = "CONN_ERROR"
+            else:
+                self.other_errors += 1
+                self.model_stats[model]["other_error"] += 1
+                status = "ERROR"
+            self.total_input_tokens += input_tokens
+            self.total_output_tokens += output_tokens
+            self.model_stats[model]["input_tokens"] += input_tokens
+            self.model_stats[model]["output_tokens"] += output_tokens
+
+        log_fn = logger.debug if error is None else logger.warning
+        tok_detail = f" | in={input_tokens} out={output_tokens}" if input_tokens else ""
+        err_detail = f" | {type(error).__name__}: {str(error)[:200]}" if error else ""
+        log_fn(
+            "OpenAI %s | model=%s | %.2fs | active=%d%s%s",
+            status,
+            model,
+            duration,
+            concurrent,
+            tok_detail,
+            err_detail,
+        )
+
+    @property
+    def active(self) -> int:
+        return self._active
+
+    def summary(self) -> str:
+        with self._lock:
+            total_tokens = self.total_input_tokens + self.total_output_tokens
+            lines = [
+                f"OpenAI Requests: {self.total} total, {self.successful} ok, "
+                f"{self.rate_limited} rate-limited, {self.timed_out} timed-out, "
+                f"{self.connection_errors} conn-errors, {self.other_errors} other-errors, "
+                f"peak_concurrent={self.peak_concurrent}, "
+                f"tokens={total_tokens:,} (in={self.total_input_tokens:,} out={self.total_output_tokens:,})",
+            ]
+            for model, s in sorted(self.model_stats.items()):
+                mtok = s["input_tokens"] + s["output_tokens"]
+                lines.append(
+                    f"  {model}: {s['total']} total, {s['success']} ok, "
+                    f"{s['rate_limited']} rate-limited, {s['timed_out']} timed-out, "
+                    f"{s['conn_error']} conn-errors, {s['other_error']} other-errors, "
+                    f"tokens={mtok:,} (in={s['input_tokens']:,} out={s['output_tokens']:,})"
+                )
+            return "\n".join(lines)
+
+
+request_tracker = RequestTracker()
+
+
+# Per-model concurrency limiters — caps simultaneous OpenAI API calls across all threads.
+# threading.BoundedSemaphore is used (not asyncio.Semaphore) because _handle_batched()
+# runs asyncio.run() in separate threads, each with its own event loop.
+_MAX_CONCURRENT_DEFAULT = max(1, min(int(os.getenv("OPENAI_MAX_CONCURRENT_REQUESTS", "50")), 500))
+_MAX_CONCURRENT_MINI = max(
+    1, min(int(os.getenv("OPENAI_MAX_CONCURRENT_REQUESTS_MINI", "150")), 1000)
+)
+_semaphores: dict[str, threading.BoundedSemaphore] = {}
+_semaphore_lock = threading.Lock()
+
+
+def _get_semaphore(model: str) -> threading.BoundedSemaphore:
+    """Get or create a per-model semaphore. Mini models get a higher limit."""
+    if model not in _semaphores:
+        with _semaphore_lock:
+            if model not in _semaphores:
+                limit = _MAX_CONCURRENT_MINI if "mini" in model.lower() else _MAX_CONCURRENT_DEFAULT
+                _semaphores[model] = threading.BoundedSemaphore(limit)
+                logger.info("Created semaphore for %s: max_concurrent=%d", model, limit)
+    return _semaphores[model]
+
+
+def _synthetic_rate_limit_error(message: str) -> RateLimitError:
+    """Create a synthetic RateLimitError for semaphore timeouts."""
+    request = httpx.Request("POST", "https://api.openai.com/v1/responses")
+    response = httpx.Response(status_code=429, text=message, request=request)
+    return RateLimitError(message=message, response=response, body=None)
+
+
+# Retry configuration for rate limits and timeouts
+_RETRY_CONFIG = {
+    "retry": retry_if_exception_type((RateLimitError, APITimeoutError)),
+    "wait": wait_exponential_jitter(initial=1, max=60, jitter=5),
+    "stop": stop_after_attempt(5),
+    "reraise": True,
+    "before_sleep": before_sleep_log(logger, logging.WARNING),
+}
+
 # Load API keys from environment variables
 DEFAULT_OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-DEFAULT_OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-DEFAULT_VERCEL_API_KEY = os.getenv("AI_GATEWAY_API_KEY")
-DEFAULT_PRIME_INTELLECT_BASE_URL = "https://api.pinference.ai/api/v1/"
 
 
 class OpenAIClient(BaseLM):
-    """
-    LM Client for running models with the OpenAI API. Works with vLLM as well.
-    """
+    """LM Client for running models with the OpenAI Responses API."""
 
     def __init__(
         self,
         api_key: str | None = None,
         model_name: str | None = None,
         base_url: str | None = None,
+        reasoning_effort: str | None = None,
         **kwargs,
     ):
         super().__init__(model_name=model_name, **kwargs)
+        self.reasoning_effort = reasoning_effort  # none, minimal, low, medium, high, xhigh
 
         if api_key is None:
-            if base_url == "https://api.openai.com/v1" or base_url is None:
-                api_key = DEFAULT_OPENAI_API_KEY
-            elif base_url == "https://openrouter.ai/api/v1":
-                api_key = DEFAULT_OPENROUTER_API_KEY
-            elif base_url == "https://ai-gateway.vercel.sh/v1":
-                api_key = DEFAULT_VERCEL_API_KEY
+            api_key = DEFAULT_OPENAI_API_KEY
 
-        # For vLLM, set base_url to local vLLM server address.
-        self.client = openai.OpenAI(api_key=api_key, base_url=base_url)
-        self.async_client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
-        self.model_name = model_name
+        if not self.model_name:
+            raise ValueError("Model name is required for OpenAI client.")
 
+        import httpx
+
+        _timeout = httpx.Timeout(600.0, connect=10.0)
+        self.client = openai.OpenAI(
+            api_key=api_key, base_url=base_url, timeout=_timeout, max_retries=3
+        )
+        self.async_client = openai.AsyncOpenAI(
+            api_key=api_key, base_url=base_url, timeout=_timeout, max_retries=3
+        )
         # Per-model usage tracking
         self.model_call_counts: dict[str, int] = defaultdict(int)
         self.model_input_tokens: dict[str, int] = defaultdict(int)
         self.model_output_tokens: dict[str, int] = defaultdict(int)
         self.model_total_tokens: dict[str, int] = defaultdict(int)
+        self.last_prompt_tokens = 0
+        self.last_completion_tokens = 0
 
-    def completion(self, prompt: str | list[dict[str, Any]], model: str | None = None) -> str:
+    def _prepare_responses_request(
+        self,
+        prompt: str | list[dict[str, Any]],
+        model: str,
+        tools: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
+        response_format: dict | None = None,
+    ) -> dict[str, Any]:
+        """Prepare request for the new Responses API (/v1/responses)."""
         if isinstance(prompt, str):
             messages = [{"role": "user", "content": prompt}]
-        elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
-            messages = prompt
         else:
-            raise ValueError(f"Invalid prompt type: {type(prompt)}")
-
-        model = model or self.model_name
-        if not model:
-            raise ValueError("Model name is required for OpenAI client.")
-
-        extra_body = {}
-        if self.client.base_url == DEFAULT_PRIME_INTELLECT_BASE_URL:
-            extra_body["usage"] = {"include": True}
-
-        response = self.client.chat.completions.create(
-            model=model, messages=messages, extra_body=extra_body
-        )
-        self._track_cost(response, model)
-        return response.choices[0].message.content
-
-    async def acompletion(
-        self, prompt: str | list[dict[str, Any]], model: str | None = None
-    ) -> str:
-        if isinstance(prompt, str):
-            messages = [{"role": "user", "content": prompt}]
-        elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
             messages = prompt
-        else:
-            raise ValueError(f"Invalid prompt type: {type(prompt)}")
 
-        model = model or self.model_name
-        if not model:
-            raise ValueError("Model name is required for OpenAI client.")
+        instructions = ""
+        input_items = []
 
-        extra_body = {}
-        if self.client.base_url == DEFAULT_PRIME_INTELLECT_BASE_URL:
-            extra_body["usage"] = {"include": True}
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content")
+            if role == "system" and not instructions:
+                instructions = content
+            else:
+                input_items.append({"type": "message", "role": role, "content": content})
 
-        response = await self.async_client.chat.completions.create(
-            model=model, messages=messages, extra_body=extra_body
-        )
-        self._track_cost(response, model)
-        return response.choices[0].message.content
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "input": input_items,
+        }
+        if instructions:
+            kwargs["instructions"] = instructions
 
-    def _track_cost(self, response: openai.ChatCompletion, model: str):
-        self.model_call_counts[model] += 1
+        if tools:
+            kwargs["tools"] = tools
+            if tool_choice:
+                kwargs["tool_choice"] = tool_choice
 
-        usage = getattr(response, "usage", None)
+        if response_format:
+            kwargs["output_format"] = response_format
+
+        return kwargs
+
+    def _parse_responses_response(self, response: Any) -> dict[str, Any]:
+        """Parse a Responses API object into a normalized response payload."""
+        output_items = getattr(response, "output", [])
+        tool_calls: list[dict[str, Any]] = []
+        final_content = ""
+
+        for item in output_items:
+            if not hasattr(item, "type"):
+                continue
+            if item.type == "message":
+                content = getattr(item, "content", "")
+                if isinstance(content, list):
+                    final_content = "".join(str(part) for part in content)
+                else:
+                    final_content = str(content or "")
+            elif item.type == "function_call":
+                tool_calls.append(
+                    {
+                        "id": item.id,
+                        "name": item.name,
+                        "arguments": item.arguments,
+                    }
+                )
+
+        return {
+            "content": final_content,
+            "tool_calls": tool_calls,
+        }
+
+    def _extract_usage(self, usage: Any) -> tuple[int, int]:
         if usage is None:
-            raise ValueError("No usage data received. Tracking tokens not possible.")
+            return 0, 0
+        input_tokens = getattr(usage, "input_tokens", None)
+        output_tokens = getattr(usage, "output_tokens", None)
+        if input_tokens is None:
+            input_tokens = getattr(usage, "prompt_tokens", 0)
+        if output_tokens is None:
+            output_tokens = getattr(usage, "completion_tokens", 0)
+        return int(input_tokens or 0), int(output_tokens or 0)
 
-        self.model_input_tokens[model] += usage.prompt_tokens
-        self.model_output_tokens[model] += usage.completion_tokens
-        self.model_total_tokens[model] += usage.total_tokens
+    @retry(**_RETRY_CONFIG)
+    def completion(
+        self,
+        prompt: str | list[dict[str, Any]],
+        response_format: dict | None = None,
+        tools: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
+    ) -> str | dict[str, Any]:
+        if isinstance(prompt, str):
+            messages = [{"role": "user", "content": prompt}]
+        elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
+            messages = prompt
+        else:
+            raise ValueError(f"Invalid prompt type: {type(prompt)}")
 
-        # Track last call for handler to read
-        self.last_prompt_tokens = usage.prompt_tokens
-        self.last_completion_tokens = usage.completion_tokens
+        model = self.model_name
+
+        if not model:
+            raise ValueError("Model name is required for OpenAI client.")
+
+        sem = _get_semaphore(model)
+        if not sem.acquire(timeout=120):
+            raise _synthetic_rate_limit_error(f"Semaphore timeout waiting for {model} slot")
+        try:
+            t0 = request_tracker.start_request(model)
+            try:
+                resp_kwargs = self._prepare_responses_request(
+                    messages,
+                    model,
+                    tools,
+                    tool_choice,
+                    response_format,
+                )
+                response = self.client.responses.create(**resp_kwargs)
+                content = self._parse_responses_response(response)
+                usage = getattr(response, "usage", None)
+                input_tokens, output_tokens = self._extract_usage(usage)
+                request_tracker.end_request(
+                    model,
+                    t0,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                )
+                self.model_call_counts[model] += 1
+                self.model_input_tokens[model] += input_tokens
+                self.model_output_tokens[model] += output_tokens
+                self.model_total_tokens[model] += input_tokens + output_tokens
+                self.last_prompt_tokens = input_tokens
+                self.last_completion_tokens = output_tokens
+                return content
+            except BaseException as exc:
+                request_tracker.end_request(model, t0, error=exc)
+                raise
+        finally:
+            sem.release()
+
+    @retry(**_RETRY_CONFIG)
+    async def acompletion(
+        self,
+        prompt: str | list[dict[str, Any]],
+        response_format: dict | None = None,
+        tools: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
+    ) -> str | dict[str, Any]:
+        if isinstance(prompt, str):
+            messages = [{"role": "user", "content": prompt}]
+        elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
+            messages = prompt
+        else:
+            raise ValueError(f"Invalid prompt type: {type(prompt)}")
+
+        model = self.model_name
+        if not model:
+            raise ValueError("Model name is required for OpenAI client.")
+
+        sem = _get_semaphore(model)
+        acquired = await asyncio.to_thread(sem.acquire, timeout=120)
+        if not acquired:
+            raise _synthetic_rate_limit_error(f"Semaphore timeout waiting for {model} slot")
+        try:
+            t0 = request_tracker.start_request(model)
+            try:
+                resp_kwargs = self._prepare_responses_request(
+                    messages,
+                    model,
+                    tools,
+                    tool_choice,
+                    response_format,
+                )
+                response = await self.async_client.responses.create(**resp_kwargs)
+                content = self._parse_responses_response(response)
+                usage = getattr(response, "usage", None)
+                input_tokens, output_tokens = self._extract_usage(usage)
+                request_tracker.end_request(
+                    model,
+                    t0,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                )
+                self.model_call_counts[model] += 1
+                self.model_input_tokens[model] += input_tokens
+                self.model_output_tokens[model] += output_tokens
+                self.model_total_tokens[model] += input_tokens + output_tokens
+                self.last_prompt_tokens = input_tokens
+                self.last_completion_tokens = output_tokens
+                return content
+            except BaseException as exc:
+                request_tracker.end_request(model, t0, error=exc)
+                raise
+        finally:
+            sem.release()
 
     def get_usage_summary(self) -> UsageSummary:
         model_summaries = {}

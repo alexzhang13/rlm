@@ -10,16 +10,28 @@ class BaseLM(ABC):
     does so in a model-agnostic way, so this class provides a base interface for all language models.
     """
 
-    def __init__(self, model_name: str, **kwargs):
+    def __init__(self, model_name: str | None, **kwargs):
         self.model_name = model_name
         self.kwargs = kwargs
 
     @abstractmethod
-    def completion(self, prompt: str | dict[str, Any]) -> str:
+    def completion(
+        self,
+        prompt: str | list[dict[str, Any]],
+        response_format: dict | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+    ) -> str | dict[str, Any]:
         raise NotImplementedError
 
     @abstractmethod
-    async def acompletion(self, prompt: str | dict[str, Any]) -> str:
+    async def acompletion(
+        self,
+        prompt: str | list[dict[str, Any]],
+        response_format: dict | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+    ) -> str | dict[str, Any]:
         raise NotImplementedError
 
     @abstractmethod

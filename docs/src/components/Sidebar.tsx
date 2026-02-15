@@ -102,7 +102,7 @@ export function Sidebar() {
       </nav>
       <div className="absolute bottom-4 left-4 right-4">
         <a
-          href="https://github.com/alexzhang13/rlm"
+          href="https://github.com/Delta-Labs-AG/rlm"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground rounded-md hover:bg-accent"

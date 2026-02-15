@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(ruff:*)",
+      "Bash(uv run ruff:*)",
+      "Bash(uv run pytest:*)",
+      "Bash(uv run pre-commit:*)",
+      "Bash(uv sync:*)",
+      "Bash(pytest:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(gh:*)",
+      "Bash(make:*)",
+      "Read",
+      "Glob",
+      "Grep"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "file=$(cat | grep -o '\"file_path\":\"[^\"]*\"' | head -1 | cut -d'\"' -f4); if [[ \"$file\" == *.py ]]; then ruff check --fix \"$file\" && ruff format \"$file\" && ruff check \"$file\"; fi"
+          }
+        ]
+      }
+    ]
+  }
+}

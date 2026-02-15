@@ -2,17 +2,7 @@ from dataclasses import dataclass
 from types import ModuleType
 from typing import Any, Literal
 
-ClientBackend = Literal[
-    "openai",
-    "portkey",
-    "openrouter",
-    "vercel",
-    "vllm",
-    "litellm",
-    "anthropic",
-    "azure_openai",
-    "gemini",
-]
+ClientBackend = Literal["openai",]
 EnvironmentType = Literal["local", "docker", "modal", "prime", "daytona", "e2b"]
 
 
@@ -42,9 +32,9 @@ def _serialize_value(value: Any) -> Any:
 
 @dataclass
 class ModelUsageSummary:
-    total_calls: int
-    total_input_tokens: int
-    total_output_tokens: int
+    total_calls: int = 0
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
 
     def to_dict(self):
         return {
@@ -56,9 +46,9 @@ class ModelUsageSummary:
     @classmethod
     def from_dict(cls, data: dict) -> "ModelUsageSummary":
         return cls(
-            total_calls=data.get("total_calls"),
-            total_input_tokens=data.get("total_input_tokens"),
-            total_output_tokens=data.get("total_output_tokens"),
+            total_calls=int(data.get("total_calls", 0)),
+            total_input_tokens=int(data.get("total_input_tokens", 0)),
+            total_output_tokens=int(data.get("total_output_tokens", 0)),
         )
 
 
@@ -93,27 +83,40 @@ class RLMChatCompletion:
 
     root_model: str
     prompt: str | dict[str, Any]
-    response: str
+    response: str | dict[str, Any]
     usage_summary: UsageSummary
     execution_time: float
+    error: str | None = None
+    error_type: str | None = None
+    status_code: int | None = None
 
     def to_dict(self):
-        return {
+        d = {
             "root_model": self.root_model,
             "prompt": self.prompt,
             "response": self.response,
             "usage_summary": self.usage_summary.to_dict(),
             "execution_time": self.execution_time,
         }
+        if self.error is not None:
+            d["error"] = self.error
+        if self.error_type is not None:
+            d["error_type"] = self.error_type
+        if self.status_code is not None:
+            d["status_code"] = self.status_code
+        return d
 
     @classmethod
     def from_dict(cls, data: dict) -> "RLMChatCompletion":
         return cls(
-            root_model=data.get("root_model"),
-            prompt=data.get("prompt"),
-            response=data.get("response"),
-            usage_summary=UsageSummary.from_dict(data.get("usage_summary")),
-            execution_time=data.get("execution_time"),
+            root_model=str(data.get("root_model", "")),
+            prompt=data.get("prompt", ""),
+            response=data.get("response", ""),
+            usage_summary=UsageSummary.from_dict(data.get("usage_summary", {})),
+            execution_time=float(data.get("execution_time", 0.0)),
+            error=data.get("error"),
+            error_type=data.get("error_type"),
+            status_code=data.get("status_code"),
         )
 
 
@@ -130,13 +133,13 @@ class REPLResult:
         stdout: str,
         stderr: str,
         locals: dict,
-        execution_time: float = None,
-        rlm_calls: list["RLMChatCompletion"] = None,
+        execution_time: float | None = None,
+        rlm_calls: list["RLMChatCompletion"] | None = None,
     ):
         self.stdout = stdout
         self.stderr = stderr
         self.locals = locals
-        self.execution_time = execution_time
+        self.execution_time = execution_time or 0.0
         self.rlm_calls = rlm_calls or []
 
     def __str__(self):
@@ -246,17 +249,17 @@ class QueryMetadata:
             if len(prompt) == 0:
                 self.context_lengths = [0]
             elif isinstance(prompt[0], dict):
-                if "content" in prompt[0]:
-                    self.context_lengths = [len(str(chunk.get("content", ""))) for chunk in prompt]
-                else:
-                    self.context_lengths = []
-                    for chunk in prompt:
-                        try:
-                            import json
+                self.context_lengths = []
+                for chunk in prompt:
+                    if isinstance(chunk, dict) and "content" in chunk:
+                        self.context_lengths.append(len(str(chunk.get("content", ""))))
+                        continue
+                    try:
+                        import json
 
-                            self.context_lengths.append(len(json.dumps(chunk, default=str)))
-                        except Exception:
-                            self.context_lengths.append(len(repr(chunk)))
+                        self.context_lengths.append(len(json.dumps(chunk, default=str)))
+                    except Exception:
+                        self.context_lengths.append(len(repr(chunk)))
             else:
                 self.context_lengths = [len(chunk) for chunk in prompt]
         else:

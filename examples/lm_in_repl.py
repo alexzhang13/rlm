@@ -9,7 +9,7 @@ import os
 
 from dotenv import load_dotenv
 
-from rlm.clients.portkey import PortkeyClient
+from rlm.clients.openai import OpenAIClient
 from rlm.core.lm_handler import LMHandler
 from rlm.environments.local_repl import LocalREPL
 
@@ -33,14 +33,14 @@ print("Secret from setup code: ", secret)
 
 
 def main():
-    api_key = os.environ.get("PORTKEY_API_KEY")
+    api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        print("Error: PORTKEY_API_KEY not set")
+        print("Error: OPENAI_API_KEY not set")
         return
-    print(f"PORTKEY_API_KEY: {api_key}")
+    print(f"OPENAI_API_KEY: {api_key}")
 
-    client = PortkeyClient(api_key=api_key, model_name="@openai/gpt-5-nano")
-    print("Created Portkey client with model: @openai/gpt-5-nano")
+    client = OpenAIClient(api_key=api_key, model_name="gpt-4.1-mini")
+    print("Created OpenAI client with model: gpt-4.1-mini")
 
     # Start LM Handler
     with LMHandler(client=client) as handler:

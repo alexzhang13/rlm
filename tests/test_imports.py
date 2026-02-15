@@ -53,27 +53,6 @@ class TestClientImports:
 
         assert OpenAIClient is not None
 
-    def test_anthropic_client_import(self):
-        """Test AnthropicClient import."""
-        pytest.importorskip("anthropic")
-        from rlm.clients.anthropic import AnthropicClient
-
-        assert AnthropicClient is not None
-
-    def test_portkey_client_import(self):
-        """Test PortkeyClient import."""
-        pytest.importorskip("portkey_ai")
-        from rlm.clients.portkey import PortkeyClient
-
-        assert PortkeyClient is not None
-
-    def test_litellm_client_import(self):
-        """Test LiteLLMClient import."""
-        pytest.importorskip("litellm")
-        from rlm.clients.litellm import LiteLLMClient
-
-        assert LiteLLMClient is not None
-
     def test_get_client_function(self):
         """Test get_client function import."""
         from rlm.clients import get_client
@@ -320,9 +299,6 @@ class TestImportConflicts:
         # Optional modules that may not be available
         optional_modules = [
             ("rlm.clients.openai", "openai"),
-            ("rlm.clients.anthropic", "anthropic"),
-            ("rlm.clients.portkey", "portkey_ai"),
-            ("rlm.clients.litellm", "litellm"),
             ("rlm.environments.modal_repl", "modal"),
             ("rlm.environments.prime_repl", "prime_sandboxes"),
         ]
@@ -447,29 +423,7 @@ class TestImportCompleteness:
         except Exception:
             pass
 
-        try:
-            pytest.importorskip("anthropic")
-            from rlm.clients.anthropic import AnthropicClient
-
-            assert isinstance(AnthropicClient, type)
-        except Exception:
-            pass
-
-        try:
-            pytest.importorskip("portkey_ai")
-            from rlm.clients.portkey import PortkeyClient
-
-            assert isinstance(PortkeyClient, type)
-        except Exception:
-            pass
-
-        try:
-            pytest.importorskip("litellm")
-            from rlm.clients.litellm import LiteLLMClient
-
-            assert isinstance(LiteLLMClient, type)
-        except Exception:
-            pass
+        return
 
     def test_all_environment_classes_importable(self):
         """Test that all environment classes can be imported."""

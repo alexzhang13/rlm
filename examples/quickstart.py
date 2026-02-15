@@ -10,7 +10,7 @@ load_dotenv()
 logger = RLMLogger(log_dir="./logs")
 
 rlm = RLM(
-    backend="openai",  # or "portkey", etc.
+    backend="openai",
     backend_kwargs={
         "model_name": "gpt-5-nano",
         "api_key": os.getenv("OPENAI_API_KEY"),

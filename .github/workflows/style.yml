@@ -2,7 +2,7 @@ name: Style
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
     types: [opened, synchronize, reopened]
 

@@ -1,0 +1,92 @@
+name: Release Delta
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Override version tag (e.g. 0.1.0-delta.1). Leave empty for auto-version."
+        required: false
+        type: string
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: |
+          uv pip install --system -e .
+          uv pip install --system pytest pytest-asyncio pytest-cov
+
+      - name: Lint
+        if: matrix.python-version == '3.12'
+        run: |
+          uv pip install --system ruff==0.14.10
+          ruff check --config=pyproject.toml .
+          ruff format --check --config=pyproject.toml .
+
+      - name: Test
+        run: |
+          python -m pytest tests/ -v \
+            --ignore=tests/repl/test_modal_repl.py \
+            --ignore=tests/clients/ \
+            --cov=rlm \
+            --cov-report=term-missing
+
+  release:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "tag=v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            base=$(grep -m1 'version' pyproject.toml | sed 's/.*"\(.*\)".*/\1/')
+            # Count existing delta tags for this base version to auto-increment
+            count=$(git tag -l "v${base}-delta.*" | wc -l | tr -d ' ')
+            next=$((count + 1))
+            echo "tag=v${base}-delta.${next}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          git tag "$TAG"
+          git push origin "$TAG"
+
+          # Find previous delta tag for changelog range
+          PREV_TAG=$(git tag -l 'v*-delta.*' --sort=-v:refname | grep -v "^${TAG}$" | head -1 || true)
+          NOTES_FLAG=""
+          if [ -n "$PREV_TAG" ]; then
+            NOTES_FLAG="--notes-start-tag $PREV_TAG"
+          fi
+
+          gh release create "$TAG" \
+            --target main \
+            --title "$TAG" \
+            --generate-notes \
+            $NOTES_FLAG

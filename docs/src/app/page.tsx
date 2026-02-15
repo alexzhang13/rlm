@@ -24,7 +24,7 @@ export default function Home() {
           <Button href="https://arxiv.org/abs/2512.24601" variant="default" external>
             Paper
           </Button>
-          <Button href="https://github.com/alexzhang13/rlm" variant="outline" external>
+          <Button href="https://github.com/Delta-Labs-AG/rlm" variant="outline" external>
             GitHub
           </Button>
         </div>
