@@ -5,7 +5,6 @@ These tests verify that all REPL implementations correctly handle custom tools:
 - Callable tools are available as functions
 - Non-callable tools are available as variables
 - Reserved names cannot be overridden
-- Sub-tools inheritance works correctly
 
 Run with: uv run pytest tests/repl/test_custom_tools.py -v
 """
@@ -196,43 +195,6 @@ class TestLocalREPLCustomTools:
         # SHOW_VARS should still work
         result = repl.execute_code("print(SHOW_VARS())")
         assert "answer" in result.stdout
-
-        repl.cleanup()
-
-
-class TestLocalREPLSubTools:
-    """Tests for custom_sub_tools in LocalREPL."""
-
-    def test_sub_tools_inherit_from_custom_tools_by_default(self):
-        """When custom_sub_tools is None, it should inherit from custom_tools."""
-        tools = {"my_tool": lambda x: x}
-        repl = LocalREPL(custom_tools=tools, custom_sub_tools=None)
-
-        assert repl.custom_tools == tools
-        assert repl.custom_sub_tools == tools
-
-        repl.cleanup()
-
-    def test_sub_tools_can_be_different(self):
-        """custom_sub_tools can be different from custom_tools."""
-        main_tools = {"main_tool": lambda x: x * 2}
-        sub_tools = {"sub_tool": lambda x: x * 3}
-
-        repl = LocalREPL(custom_tools=main_tools, custom_sub_tools=sub_tools)
-
-        assert repl.custom_tools == main_tools
-        assert repl.custom_sub_tools == sub_tools
-
-        repl.cleanup()
-
-    def test_sub_tools_can_be_empty(self):
-        """custom_sub_tools can be empty to disable tools for sub-agents."""
-        main_tools = {"my_tool": lambda x: x}
-
-        repl = LocalREPL(custom_tools=main_tools, custom_sub_tools={})
-
-        assert repl.custom_tools == main_tools
-        assert repl.custom_sub_tools == {}
 
         repl.cleanup()
 

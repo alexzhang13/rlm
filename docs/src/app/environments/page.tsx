@@ -99,11 +99,11 @@ export default function EnvironmentsPage() {
               ],
               [
                 <code key="2" className="text-sm font-semibold">llm_query(prompt, model=None)</code>, 
-                "Query a sub-LM from within the REPL. Returns the completion string."
+                "Single LM completion call. Returns the completion string. Does not have tool access."
               ],
               [
                 <code key="3" className="text-sm font-semibold">llm_query_batched(prompts, model=None)</code>, 
-                "Concurrent sub-LM queries. Returns a list of completion strings."
+                "Concurrent single LM completion calls. Returns a list of completion strings. Does not have tool access."
               ],
               [
                 <code key="4" className="text-sm font-semibold">FINAL_VAR(var_name)</code>, 
@@ -170,10 +170,8 @@ rlm = RLM(
         </p>
 
         <p className="text-muted-foreground mt-4 leading-relaxed">
-          <strong className="text-foreground">Sub-agent tools:</strong> By default, sub-agents (code using 
-          <code className="px-1.5 py-0.5 rounded bg-muted text-foreground text-sm font-semibold">llm_query()</code>) 
-          inherit the same custom tools. Use <code className="px-1.5 py-0.5 rounded bg-muted text-foreground text-sm font-semibold">custom_sub_tools</code> to 
-          provide different tools for sub-agents, or pass an empty dict to disable tools for sub-agents.
+          <strong className="text-foreground">Note:</strong> <code className="px-1.5 py-0.5 rounded bg-muted text-foreground text-sm font-semibold">llm_query()</code> calls 
+          are single LM completions and do not have access to custom tools. Only the main RLM execution context has tool access.
         </p>
       </div>
 

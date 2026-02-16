@@ -139,7 +139,6 @@ This will display:
 | `logger` | `RLMLogger` | `None` | Logger for trajectory tracking |
 | `verbose` | `bool` | `False` | Enable console output |
 | `custom_tools` | `dict` | `None` | Custom functions/data available in REPL |
-| `custom_sub_tools` | `dict` | `None` | Tools for sub-agents (inherits from `custom_tools` if None) |
 
 ### The `completion()` Method
 
@@ -345,28 +344,6 @@ The descriptions are automatically added to the system prompt:
 - `fetch_weather`: Fetch current weather data for a city name
 - `calculate_shipping`: Calculate shipping cost given weight (kg) and distance (km)
 - `API_KEY`: API key for the weather service
-```
-
-### Custom Tools for Sub-Agents
-
-By default, sub-agents (code using `llm_query()`) inherit the same custom tools. You can customize this:
-
-```python
-# Sub-agents get different tools
-rlm = RLM(
-    backend="openai",
-    backend_kwargs={"model_name": "gpt-4o"},
-    custom_tools={"main_tool": my_main_function},
-    custom_sub_tools={"sub_tool": my_sub_function},  # Different tools for sub-agents
-)
-
-# Sub-agents get no tools
-rlm = RLM(
-    backend="openai",
-    backend_kwargs={"model_name": "gpt-4o"},
-    custom_tools={"main_tool": my_main_function},
-    custom_sub_tools={},  # Empty dict = no tools for sub-agents
-)
 ```
 
 ### Isolated Environments (Modal, Daytona)

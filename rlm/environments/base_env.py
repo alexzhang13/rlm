@@ -165,14 +165,13 @@ class SupportsCustomTools(Protocol):
         1. Plain value: {"name": callable_or_value}
         2. With description: {"name": {"tool": callable_or_value, "description": "..."}}
 
-    SUB-TOOLS:
-        custom_sub_tools controls what tools are available to sub-agents
-        (code spawned via llm_query). If None, inherits from custom_tools.
-        Pass {} to disable tools for sub-agents.
+    NOTE ON llm_query:
+        llm_query() calls are single LM completions and do NOT have access to
+        custom tools. Only the main RLM execution context has tool access.
 
     RESERVED NAMES:
         The following names cannot be used as custom tool names:
-        - llm_query, llm_query_batched: Sub-LM query functions
+        - llm_query, llm_query_batched: Single LM completion functions (no tool access)
         - FINAL_VAR, SHOW_VARS: Built-in helper functions
         - context: The input context variable
 
@@ -188,7 +187,6 @@ class SupportsCustomTools(Protocol):
     """
 
     custom_tools: dict[str, Any]
-    custom_sub_tools: dict[str, Any]
 
 
 class BaseEnv(ABC):
@@ -197,11 +195,11 @@ class BaseEnv(ABC):
     where isolated environments are on a separate machine from the LM.
 
     Custom Tools:
-        Environments can accept `custom_tools` and `custom_sub_tools` kwargs:
+        Environments can accept `custom_tools` kwargs:
         - custom_tools: Dict[str, Any] - Functions/values available in the REPL.
           Callable values are added to globals, non-callable to locals.
-        - custom_sub_tools: Dict[str, Any] - Tools for sub-agents (llm_query calls).
-          If None, inherits from custom_tools.
+
+        Note: llm_query() calls are single LM completions without tool access.
 
         Example:
             custom_tools = {

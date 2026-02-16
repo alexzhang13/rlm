@@ -120,80 +120,6 @@ def example_basic_tools():
 
 
 # =============================================================================
-# Example 2: Different Tools for Sub-Agents
-# =============================================================================
-
-
-def sub_agent_helper(data: str) -> str:
-    """A simpler helper for sub-agents."""
-    return f"Processed: {data[:50]}..."
-
-
-def example_sub_tools():
-    """Demonstrate different tools for main agent vs sub-agents."""
-    print("\n" + "=" * 60)
-    print("Example 2: Custom Sub-Tools")
-    print("=" * 60)
-
-    rlm = RLM(
-        backend="portkey",
-        backend_kwargs={
-            "model_name": "@openai/gpt-5-nano",
-            "api_key": os.getenv("PORTKEY_API_KEY"),
-        },
-        environment="local",
-        # Main agent gets full tools
-        custom_tools={
-            "fetch_stock_price": fetch_stock_price,
-            "format_currency": format_currency,
-        },
-        # Sub-agents (llm_query calls) get limited tools
-        custom_sub_tools={
-            "sub_agent_helper": sub_agent_helper,
-        },
-        verbose=True,
-    )
-
-    result = rlm.completion(
-        "Get the price of MSFT and format it. "
-        "The sub-agent helper is available for sub-queries if needed."
-    )
-
-    print(f"\nFinal Answer: {result.response}")
-
-
-# =============================================================================
-# Example 3: No Tools for Sub-Agents
-# =============================================================================
-
-
-def example_no_sub_tools():
-    """Demonstrate disabling tools for sub-agents."""
-    print("\n" + "=" * 60)
-    print("Example 3: No Tools for Sub-Agents")
-    print("=" * 60)
-
-    rlm = RLM(
-        backend="portkey",
-        backend_kwargs={
-            "model_name": "@openai/gpt-5-nano",
-            "api_key": os.getenv("PORTKEY_API_KEY"),
-        },
-        environment="local",
-        custom_tools={
-            "fetch_stock_price": fetch_stock_price,
-        },
-        # Empty dict = no tools for sub-agents
-        custom_sub_tools={},
-        verbose=True,
-    )
-
-    result = rlm.completion("What is the price of AMZN?")
-
-    print(f"\nFinal Answer: {result.response}")
-
-
-# =============================================================================
 # Main
 # =============================================================================
 
@@ -205,6 +131,3 @@ if __name__ == "__main__":
         exit(1)
 
     example_basic_tools()
-    # Uncomment to run other examples:
-    # example_sub_tools()
-    # example_no_sub_tools()
