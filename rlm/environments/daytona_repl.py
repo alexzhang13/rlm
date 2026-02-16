@@ -10,6 +10,7 @@ import os
 import textwrap
 import threading
 import time
+from typing import Any
 
 import requests
 from daytona import (
@@ -23,7 +24,7 @@ from daytona import (
 
 from rlm.core.comms_utils import LMRequest, send_lm_request, send_lm_request_batched
 from rlm.core.types import REPLResult, RLMChatCompletion
-from rlm.environments.base_env import IsolatedEnv
+from rlm.environments.base_env import IsolatedEnv, extract_tool_value, validate_custom_tools
 
 # =============================================================================
 # Default Daytona Image
@@ -152,12 +153,54 @@ if __name__ == "__main__":
 # =============================================================================
 
 
-def _build_exec_script(code: str, broker_port: int = 8080, depth: int = 1) -> str:
+def _build_exec_script(
+    code: str,
+    broker_port: int = 8080,
+    depth: int = 1,
+    custom_tools: dict[str, Any] | None = None,
+) -> str:
     """
     Build a script that executes code with state persistence.
     LLM queries go through the local broker server.
+
+    Args:
+        code: The Python code to execute.
+        broker_port: Port for the broker server.
+        depth: Depth level for LLM requests.
+        custom_tools: Dict of custom tools. Values can be:
+            - Strings: Interpreted as Python code defining the tool (executed directly)
+            - Other values: JSON-serialized and loaded as data
     """
     code_b64 = base64.b64encode(code.encode()).decode()
+
+    # Build custom tools injection code
+    custom_tools_code = ""
+    if custom_tools:
+        tool_lines = []
+        for name, entry in custom_tools.items():
+            # Extract value from (value, description) tuple if needed
+            value = extract_tool_value(entry)
+
+            if isinstance(value, str) and (
+                value.strip().startswith("def ")
+                or value.strip().startswith("class ")
+                or value.strip().startswith("lambda")
+                or "\n" in value
+            ):
+                # String looks like code - execute it directly
+                tool_lines.append(f"# Custom tool: {name}")
+                tool_lines.append(value)
+                tool_lines.append(f"_globals['{name}'] = {name}")
+            else:
+                # Serialize as JSON data
+                try:
+                    json_value = json.dumps(value)
+                    tool_lines.append(f"_locals['{name}'] = json.loads('''{json_value}''')")
+                except (TypeError, ValueError):
+                    # Can't serialize - skip with warning
+                    tool_lines.append(f"# Warning: Could not serialize tool '{name}'")
+
+        custom_tools_code = "\n".join(tool_lines)
 
     return textwrap.dedent(
         f'''
@@ -281,6 +324,11 @@ _globals = {{
     "SHOW_VARS": SHOW_VARS,
 }}
 
+# =============================================================================
+# Custom Tools Injection
+# =============================================================================
+{custom_tools_code}
+
 code = base64.b64decode("{code_b64}").decode()
 
 stdout_buf = io.StringIO()
@@ -341,6 +389,8 @@ class DaytonaREPL(IsolatedEnv):
         setup_code: str | None = None,
         persistent: bool = False,
         depth: int = 1,
+        custom_tools: dict[str, Any] | None = None,
+        custom_sub_tools: dict[str, Any] | None = None,
         **kwargs,
     ):
         """
@@ -361,6 +411,10 @@ class DaytonaREPL(IsolatedEnv):
             setup_code: Optional code to run during setup.
             persistent: Whether to persist state across calls (not yet supported).
             depth: Depth level for LLM request routing (used by LMHandler).
+            custom_tools: Dict of custom tools available in the REPL. For isolated environments,
+                values should be strings containing Python code that defines the function,
+                or simple serializable values (str, int, dict, list).
+            custom_sub_tools: Dict of tools for sub-agents. If None, inherits from custom_tools.
             **kwargs: Additional arguments passed to base class.
         """
         if persistent:
@@ -379,6 +433,15 @@ class DaytonaREPL(IsolatedEnv):
         self.auto_stop_interval = auto_stop_interval
         self.image = image or get_default_image()
         self.lm_handler_address = lm_handler_address
+
+        # Custom tools for the REPL environment
+        self.custom_tools = custom_tools or {}
+        self.custom_sub_tools = (
+            custom_sub_tools if custom_sub_tools is not None else self.custom_tools
+        )
+
+        # Validate custom tools don't override reserved names
+        validate_custom_tools(self.custom_tools)
 
         self.daytona = None
         self.sandbox = None
@@ -559,7 +622,9 @@ class DaytonaREPL(IsolatedEnv):
             self.pending_llm_calls.clear()
 
         # Build and execute the script
-        script = _build_exec_script(code, self.BROKER_PORT, self.depth)
+        script = _build_exec_script(
+            code, self.BROKER_PORT, self.depth, custom_tools=self.custom_tools
+        )
 
         # Upload the script as a temporary file
         script_path = "/tmp/rlm_exec_script.py"

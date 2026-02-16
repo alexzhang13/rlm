@@ -52,6 +52,8 @@ class RLM:
         logger: RLMLogger | None = None,
         verbose: bool = False,
         persistent: bool = False,
+        custom_tools: dict[str, Any] | None = None,
+        custom_sub_tools: dict[str, Any] | None = None,
     ):
         """
         Args:
@@ -68,6 +70,10 @@ class RLM:
             logger: The logger to use for the RLM.
             verbose: Whether to print verbose output in rich to console.
             persistent: If True, reuse the environment across completion() calls for multi-turn conversations.
+            custom_tools: Dict of custom functions/tools available in the REPL. Keys are function names,
+                values are callable functions. These are injected into the REPL globals.
+            custom_sub_tools: Dict of custom tools for sub-agents (llm_query calls). If None, inherits
+                from custom_tools. Pass an empty dict {} to disable tools for sub-agents.
         """
         # Store config for spawning per-completion
         self.backend = backend
@@ -86,6 +92,11 @@ class RLM:
 
         self.other_backends = other_backends
         self.other_backend_kwargs = other_backend_kwargs
+
+        # Custom tools: functions available in the REPL environment
+        self.custom_tools = custom_tools
+        # Sub-tools: if None, inherit from custom_tools; if {}, no tools for sub-agents
+        self.custom_sub_tools = custom_sub_tools if custom_sub_tools is not None else custom_tools
 
         self.depth = depth
         self.max_depth = max_depth
@@ -165,6 +176,11 @@ class RLM:
             env_kwargs["lm_handler_address"] = (lm_handler.host, lm_handler.port)
             env_kwargs["context_payload"] = prompt
             env_kwargs["depth"] = self.depth + 1  # Environment depth is RLM depth + 1
+            # Pass custom tools to the environment
+            if self.custom_tools is not None:
+                env_kwargs["custom_tools"] = self.custom_tools
+            if self.custom_sub_tools is not None:
+                env_kwargs["custom_sub_tools"] = self.custom_sub_tools
             environment: BaseEnv = get_environment(self.environment_type, env_kwargs)
 
             if self.persistent:
@@ -184,7 +200,9 @@ class RLM:
         """
         metadata = QueryMetadata(prompt)
         message_history = build_rlm_system_prompt(
-            system_prompt=self.system_prompt, query_metadata=metadata
+            system_prompt=self.system_prompt,
+            query_metadata=metadata,
+            custom_tools=self.custom_tools,
         )
 
         return message_history

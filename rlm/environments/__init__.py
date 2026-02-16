@@ -1,9 +1,33 @@
 from typing import Any, Literal
 
-from rlm.environments.base_env import BaseEnv, SupportsPersistence
+from rlm.environments.base_env import (
+    RESERVED_TOOL_NAMES,
+    BaseEnv,
+    SupportsCustomTools,
+    SupportsPersistence,
+    ToolInfo,
+    extract_tool_value,
+    format_tools_for_prompt,
+    parse_custom_tools,
+    parse_tool_entry,
+    validate_custom_tools,
+)
 from rlm.environments.local_repl import LocalREPL
 
-__all__ = ["BaseEnv", "LocalREPL", "SupportsPersistence", "get_environment"]
+__all__ = [
+    "BaseEnv",
+    "LocalREPL",
+    "RESERVED_TOOL_NAMES",
+    "SupportsCustomTools",
+    "SupportsPersistence",
+    "ToolInfo",
+    "extract_tool_value",
+    "format_tools_for_prompt",
+    "get_environment",
+    "parse_custom_tools",
+    "parse_tool_entry",
+    "validate_custom_tools",
+]
 
 
 def get_environment(

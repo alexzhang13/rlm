@@ -13,7 +13,7 @@ from typing import Any
 
 from rlm.core.comms_utils import LMRequest, send_lm_request, send_lm_request_batched
 from rlm.core.types import REPLResult, RLMChatCompletion
-from rlm.environments.base_env import NonIsolatedEnv
+from rlm.environments.base_env import NonIsolatedEnv, extract_tool_value, validate_custom_tools
 
 # =============================================================================
 # Safe Builtins
@@ -125,6 +125,8 @@ class LocalREPL(NonIsolatedEnv):
         setup_code: str | None = None,
         persistent: bool = False,
         depth: int = 1,
+        custom_tools: dict[str, Any] | None = None,
+        custom_sub_tools: dict[str, Any] | None = None,
         **kwargs,
     ):
         super().__init__(persistent=persistent, depth=depth, **kwargs)
@@ -135,6 +137,16 @@ class LocalREPL(NonIsolatedEnv):
         self._lock = threading.Lock()
         self._context_count: int = 0
         self._history_count: int = 0
+
+        # Custom tools: functions available in the REPL
+        self.custom_tools = custom_tools or {}
+        # Sub-tools: inherited from custom_tools if not specified
+        self.custom_sub_tools = (
+            custom_sub_tools if custom_sub_tools is not None else self.custom_tools
+        )
+
+        # Validate custom tools don't override reserved names
+        validate_custom_tools(self.custom_tools)
 
         # Setup globals, locals, and modules in environment.
         self.setup()
@@ -164,6 +176,16 @@ class LocalREPL(NonIsolatedEnv):
         self.globals["SHOW_VARS"] = self._show_vars
         self.globals["llm_query"] = self._llm_query
         self.globals["llm_query_batched"] = self._llm_query_batched
+
+        # Add custom tools to globals
+        # Tools can be either plain values or (value, description) tuples
+        for name, entry in self.custom_tools.items():
+            value = extract_tool_value(entry)
+            if callable(value):
+                self.globals[name] = value
+            else:
+                # For non-callable values (constants, data), add to locals
+                self.locals[name] = value
 
     def _final_var(self, variable_name: str) -> str:
         """Return the value of a variable as a final answer."""
@@ -397,8 +419,10 @@ class LocalREPL(NonIsolatedEnv):
             shutil.rmtree(self.temp_dir)
         except Exception:
             pass
-        self.globals.clear()
-        self.locals.clear()
+        if hasattr(self, "globals"):
+            self.globals.clear()
+        if hasattr(self, "locals"):
+            self.locals.clear()
 
     def __del__(self):
         self.cleanup()

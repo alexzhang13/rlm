@@ -109,6 +109,10 @@ export default function EnvironmentsPage() {
                 <code key="4" className="text-sm font-semibold">FINAL_VAR(var_name)</code>, 
                 "Mark a variable as the final answer to return from the RLM"
               ],
+              [
+                <code key="5" className="text-sm font-semibold">custom_tools</code>, 
+                "Any custom functions or data you provide via the custom_tools parameter"
+              ],
             ]}
           />
         </div>
@@ -119,11 +123,58 @@ context = "Your input here"
 # Query a sub-LM
 result = llm_query("Summarize the context", model="gpt-5-mini")
 
+# Use a custom tool (if provided)
+data = fetch_data(context["url"])  # Custom function
+
 # Process the result
 summary = process(result)
 
 # Return final answer
 FINAL_VAR(summary)`} />
+      </div>
+
+      <div className="my-12">
+        <h2 className="text-2xl font-bold mb-4">Custom Tools</h2>
+        
+        <p className="text-muted-foreground mb-6 leading-relaxed">
+          You can provide custom functions and data that the RLM can use in its REPL environment 
+          via the <code className="px-1.5 py-0.5 rounded bg-muted text-foreground text-sm font-semibold">custom_tools</code> parameter:
+        </p>
+
+        <CodeBlock code={`from rlm import RLM
+
+def fetch_weather(city: str) -> str:
+    """Fetch weather data for a city."""
+    return f"Weather in {city}: Sunny, 72°F"
+
+rlm = RLM(
+    backend="openai",
+    backend_kwargs={"model_name": "gpt-4o"},
+    custom_tools={
+        # Plain format (no description)
+        "fetch_weather": fetch_weather,
+        
+        # Dict format with description (recommended)
+        "calculate_tip": {"tool": lambda x: x * 0.2, "description": "Calculate 20% tip for a bill amount"},
+        "API_KEY": {"tool": "your-key", "description": "API key for external services"},
+    },
+)
+
+# The model can now call fetch_weather() in its REPL code`} />
+
+        <p className="text-muted-foreground mt-6 leading-relaxed">
+          <strong className="text-foreground">Tool descriptions:</strong> Use the dict format 
+          <code className="px-1.5 py-0.5 rounded bg-muted text-foreground text-sm font-semibold">{`{"tool": value, "description": "..."}`}</code> to 
+          provide descriptions that help the model understand what each tool does. Descriptions are automatically 
+          included in the system prompt.
+        </p>
+
+        <p className="text-muted-foreground mt-4 leading-relaxed">
+          <strong className="text-foreground">Sub-agent tools:</strong> By default, sub-agents (code using 
+          <code className="px-1.5 py-0.5 rounded bg-muted text-foreground text-sm font-semibold">llm_query()</code>) 
+          inherit the same custom tools. Use <code className="px-1.5 py-0.5 rounded bg-muted text-foreground text-sm font-semibold">custom_sub_tools</code> to 
+          provide different tools for sub-agents, or pass an empty dict to disable tools for sub-agents.
+        </p>
       </div>
 
       <div className="my-12">

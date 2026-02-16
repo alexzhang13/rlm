@@ -1,4 +1,5 @@
 import textwrap
+from typing import Any
 
 from rlm.core.types import QueryMetadata
 
@@ -12,6 +13,7 @@ The REPL environment is initialized with:
 3. A `llm_query_batched` function that allows you to query multiple prompts concurrently: `llm_query_batched(prompts: List[str]) -> List[str]`. This is much faster than sequential `llm_query` calls when you have multiple independent queries. Results are returned in the same order as the input prompts.
 4. A `SHOW_VARS()` function that returns all variables you have created in the REPL. Use this to check what variables exist before using FINAL_VAR.
 5. The ability to use `print()` statements to view the output of your REPL code and continue your reasoning.
+{custom_tools_section}
 
 You will only be able to see truncated outputs from the REPL environment, so you should use the query LLM function on variables you want to analyze. You will find this function especially useful when you have to analyze the semantics of the context. Use these variables as buffers to build up your final answer.
 Make sure to explicitly look through the entire context in REPL before answering your query. An example strategy is to first look at the context and figure out a chunking strategy, then break up the context into smart chunks, and query an LLM per chunk with a particular question and save the answers to a buffer, then query an LLM with all the buffers to produce your final answer.
@@ -94,16 +96,20 @@ Think step by step carefully, plan, and execute this plan immediately in your re
 def build_rlm_system_prompt(
     system_prompt: str,
     query_metadata: QueryMetadata,
+    custom_tools: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     """
     Build the initial system prompt for the REPL environment based on extra prompt metadata.
 
     Args:
-        query_metadata: QueryMetadata object containing context metadata
+        system_prompt: The base system prompt template.
+        query_metadata: QueryMetadata object containing context metadata.
+        custom_tools: Optional dict of custom tools to include in the prompt.
 
     Returns:
         List of message dictionaries
     """
+    from rlm.environments.base_env import format_tools_for_prompt
 
     context_lengths = query_metadata.context_lengths
     context_total_length = query_metadata.context_total_length
@@ -114,10 +120,22 @@ def build_rlm_system_prompt(
         others = len(context_lengths) - 100
         context_lengths = str(context_lengths[:100]) + "... [" + str(others) + " others]"
 
+    # Format custom tools section if provided
+    tools_formatted = format_tools_for_prompt(custom_tools)
+    if tools_formatted:
+        custom_tools_section = (
+            f"\n6. Custom tools and data available in the REPL:\n{tools_formatted}"
+        )
+    else:
+        custom_tools_section = ""
+
+    # Insert custom tools section into the system prompt
+    final_system_prompt = system_prompt.format(custom_tools_section=custom_tools_section)
+
     metadata_prompt = f"Your context is a {context_type} with {context_total_length} total characters, and is broken up into chunks of char lengths: {context_lengths}."
 
     return [
-        {"role": "system", "content": system_prompt},
+        {"role": "system", "content": final_system_prompt},
         {"role": "assistant", "content": metadata_prompt},
     ]
 
