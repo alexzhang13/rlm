@@ -13,7 +13,12 @@ from typing import Any
 
 from rlm.core.comms_utils import LMRequest, send_lm_request, send_lm_request_batched
 from rlm.core.types import REPLResult, RLMChatCompletion
-from rlm.environments.base_env import NonIsolatedEnv, extract_tool_value, validate_custom_tools
+from rlm.environments.base_env import (
+    RESERVED_TOOL_NAMES,
+    NonIsolatedEnv,
+    extract_tool_value,
+    validate_custom_tools,
+)
 
 # =============================================================================
 # Safe Builtins
@@ -375,6 +380,22 @@ class LocalREPL(NonIsolatedEnv):
         finally:
             os.chdir(old_cwd)
 
+    def _restore_scaffold(self) -> None:
+        """Restore scaffold names after execution so overwrites (e.g. context = 'x') don't persist."""
+        for name in RESERVED_TOOL_NAMES:
+            if name == "llm_query":
+                self.globals["llm_query"] = self._llm_query
+            elif name == "llm_query_batched":
+                self.globals["llm_query_batched"] = self._llm_query_batched
+            elif name == "FINAL_VAR":
+                self.globals["FINAL_VAR"] = self._final_var
+            elif name == "SHOW_VARS":
+                self.globals["SHOW_VARS"] = self._show_vars
+            elif name == "context" and "context_0" in self.locals:
+                self.locals["context"] = self.locals["context_0"]
+            elif name == "history" and "history_0" in self.locals:
+                self.locals["history"] = self.locals["history_0"]
+
     def execute_code(self, code: str) -> REPLResult:
         """Execute code in the persistent namespace and return result."""
         start_time = time.perf_counter()
@@ -391,6 +412,9 @@ class LocalREPL(NonIsolatedEnv):
                 for key, value in combined.items():
                     if key not in self.globals and not key.startswith("_"):
                         self.locals[key] = value
+
+                # Restore scaffold so model overwrites (context = ..., llm_query = ...) don't persist
+                self._restore_scaffold()
 
                 stdout = stdout_buf.getvalue()
                 stderr = stderr_buf.getvalue()

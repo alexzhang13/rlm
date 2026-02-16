@@ -8,8 +8,8 @@ from rlm.core.types import REPLResult
 # Custom Tools Support
 # =============================================================================
 
-# Reserved names that cannot be overridden by custom tools.
-# These are the built-in REPL functions that all environments must provide.
+# Reserved names: cannot be overridden by custom tools, and are restored after each
+# code execution to prevent namespace corruption (e.g. context = "...", llm_query = ...).
 RESERVED_TOOL_NAMES: frozenset[str] = frozenset(
     {
         "llm_query",
@@ -17,6 +17,7 @@ RESERVED_TOOL_NAMES: frozenset[str] = frozenset(
         "FINAL_VAR",
         "SHOW_VARS",
         "context",
+        "history",
     }
 )
 
@@ -173,7 +174,7 @@ class SupportsCustomTools(Protocol):
         The following names cannot be used as custom tool names:
         - llm_query, llm_query_batched: Single LM completion functions (no tool access)
         - FINAL_VAR, SHOW_VARS: Built-in helper functions
-        - context: The input context variable
+        - context, history: The input context and conversation history variables
 
     EXAMPLE:
         custom_tools = {

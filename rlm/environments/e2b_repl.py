@@ -241,6 +241,12 @@ finally:
     sys.stdout = old_stdout
     sys.stderr = old_stderr
 
+# Restore scaffold aliases if overwritten by executed code
+if "context_0" in _locals:
+    _locals["context"] = _locals["context_0"]
+if "history_0" in _locals:
+    _locals["history"] = _locals["history_0"]
+
 save_state(_locals)
 
 result = {{
