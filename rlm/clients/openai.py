@@ -40,8 +40,10 @@ class OpenAIClient(BaseLM):
                 api_key = DEFAULT_VERCEL_API_KEY
 
         # For vLLM, set base_url to local vLLM server address.
-        self.client = openai.OpenAI(api_key=api_key, base_url=base_url)
-        self.async_client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self.client = openai.OpenAI(api_key=api_key, base_url=base_url, timeout=self.timeout)
+        self.async_client = openai.AsyncOpenAI(
+            api_key=api_key, base_url=base_url, timeout=self.timeout
+        )
         self.model_name = model_name
 
         # Per-model usage tracking

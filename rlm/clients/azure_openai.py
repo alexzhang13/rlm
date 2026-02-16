@@ -53,12 +53,14 @@ class AzureOpenAIClient(BaseLM):
             azure_endpoint=azure_endpoint,
             api_version=api_version,
             azure_deployment=azure_deployment,
+            timeout=self.timeout,
         )
         self.async_client = openai.AsyncAzureOpenAI(
             api_key=api_key,
             azure_endpoint=azure_endpoint,
             api_version=api_version,
             azure_deployment=azure_deployment,
+            timeout=self.timeout,
         )
         self.model_name = model_name
         self.azure_deployment = azure_deployment

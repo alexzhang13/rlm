@@ -20,8 +20,8 @@ class AnthropicClient(BaseLM):
         **kwargs,
     ):
         super().__init__(model_name=model_name, **kwargs)
-        self.client = anthropic.Anthropic(api_key=api_key)
-        self.async_client = anthropic.AsyncAnthropic(api_key=api_key)
+        self.client = anthropic.Anthropic(api_key=api_key, timeout=self.timeout)
+        self.async_client = anthropic.AsyncAnthropic(api_key=api_key, timeout=self.timeout)
         self.model_name = model_name
         self.max_tokens = max_tokens
 
