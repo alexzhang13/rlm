@@ -229,6 +229,9 @@ class RLM:
         if self.depth >= self.max_depth:
             return self._fallback_answer(prompt)
 
+        if self.logger:
+            self.logger.clear_iterations()
+
         with self._spawn_completion_context(prompt) as (lm_handler, environment):
             message_history = self._setup_prompt(prompt)
 
@@ -283,6 +286,7 @@ class RLM:
                         response=final_answer,
                         usage_summary=usage,
                         execution_time=time_end - time_start,
+                        metadata=self.logger.get_trajectory() if self.logger else None,
                     )
 
                 # Format the iteration for the next prompt.
@@ -310,6 +314,7 @@ class RLM:
                 response=final_answer,
                 usage_summary=usage,
                 execution_time=time_end - time_start,
+                metadata=self.logger.get_trajectory() if self.logger else None,
             )
 
     def _completion_turn(

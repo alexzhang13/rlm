@@ -96,15 +96,21 @@ class RLMChatCompletion:
     response: str
     usage_summary: UsageSummary
     execution_time: float
+    metadata: dict | None = (
+        None  # Full trajectory (run_metadata + iterations) when logger captures it
+    )
 
     def to_dict(self):
-        return {
+        out = {
             "root_model": self.root_model,
             "prompt": self.prompt,
             "response": self.response,
             "usage_summary": self.usage_summary.to_dict(),
             "execution_time": self.execution_time,
         }
+        if self.metadata is not None:
+            out["metadata"] = self.metadata
+        return out
 
     @classmethod
     def from_dict(cls, data: dict) -> "RLMChatCompletion":
@@ -114,6 +120,7 @@ class RLMChatCompletion:
             response=data.get("response"),
             usage_summary=UsageSummary.from_dict(data.get("usage_summary")),
             execution_time=data.get("execution_time"),
+            metadata=data.get("metadata"),
         )
 
 

@@ -135,17 +135,20 @@ If you use this code or repository in your research, please cite:
 }
 ```
 
+## Optional: Trajectory metadata and logging
+`RLMChatCompletion` has an optional `metadata` field (default empty) that can hold the full trajectory (run config + all iterations and sub-calls) so you can reconstruct the run. Pass an `RLMLogger` to capture it:
+
+- **In-memory only** (trajectory on `completion.metadata`): `logger=RLMLogger()` (no `log_dir`).
+- **Also save to disk** (JSONL for the visualizer): `logger=RLMLogger(log_dir="./logs")`.
+
 ## Optional Debugging: Visualizing RLM Trajectories
-We additionally provide a simple visualizer tool to examine and view the code, sub-LM, and root-LM calls of an RLM trajectory. To save log files (`.jsonl`) on every completion call that can be viewed in the visualizer, initialize the `RLMLogger` object and pass it into the `RLM` on initialization:
+We provide a simple visualizer to inspect code, sub-LM, and root-LM calls. Use `RLMLogger(log_dir="./logs")` so each completion writes a `.jsonl` file:
 ```python
 from rlm.logger import RLMLogger
 from rlm import RLM
 
 logger = RLMLogger(log_dir="./logs")
-rlm = RLM(
-    ...
-    logger=logger
-)
+rlm = RLM(..., logger=logger)
 ```
 
 To run the visualizer locally, we use Node.js and shadcn/ui:
