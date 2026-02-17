@@ -5,6 +5,7 @@ from rlm.core.types import (
     ModelUsageSummary,
     QueryMetadata,
     REPLResult,
+    RLMChatCompletion,
     RLMIteration,
     RLMMetadata,
     UsageSummary,
@@ -154,6 +155,39 @@ class TestRLMIteration:
         assert d["response"] == "r"
         assert len(d["code_blocks"]) == 1
         assert d["iteration_time"] == 1.5
+
+
+class TestRLMChatCompletion:
+    """Tests for RLMChatCompletion."""
+
+    def test_metadata_default_none(self):
+        usage = UsageSummary(model_usage_summaries={})
+        c = RLMChatCompletion(
+            root_model="gpt-4",
+            prompt="hi",
+            response="hello",
+            usage_summary=usage,
+            execution_time=1.0,
+        )
+        assert c.metadata is None
+        d = c.to_dict()
+        assert "metadata" not in d
+
+    def test_metadata_roundtrip(self):
+        usage = UsageSummary(model_usage_summaries={})
+        trajectory = {"run_metadata": {"root_model": "gpt-4"}, "iterations": []}
+        c = RLMChatCompletion(
+            root_model="gpt-4",
+            prompt="hi",
+            response="hello",
+            usage_summary=usage,
+            execution_time=1.0,
+            metadata=trajectory,
+        )
+        d = c.to_dict()
+        assert d["metadata"] == trajectory
+        c2 = RLMChatCompletion.from_dict(d)
+        assert c2.metadata == trajectory
 
 
 class TestQueryMetadata:

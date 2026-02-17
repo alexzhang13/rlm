@@ -13,7 +13,7 @@ ClientBackend = Literal[
     "azure_openai",
     "gemini",
 ]
-EnvironmentType = Literal["local", "docker", "modal", "prime", "daytona"]
+EnvironmentType = Literal["local", "docker", "modal", "prime", "daytona", "e2b"]
 
 
 def _serialize_value(value: Any) -> Any:
@@ -124,15 +124,21 @@ class RLMChatCompletion:
     response: str
     usage_summary: UsageSummary
     execution_time: float
+    metadata: dict | None = (
+        None  # Full trajectory (run_metadata + iterations) when logger captures it
+    )
 
     def to_dict(self):
-        return {
+        out = {
             "root_model": self.root_model,
             "prompt": self.prompt,
             "response": self.response,
             "usage_summary": self.usage_summary.to_dict(),
             "execution_time": self.execution_time,
         }
+        if self.metadata is not None:
+            out["metadata"] = self.metadata
+        return out
 
     @classmethod
     def from_dict(cls, data: dict) -> "RLMChatCompletion":
@@ -142,6 +148,7 @@ class RLMChatCompletion:
             response=data.get("response"),
             usage_summary=UsageSummary.from_dict(data.get("usage_summary")),
             execution_time=data.get("execution_time"),
+            metadata=data.get("metadata"),
         )
 
 
@@ -152,6 +159,7 @@ class REPLResult:
     locals: dict
     execution_time: float
     llm_calls: list["RLMChatCompletion"]
+    final_answer: str | None = None
 
     def __init__(
         self,
@@ -160,12 +168,14 @@ class REPLResult:
         locals: dict,
         execution_time: float = None,
         rlm_calls: list["RLMChatCompletion"] = None,
+        final_answer: str | None = None,
     ):
         self.stdout = stdout
         self.stderr = stderr
         self.locals = locals
         self.execution_time = execution_time
         self.rlm_calls = rlm_calls or []
+        self.final_answer = final_answer
 
     def __str__(self):
         return f"REPLResult(stdout={self.stdout}, stderr={self.stderr}, locals={self.locals}, execution_time={self.execution_time}, rlm_calls={len(self.rlm_calls)})"
@@ -177,6 +187,7 @@ class REPLResult:
             "locals": {k: _serialize_value(v) for k, v in self.locals.items()},
             "execution_time": self.execution_time,
             "rlm_calls": [call.to_dict() for call in self.rlm_calls],
+            "final_answer": self.final_answer,
         }
 
 

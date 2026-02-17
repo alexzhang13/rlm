@@ -173,6 +173,12 @@ except:
 finally:
     sys.stdout, sys.stderr = old_stdout, old_stderr
 
+# Restore scaffold aliases if overwritten by executed code
+if "context_0" in _locals:
+    _locals["context"] = _locals["context_0"]
+if "history_0" in _locals:
+    _locals["history"] = _locals["history_0"]
+
 save_state(_locals)
 print(json.dumps({{"stdout": stdout_buf.getvalue(), "stderr": stderr_buf.getvalue(), "locals": {{k: repr(v) for k, v in _locals.items() if not k.startswith("_")}}}}, ensure_ascii=False))
 '''

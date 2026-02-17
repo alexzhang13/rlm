@@ -1,33 +1,23 @@
+"""
+E2B REPL environment that runs Python code in E2B sandboxes.
+
+Uses the E2B Code Interpreter SDK (https://e2b.dev/docs) for sandbox management.
+Follows the same HTTP broker pattern as ModalREPL for LLM communication.
+"""
+
 import base64
 import json
 import textwrap
 import threading
 import time
+from typing import Any
 
-import modal
 import requests
+from e2b_code_interpreter import Sandbox
 
 from rlm.core.comms_utils import LMRequest, send_lm_request, send_lm_request_batched
 from rlm.core.types import REPLResult, RLMChatCompletion
 from rlm.environments.base_env import IsolatedEnv
-from rlm.environments.constants import APT_PACKAGES, PIP_PACKAGES
-
-# =============================================================================
-# Default Modal Image
-# =============================================================================
-
-
-def get_default_image() -> modal.Image:
-    """
-    Build a default Modal image with common libraries for data science,
-    math, and general Python work.
-    """
-    return (
-        modal.Image.debian_slim(python_version="3.11")
-        .apt_install(*APT_PACKAGES)
-        .pip_install(*PIP_PACKAGES)
-    )
-
 
 # =============================================================================
 # Broker Server Script (runs inside sandbox, handles LLM request queue)
@@ -77,7 +67,7 @@ def enqueue():
 
 @app.route("/pending")
 def get_pending():
-    """Called by ModalREPL to get pending requests."""
+    """Called by E2BREPL to get pending requests."""
     with lock:
         pending = [
             {"id": rid, "request": entry["request"]}
@@ -88,7 +78,7 @@ def get_pending():
 
 @app.route("/respond", methods=["POST"])
 def respond():
-    """Called by ModalREPL to submit a response."""
+    """Called by E2BREPL to submit a response."""
     data = request.json
     request_id = data.get("id")
     response = data.get("response")
@@ -102,7 +92,7 @@ def respond():
     return jsonify({"error": "Request not found"}), 404
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, threaded=True)
+    app.run(host="0.0.0.0", port=8889, threaded=True)
 '''
 )
 
@@ -112,7 +102,7 @@ if __name__ == "__main__":
 # =============================================================================
 
 
-def _build_exec_script(code: str, broker_port: int = 8080, depth: int = 1) -> str:
+def _build_exec_script(code: str, broker_port: int = 8888) -> str:
     """
     Build a script that executes code with state persistence.
     LLM queries go through the local broker server.
@@ -145,7 +135,7 @@ def llm_query(prompt, model=None):
     try:
         response = requests.post(
             f"{{BROKER_URL}}/enqueue",
-            json={{"type": "single", "prompt": prompt, "model": model, "depth": {depth}}},
+            json={{"type": "single", "prompt": prompt, "model": model}},
             timeout=300,
         )
         data = response.json()
@@ -161,7 +151,7 @@ def llm_query_batched(prompts, model=None):
     try:
         response = requests.post(
             f"{{BROKER_URL}}/enqueue",
-            json={{"type": "batched", "prompts": prompts, "model": model, "depth": {depth}}},
+            json={{"type": "batched", "prompts": prompts, "model": model}},
             timeout=300,
         )
         data = response.json()
@@ -221,16 +211,7 @@ def FINAL_VAR(variable_name):
     variable_name = variable_name.strip().strip("\\"\\'")
     if variable_name in _locals:
         return str(_locals[variable_name])
-    available = [k for k in _locals.keys() if not k.startswith("_")]
-    if available:
-        return f"Error: Variable '{{variable_name}}' not found. Available variables: {{available}}. You must create and assign a variable BEFORE calling FINAL_VAR on it."
-    return f"Error: Variable '{{variable_name}}' not found. No variables have been created yet. You must create and assign a variable in a REPL block BEFORE calling FINAL_VAR on it."
-
-def SHOW_VARS():
-    available = {{k: type(v).__name__ for k, v in _locals.items() if not k.startswith("_")}}
-    if not available:
-        return "No variables created yet. Use ```repl``` blocks to create variables."
-    return f"Available variables: {{available}}"
+    return f"Error: Variable '{{variable_name}}' not found"
 
 _globals = {{
     "__builtins__": __builtins__,
@@ -238,7 +219,6 @@ _globals = {{
     "llm_query": llm_query,
     "llm_query_batched": llm_query_batched,
     "FINAL_VAR": FINAL_VAR,
-    "SHOW_VARS": SHOW_VARS,
 }}
 
 code = base64.b64decode("{code_b64}").decode()
@@ -279,46 +259,43 @@ print(json.dumps(result))
     )
 
 
-class ModalREPL(IsolatedEnv):
+class E2BREPL(IsolatedEnv):
     """
-    Modal REPL environment that runs Python code in a Modal Sandbox.
+    E2B REPL environment that runs Python code in E2B sandboxes.
 
-    Uses Modal tunnels for LLM communication:
-    - Sandbox runs a broker server exposed via encrypted_ports
-    - ModalREPL polls the broker for pending LLM requests
-    - ModalREPL forwards requests to the LM handler and posts responses back
+    Uses E2B's public URL feature for LLM communication:
+    - Sandbox runs a broker server exposed via get_host()
+    - E2BREPL polls the broker for pending LLM requests
+    - E2BREPL forwards requests to the LM handler and posts responses back
     """
 
-    BROKER_PORT = 8080
+    BROKER_PORT = 8889  # Use 8889 since E2B Code Interpreter uses 8888 for Jupyter
 
     def __init__(
         self,
-        app_name: str = "rlm-sandbox",
-        image: modal.Image | None = None,
-        timeout: int = 600,
+        timeout: int = 300,  # 5 minutes default (E2B uses seconds)
         lm_handler_address: tuple[str, int] | None = None,
         context_payload: dict | list | str | None = None,
         setup_code: str | None = None,
         persistent: bool = False,
-        depth: int = 1,
-        **kwargs,
+        **kwargs: Any,
     ):
         if persistent:
             raise NotImplementedError(
-                "Persistent REPLs are currently not supported for environment: ModalREPL"
+                "Persistent REPLs are currently not supported for environment: E2BREPL"
             )
-        super().__init__(persistent=persistent, depth=depth, **kwargs)
+        super().__init__(persistent=persistent, **kwargs)
 
-        self.app_name = app_name
         self.timeout = timeout
         self.lm_handler_address = lm_handler_address
 
-        self.image = image or get_default_image()
-
-        self.app = None
-        self.sandbox = None
-        self.broker_process = None
+        # Sandbox state
+        self.sandbox: Sandbox | None = None
+        self.sandbox_id: str | None = None
         self.broker_url: str | None = None
+        self.broker_process = None
+
+        # Polling thread for LLM requests
         self.poller_thread: threading.Thread | None = None
         self.poller_stop = threading.Event()
         self.pending_llm_calls: list[RLMChatCompletion] = []
@@ -333,37 +310,54 @@ class ModalREPL(IsolatedEnv):
             self.execute_code(setup_code)
 
     def setup(self):
-        """Create the Modal app, sandbox, broker, and start polling."""
-        self.app = modal.App.lookup(self.app_name, create_if_missing=True)
+        """Create the E2B sandbox, broker, and start polling."""
+        # Create the sandbox using the recommended Sandbox.create() API
+        self.sandbox = Sandbox.create(timeout=self.timeout)
+        self.sandbox_id = self.sandbox.sandbox_id
 
-        # Create sandbox with encrypted port for broker
-        self.sandbox = modal.Sandbox.create(
-            app=self.app,
-            image=self.image,
-            timeout=self.timeout,
-            encrypted_ports=[self.BROKER_PORT],
-        )
+        # Install dependencies for the broker
+        self.sandbox.commands.run("pip install flask requests dill")
 
-        # Start the broker server in the sandbox
-        self.broker_process = self.sandbox.exec(
-            "python",
-            "-c",
-            _BROKER_SCRIPT,
+        # Write the broker script to the sandbox
+        self.sandbox.files.write("/tmp/broker.py", _BROKER_SCRIPT)
+
+        # Start the broker as a background process
+        self.broker_process = self.sandbox.commands.run(
+            "python /tmp/broker.py",
+            background=True,
         )
 
         # Wait for broker to be ready
-        time.sleep(2)
+        self._wait_for_broker()
 
-        # Get the tunnel URL
-        tunnels = self.sandbox.tunnels()
-        if self.BROKER_PORT in tunnels:
-            self.broker_url = tunnels[self.BROKER_PORT].url
+        # Get the public URL for the broker port
+        host = self.sandbox.get_host(self.BROKER_PORT)
+        self.broker_url = f"https://{host}"
 
         # Start polling thread if we have an LM handler
         if self.lm_handler_address and self.broker_url:
             self.poller_stop.clear()
             self.poller_thread = threading.Thread(target=self._poll_broker, daemon=True)
             self.poller_thread.start()
+
+    def _wait_for_broker(self, max_attempts: int = 30):
+        """Wait for the broker to be ready by checking health endpoint."""
+        health_check_cmd = (
+            f'python -c "import requests; '
+            f"r = requests.get('http://127.0.0.1:{self.BROKER_PORT}/health', timeout=2); "
+            f'print(r.text)"'
+        )
+
+        for _ in range(max_attempts):
+            time.sleep(1)
+            try:
+                result = self.sandbox.commands.run(health_check_cmd)
+                if result.stdout and "ok" in result.stdout.lower():
+                    return
+            except Exception:
+                pass
+
+        raise RuntimeError("Broker failed to start within timeout")
 
     def _poll_broker(self):
         """Poll the broker for pending LLM requests and handle them."""
@@ -404,7 +398,7 @@ class ModalREPL(IsolatedEnv):
 
         if req_type == "single":
             prompt = req_data.get("prompt")
-            request = LMRequest(prompt=prompt, model=model, depth=self.depth)
+            request = LMRequest(prompt=prompt, model=model)
             response = send_lm_request(self.lm_handler_address, request)
 
             if not response.success:
@@ -418,9 +412,7 @@ class ModalREPL(IsolatedEnv):
 
         elif req_type == "batched":
             prompts = req_data.get("prompts", [])
-            responses = send_lm_request_batched(
-                self.lm_handler_address, prompts, model=model, depth=self.depth
-            )
+            responses = send_lm_request_batched(self.lm_handler_address, prompts, model=model)
 
             results = []
             for resp in responses:
@@ -448,20 +440,21 @@ class ModalREPL(IsolatedEnv):
         self.execute_code(context_code)
 
     def execute_code(self, code: str) -> REPLResult:
-        """Execute code in the Modal sandbox and return result."""
+        """Execute code in the E2B sandbox and return result."""
         start_time = time.perf_counter()
 
         # Clear pending LLM calls
         with self._calls_lock:
             self.pending_llm_calls.clear()
 
-        # Build and execute the script
-        script = _build_exec_script(code, self.BROKER_PORT, self.depth)
-        process = self.sandbox.exec("python", "-c", script)
+        # Build and write the script to sandbox
+        script = _build_exec_script(code, self.BROKER_PORT)
+        self.sandbox.files.write("/tmp/run_script.py", script)
 
-        # Read output
-        stdout = process.stdout.read()
-        stderr = process.stderr.read()
+        # Run the script
+        result = self.sandbox.commands.run("python /tmp/run_script.py", timeout=600)
+        stdout = result.stdout or ""
+        stderr = result.stderr or ""
 
         # Collect LLM calls made during this execution
         with self._calls_lock:
@@ -474,12 +467,12 @@ class ModalREPL(IsolatedEnv):
         try:
             lines = stdout.strip().split("\n")
             result_json = lines[-1] if lines else "{}"
-            result = json.loads(result_json)
+            parsed = json.loads(result_json)
 
             return REPLResult(
-                stdout=result.get("stdout", ""),
-                stderr=result.get("stderr", "") + stderr,
-                locals=result.get("locals", {}),
+                stdout=parsed.get("stdout", ""),
+                stderr=parsed.get("stderr", "") + stderr,
+                locals=parsed.get("locals", {}),
                 execution_time=execution_time,
                 rlm_calls=pending_calls,
             )
@@ -500,9 +493,10 @@ class ModalREPL(IsolatedEnv):
             self.poller_thread.join(timeout=2)
             self.poller_thread = None
 
+        # Kill the sandbox
         if self.sandbox is not None:
             try:
-                self.sandbox.terminate()
+                self.sandbox.kill()
             except Exception:
                 pass
             self.sandbox = None

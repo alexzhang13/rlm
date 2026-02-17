@@ -383,6 +383,48 @@ class VerbosePrinter:
 
         self.console.print()
         self.console.print(panel)
+
+    def print_compaction_status(
+        self,
+        current_tokens: int,
+        threshold_tokens: int,
+        max_tokens: int,
+    ) -> None:
+        """Print how close root context is to compaction threshold (before next turn)."""
+        if not self.enabled:
+            return
+        pct = (current_tokens / threshold_tokens * 100) if threshold_tokens else 0
+        line = Text()
+        line.append("Context: ", style=STYLE_MUTED)
+        line.append(f"{current_tokens:,}", style=STYLE_TEXT)
+        line.append(" / ", style=STYLE_MUTED)
+        line.append(f"{threshold_tokens:,}", style=STYLE_SECONDARY)
+        line.append(" tokens ", style=STYLE_MUTED)
+        line.append(f"({pct:.0f}% of compaction threshold)", style=STYLE_MUTED)
+        if current_tokens >= threshold_tokens:
+            line.append(" — compacting", style=STYLE_WARNING)
+        self.console.print(line)
+
+    def print_compaction(self) -> None:
+        """Print that context compaction (summarization) is running."""
+        if not self.enabled:
+            return
+
+        title = Text()
+        title.append("◐ ", style=STYLE_ACCENT)
+        title.append("Compaction", style=STYLE_SECONDARY)
+        title.append(" — summarizing context, continuing from summary", style=STYLE_MUTED)
+
+        self.console.print()
+        self.console.print(
+            Panel(
+                Text("Root context reached threshold. Summarizing and continuing."),
+                title=title,
+                title_align="left",
+                border_style=COLORS["muted"],
+                padding=(0, 1),
+            )
+        )
         self.console.print()
 
     def print_final_answer(self, answer: Any) -> None:

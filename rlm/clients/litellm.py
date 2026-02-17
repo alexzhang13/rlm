@@ -43,7 +43,7 @@ class LiteLLMClient(BaseLM):
         if not model:
             raise ValueError("Model name is required for LiteLLM client.")
 
-        kwargs = {"model": model, "messages": messages}
+        kwargs = {"model": model, "messages": messages, "timeout": self.timeout}
         if self.api_key:
             kwargs["api_key"] = self.api_key
         if self.api_base:
@@ -67,7 +67,7 @@ class LiteLLMClient(BaseLM):
         if not model:
             raise ValueError("Model name is required for LiteLLM client.")
 
-        kwargs = {"model": model, "messages": messages}
+        kwargs = {"model": model, "messages": messages, "timeout": self.timeout}
         if self.api_key:
             kwargs["api_key"] = self.api_key
         if self.api_base:

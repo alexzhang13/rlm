@@ -22,7 +22,7 @@ class LMRequestHandler(StreamRequestHandler):
             request_data = socket_recv(self.connection)
             if not isinstance(request_data, dict):
                 response = LMResponse.error_response("Request must be a JSON object")
-                socket_send(self.connection, response.to_dict())
+                self._safe_send(response)
                 return
 
             request = LMRequest.from_dict(request_data)
@@ -37,11 +37,26 @@ class LMRequestHandler(StreamRequestHandler):
             else:
                 response = LMResponse.error_response("Missing 'prompt' or 'prompts' in request.")
 
-            socket_send(self.connection, response.to_dict())
+            self._safe_send(response)
+
+        except (BrokenPipeError, ConnectionError, ConnectionResetError, OSError):
+            # Client disconnected - this is expected during parallel execution
+            # when workers complete and close their sockets. Silently ignore.
+            pass
 
         except Exception as e:
+            # Try to send error response, but don't fail if socket is broken
             response = LMResponse.error_response(str(e))
+            self._safe_send(response)
+
+    def _safe_send(self, response: LMResponse) -> bool:
+        """Send response, returning False if the socket is broken."""
+        try:
             socket_send(self.connection, response.to_dict())
+            return True
+        except (BrokenPipeError, ConnectionError, ConnectionResetError, OSError):
+            # Client disconnected - silently ignore
+            return False
 
     def _handle_single(self, request: LMRequest, handler: "LMHandler") -> LMResponse:
         """Handle a single prompt request."""

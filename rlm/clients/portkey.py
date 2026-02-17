@@ -21,8 +21,8 @@ class PortkeyClient(BaseLM):
         **kwargs,
     ):
         super().__init__(model_name=model_name, **kwargs)
-        self.client = Portkey(api_key=api_key, base_url=base_url)
-        self.async_client = AsyncPortkey(api_key=api_key, base_url=base_url)
+        self.client = Portkey(api_key=api_key, base_url=base_url, timeout=self.timeout)
+        self.async_client = AsyncPortkey(api_key=api_key, base_url=base_url, timeout=self.timeout)
         self.model_name = model_name
 
         # Per-model usage tracking

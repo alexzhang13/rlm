@@ -1,8 +1,7 @@
 include README.md
 include LICENSE
 include pyproject.toml
-recursive-include verifiers *.py
-recursive-include configs *.yaml *.yml *.json
+recursive-include rlm *.py
 global-exclude *.pyc
 global-exclude __pycache__
 global-exclude .DS_Store

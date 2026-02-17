@@ -1,6 +1,7 @@
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
-from typing import Any, Callable
+from typing import Any
 
 from rlm.clients import BaseLM, get_client
 from rlm.core.lm_handler import LMHandler
@@ -28,6 +29,7 @@ from rlm.utils.prompts import (
     build_user_prompt,
 )
 from rlm.utils.rlm_utils import filter_sensitive_keys
+from rlm.utils.token_utils import count_tokens, get_context_limit
 
 
 class BudgetExceededError(Exception):
@@ -89,7 +91,8 @@ class ErrorThresholdExceededError(Exception):
         self.last_error = last_error
         self.partial_answer = partial_answer
         super().__init__(
-            message or f"Error threshold exceeded: {error_count} consecutive errors (limit: {threshold})"
+            message
+            or f"Error threshold exceeded: {error_count} consecutive errors (limit: {threshold})"
         )
 
 
@@ -128,6 +131,10 @@ class RLM:
         logger: RLMLogger | None = None,
         verbose: bool = False,
         persistent: bool = False,
+        custom_tools: dict[str, Any] | None = None,
+        custom_sub_tools: dict[str, Any] | None = None,
+        compaction: bool = False,
+        compaction_threshold_pct: float = 0.85,
         on_subcall_start: Callable[[int, str, str], None] | None = None,
         on_subcall_complete: Callable[[int, str, float, str | None], None] | None = None,
         on_iteration_start: Callable[[int, int], None] | None = None,
@@ -152,6 +159,14 @@ class RLM:
             logger: The logger to use for the RLM.
             verbose: Whether to print verbose output in rich to console.
             persistent: If True, reuse the environment across completion() calls for multi-turn conversations.
+            custom_tools: Dict of custom functions/tools available in the REPL. Keys are function names,
+                values are callable functions. These are injected into the REPL globals.
+            custom_sub_tools: Dict of custom tools for sub-agents (llm_query calls). If None, inherits
+                from custom_tools. Pass an empty dict {} to disable tools for sub-agents.
+            compaction: If True, keep full root model history in REPL variable `history` and compact
+                when root context reaches compaction_threshold_pct of the model's context limit.
+            compaction_threshold_pct: When compaction is on, trigger summarization when root
+                message token count reaches this fraction of the model context limit (default 0.85).
             on_subcall_start: Callback fired when a child RLM starts. Args: (depth, model, prompt_preview).
             on_subcall_complete: Callback fired when a child RLM completes. Args: (depth, model, duration, error_or_none).
             on_iteration_start: Callback fired when an iteration starts. Args: (depth, iteration_num).
@@ -174,6 +189,14 @@ class RLM:
 
         self.other_backends = other_backends
         self.other_backend_kwargs = other_backend_kwargs
+
+        # Custom tools: functions available in the REPL environment
+        self.custom_tools = custom_tools
+        # Sub-tools: if None, inherit from custom_tools; if {}, no tools for sub-agents
+        self.custom_sub_tools = custom_sub_tools if custom_sub_tools is not None else custom_tools
+
+        self.compaction = compaction
+        self.compaction_threshold_pct = compaction_threshold_pct
 
         self.depth = depth
         self.max_depth = max_depth
@@ -273,6 +296,13 @@ class RLM:
             # For local environment with max_depth > 1, pass subcall callback for recursive RLM calls
             if self.environment_type == "local" and self.max_depth > 1:
                 env_kwargs["subcall_fn"] = self._subcall
+            # Pass custom tools to the environment
+            if self.custom_tools is not None:
+                env_kwargs["custom_tools"] = self.custom_tools
+            if self.custom_sub_tools is not None:
+                env_kwargs["custom_sub_tools"] = self.custom_sub_tools
+            if self.compaction and self.environment_type == "local":
+                env_kwargs["compaction"] = True
             environment: BaseEnv = get_environment(self.environment_type, env_kwargs)
 
             if self.persistent:
@@ -292,9 +322,15 @@ class RLM:
         """
         metadata = QueryMetadata(prompt)
         message_history = build_rlm_system_prompt(
-            system_prompt=self.system_prompt, query_metadata=metadata
+            system_prompt=self.system_prompt,
+            query_metadata=metadata,
+            custom_tools=self.custom_tools,
         )
-
+        if self.compaction:
+            message_history[0]["content"] += (
+                "\n\nThe full conversation history (trajectory segments and any summaries) "
+                "is available in the REPL variable `history` as a list."
+            )
         return message_history
 
     def completion(
@@ -324,6 +360,9 @@ class RLM:
         if self.depth >= self.max_depth:
             return self._fallback_answer(prompt)
 
+        if self.logger:
+            self.logger.clear_iterations()
+
         with self._spawn_completion_context(prompt) as (lm_handler, environment):
             message_history = self._setup_prompt(prompt)
 
@@ -345,6 +384,20 @@ class RLM:
                                     f"Timeout exceeded after iteration {i}: "
                                     f"{elapsed:.1f}s of {self.max_timeout:.1f}s limit"
                                 ),
+                            )
+
+                    # Compaction: check if context needs summarization
+                    if self.compaction and hasattr(environment, "append_compaction_entry"):
+                        current_tokens, threshold_tokens, max_tokens = self._get_compaction_status(
+                            message_history
+                        )
+                        self.verbose.print_compaction_status(
+                            current_tokens, threshold_tokens, max_tokens
+                        )
+                        if current_tokens >= threshold_tokens:
+                            self.verbose.print_compaction()
+                            message_history = self._compact_history(
+                                lm_handler, environment, message_history
                             )
 
                     # Current prompt = message history + additional prompt suffix
@@ -440,9 +493,16 @@ class RLM:
                             )
 
                     # Check if RLM is done and has a final answer.
-                    final_answer = find_final_answer(
-                        iteration.response, environment=environment
-                    )
+                    # Prefer FINAL_VAR result from REPL execution.
+                    final_answer = None
+                    for block in iteration.code_blocks:
+                        if getattr(block.result, "final_answer", None):
+                            final_answer = block.result.final_answer
+                            break
+                    if final_answer is None:
+                        final_answer = find_final_answer(
+                            iteration.response, environment=environment
+                        )
                     iteration.final_answer = final_answer
 
                     # Store as best partial answer (most recent response with content)
@@ -460,9 +520,7 @@ class RLM:
                         time_end = time.perf_counter()
                         usage = lm_handler.get_usage_summary()
                         self.verbose.print_final_answer(final_answer)
-                        self.verbose.print_summary(
-                            i + 1, time_end - time_start, usage.to_dict()
-                        )
+                        self.verbose.print_summary(i + 1, time_end - time_start, usage.to_dict())
 
                         # Store message history in persistent environment
                         if self.persistent and isinstance(environment, SupportsPersistence):
@@ -476,6 +534,7 @@ class RLM:
                             response=final_answer,
                             usage_summary=usage,
                             execution_time=time_end - time_start,
+                            metadata=self.logger.get_trajectory() if self.logger else None,
                         )
 
                     # Format the iteration for the next prompt.
@@ -483,24 +542,22 @@ class RLM:
 
                     # Update message history with the new messages.
                     message_history.extend(new_messages)
+                    if self.compaction and hasattr(environment, "append_compaction_entry"):
+                        environment.append_compaction_entry(new_messages)
 
             except KeyboardInterrupt:
-                self.verbose.print_limit_exceeded(
-                    "cancelled", "User interrupted execution"
-                )
+                self.verbose.print_limit_exceeded("cancelled", "User interrupted execution")
                 raise CancellationError(
                     partial_answer=self._best_partial_answer,
                     message="Execution cancelled by user (Ctrl+C)",
-                )
+                ) from None
 
             # Default behavior: we run out of iterations, provide one final answer
             time_end = time.perf_counter()
             final_answer = self._default_answer(message_history, lm_handler)
             usage = lm_handler.get_usage_summary()
             self.verbose.print_final_answer(final_answer)
-            self.verbose.print_summary(
-                self.max_iterations, time_end - time_start, usage.to_dict()
-            )
+            self.verbose.print_summary(self.max_iterations, time_end - time_start, usage.to_dict())
 
             # Store message history in persistent environment
             if self.persistent and isinstance(environment, SupportsPersistence):
@@ -514,7 +571,52 @@ class RLM:
                 response=final_answer,
                 usage_summary=usage,
                 execution_time=time_end - time_start,
+                metadata=self.logger.get_trajectory() if self.logger else None,
             )
+
+    def _get_compaction_status(self, message_history: list[dict[str, Any]]) -> tuple[int, int, int]:
+        """Return (current_tokens, threshold_tokens, max_tokens) for compaction."""
+        model_name = (
+            self.backend_kwargs.get("model_name", "unknown") if self.backend_kwargs else "unknown"
+        )
+        max_tokens = get_context_limit(model_name)
+        current_tokens = count_tokens(message_history, model_name)
+        threshold_tokens = int(self.compaction_threshold_pct * max_tokens)
+        return current_tokens, threshold_tokens, max_tokens
+
+    def _should_compact(self, message_history: list[dict[str, Any]]) -> bool:
+        """True when root message history is at or over the compaction threshold."""
+        current_tokens, threshold_tokens, _ = self._get_compaction_status(message_history)
+        return current_tokens >= threshold_tokens
+
+    def _compact_history(
+        self,
+        lm_handler: LMHandler,
+        environment: BaseEnv,
+        message_history: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """
+        Summarize current trajectory, append summary to REPL history, and return
+        a short message_history with the summary as the new starting point.
+        """
+        summary_prompt = message_history + [
+            {
+                "role": "user",
+                "content": "Very concisely summarize what you have been doing so far in 1–3 short paragraphs. Be extremely brief. This summary will be used to continue the conversation.",
+            }
+        ]
+        summary = lm_handler.completion(summary_prompt)
+        if hasattr(environment, "append_compaction_entry"):
+            environment.append_compaction_entry({"type": "summary", "content": summary})
+        # Keep system + initial assistant (metadata), then summary + continue
+        new_history = message_history[:2] + [
+            {"role": "assistant", "content": summary},
+            {
+                "role": "user",
+                "content": "Continue from the above summary. The full history (including this summary) is in the REPL variable `history`. Your next action:",
+            },
+        ]
+        return new_history
 
     def _completion_turn(
         self,
@@ -696,6 +798,9 @@ class RLM:
             # Don't propagate logger/verbose to children to reduce noise
             logger=None,
             verbose=False,
+            # Propagate custom tools to children (sub_tools become the child's tools)
+            custom_tools=self.custom_sub_tools,
+            custom_sub_tools=self.custom_sub_tools,
             # Propagate callbacks to children for nested tracking
             on_subcall_start=self.on_subcall_start,
             on_subcall_complete=self.on_subcall_complete,

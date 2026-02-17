@@ -175,6 +175,41 @@ class TestLocalREPLContext:
         repl.cleanup()
 
 
+class TestLocalREPLScaffoldRestoration:
+    """Tests that overwriting scaffold names (context, llm_query, etc.) is reverted after each execution."""
+
+    def test_context_restored_after_overwrite(self):
+        """If the model does context = 'something', the next execution still sees the real context."""
+        repl = LocalREPL(context_payload="original context content")
+        assert repl.locals["context"] == "original context content"
+
+        repl.execute_code('context = "hijacked"')
+        assert repl.locals["context"] == "original context content"
+
+        out = repl.execute_code("print(context)")
+        assert "original context content" in out.stdout
+        repl.cleanup()
+
+    def test_llm_query_restored_after_overwrite(self):
+        """If the model does llm_query = lambda x: 'hijacked', the next execution still has real llm_query."""
+        repl = LocalREPL()
+        repl.execute_code("llm_query = lambda x: 'hijacked'")
+
+        repl.execute_code("r = llm_query('test')")
+        assert "Error" in repl.locals["r"]
+        repl.cleanup()
+
+    def test_final_var_restored_after_overwrite(self):
+        """If the model overwrites FINAL_VAR, the next execution still has the real FINAL_VAR."""
+        repl = LocalREPL()
+        repl.execute_code("answer = 42")
+        repl.execute_code("FINAL_VAR = lambda x: 'overwritten'")
+
+        repl.execute_code("result = FINAL_VAR('answer')")
+        assert repl.locals["result"] == "42"
+        repl.cleanup()
+
+
 class TestLocalREPLCleanup:
     """Tests for cleanup behavior."""
 

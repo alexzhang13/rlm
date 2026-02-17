@@ -36,7 +36,9 @@ class GeminiClient(BaseLM):
                 "Gemini API key is required. Set GEMINI_API_KEY env var or pass api_key."
             )
 
-        self.client = genai.Client(api_key=api_key)
+        # Configure HTTP options with timeout
+        http_options = types.HttpOptions(timeout=int(self.timeout * 1000))  # milliseconds
+        self.client = genai.Client(api_key=api_key, http_options=http_options)
         self.model_name = model_name
 
         # Per-model usage tracking

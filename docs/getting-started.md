@@ -142,6 +142,7 @@ This will display:
 | `other_backend_kwargs` | `list` | `None` | Configs for additional backends |
 | `logger` | `RLMLogger` | `None` | Logger for trajectory tracking |
 | `verbose` | `bool` | `False` | Enable console output |
+| `custom_tools` | `dict` | `None` | Custom functions/data available in REPL |
 
 ### The `completion()` Method
 
@@ -297,6 +298,90 @@ rlm = RLM(
         "model_name": "meta-llama/Llama-3-70b",
     },
 )
+```
+
+---
+
+## Custom Tools
+
+You can provide custom functions and data that the RLM can use in its REPL environment. This allows you to give the model access to domain-specific tools, APIs, or helper functions.
+
+### Basic Usage
+
+```python
+def fetch_weather(city: str) -> str:
+    """Fetch weather data for a city."""
+    # Your API call here
+    return f"Weather in {city}: Sunny, 72°F"
+
+def calculate_shipping(weight: float, distance: float) -> float:
+    """Calculate shipping cost."""
+    return weight * 0.5 + distance * 0.1
+
+rlm = RLM(
+    backend="openai",
+    backend_kwargs={"model_name": "gpt-4o"},
+    custom_tools={
+        "fetch_weather": fetch_weather,
+        "calculate_shipping": calculate_shipping,
+        "API_KEY": "your-api-key",  # Non-callable values become variables
+    },
+)
+
+result = rlm.completion("What's the weather in Tokyo and calculate shipping for 10kg over 500km?")
+```
+
+Inside the REPL, the model can now call:
+```python
+weather = fetch_weather("Tokyo")
+cost = calculate_shipping(10, 500)
+```
+
+### Tool Descriptions
+
+You can provide descriptions for your tools that will be included in the system prompt, helping the model understand what each tool does:
+
+```python
+rlm = RLM(
+    backend="openai",
+    backend_kwargs={"model_name": "gpt-4o"},
+    custom_tools={
+        # Dict format: {"tool": callable_or_value, "description": "..."}
+        "fetch_weather": {"tool": fetch_weather, "description": "Fetch current weather data for a city name"},
+        "calculate_shipping": {"tool": calculate_shipping, "description": "Calculate shipping cost given weight (kg) and distance (km)"},
+        "API_KEY": {"tool": "your-api-key", "description": "API key for the weather service"},
+    },
+)
+```
+
+The descriptions are automatically added to the system prompt:
+```
+6. Custom tools and data available in the REPL:
+- `fetch_weather`: Fetch current weather data for a city name
+- `calculate_shipping`: Calculate shipping cost given weight (kg) and distance (km)
+- `API_KEY`: API key for the weather service
+```
+
+### Isolated Environments (Modal, Daytona)
+
+For isolated environments, custom tools must be serializable. You can provide:
+
+1. **Code strings** - Python code that defines the function:
+```python
+custom_tools = {
+    "helper": '''
+def helper(x):
+    return x * 2
+''',
+}
+```
+
+2. **Serializable data** - JSON-compatible values (strings, numbers, dicts, lists):
+```python
+custom_tools = {
+    "CONFIG": {"api_url": "https://api.example.com", "timeout": 30},
+    "ALLOWED_CITIES": ["Tokyo", "London", "New York"],
+}
 ```
 
 ---
