@@ -268,31 +268,69 @@ class VerbosePrinter:
         prompt_preview: str,
         response_preview: str,
         execution_time: float | None = None,
+        metadata: dict | None = None,
     ) -> None:
-        """Print a sub-call to another model."""
+        """Print a sub-call to another model.
+
+        Args:
+            model: The model name used for the sub-call.
+            prompt_preview: Preview of the prompt sent.
+            response_preview: Preview of the response received.
+            execution_time: Time taken for the sub-call.
+            metadata: If present, this was a recursive RLM call (rlm_query).
+                      Contains "iterations" and "run_metadata" keys.
+        """
         if not self.enabled:
             return
 
+        is_rlm_call = metadata is not None
+
         # Header
         header = Text()
-        header.append("  ↳ ", style=STYLE_SECONDARY)
-        header.append("Sub-call: ", style=STYLE_SECONDARY)
+        if is_rlm_call:
+            header.append("  ↳ ", style=STYLE_SECONDARY)
+            header.append("RLM Sub-call: ", style=STYLE_SECONDARY)
+        else:
+            header.append("  ↳ ", style=STYLE_MUTED)
+            header.append("LLM Sub-call: ", style=STYLE_MUTED)
         header.append(_to_str(model), style=STYLE_ACCENT)
         if execution_time:
             header.append(f"  ({execution_time:.2f}s)", style=STYLE_MUTED)
 
         # Content
         content = Text()
-        content.append("Prompt: ", style=STYLE_MUTED)
-        content.append(_to_str(prompt_preview), style=STYLE_TEXT)
-        content.append("\nResponse: ", style=STYLE_MUTED)
-        content.append(_to_str(response_preview), style=STYLE_TEXT)
 
+        # Show child RLM summary when metadata is available
+        if is_rlm_call:
+            iterations = metadata.get("iterations", [])
+            iteration_count = len(iterations)
+            content.append(f"Iterations: {iteration_count}", style=STYLE_WARNING)
+            run_meta = metadata.get("run_metadata", {})
+            depth = run_meta.get("depth")
+            if depth is not None:
+                content.append(f"  |  Depth: {depth}", style=STYLE_MUTED)
+            content.append("\n")
+
+        # Truncate previews for readability
+        max_preview = 200
+        prompt_str = _to_str(prompt_preview)
+        response_str = _to_str(response_preview)
+        if len(prompt_str) > max_preview:
+            prompt_str = prompt_str[:max_preview] + "…"
+        if len(response_str) > max_preview:
+            response_str = response_str[:max_preview] + "…"
+
+        content.append("Prompt: ", style=STYLE_MUTED)
+        content.append(prompt_str, style=STYLE_TEXT)
+        content.append("\nResponse: ", style=STYLE_MUTED)
+        content.append(response_str, style=STYLE_TEXT)
+
+        border = COLORS["secondary"] if is_rlm_call else COLORS["muted"]
         panel = Panel(
             content,
             title=header,
             title_align="left",
-            border_style=COLORS["secondary"],
+            border_style=border,
             padding=(0, 1),
         )
         self.console.print(panel)
@@ -322,6 +360,7 @@ class VerbosePrinter:
                     prompt_preview=_to_str(call.prompt) if call.prompt else "",
                     response_preview=_to_str(call.response) if call.response else "",
                     execution_time=call.execution_time,
+                    metadata=call.metadata,
                 )
 
     def print_budget_exceeded(self, spent: float, budget: float) -> None:

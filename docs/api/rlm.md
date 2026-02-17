@@ -28,7 +28,7 @@ from rlm import RLM
 
 rlm = RLM(
     backend="openai",
-    backend_kwargs={"model_name": "gpt-5"},
+    backend_kwargs={"model_name": "gpt-5-nano"},
 )
 ```
 
@@ -55,10 +55,14 @@ RLM(
     logger: RLMLogger | None = None,
     verbose: bool = False,
     persistent: bool = False,
-    on_subcall_start: Callable[[int, str, str], None] | None = None,
-    on_subcall_complete: Callable[[int, str, float, str | None], None] | None = None,
-    on_iteration_start: Callable[[int, int], None] | None = None,
-    on_iteration_complete: Callable[[int, int, float], None] | None = None,
+    custom_tools: dict[str, Any] | None = None,
+    custom_sub_tools: dict[str, Any] | None = None,
+    compaction: bool = False,
+    compaction_threshold_pct: float = 0.85,
+    on_subcall_start: Callable | None = None,
+    on_subcall_complete: Callable | None = None,
+    on_iteration_start: Callable | None = None,
+    on_iteration_complete: Callable | None = None,
 )
 ```
 
@@ -67,7 +71,7 @@ RLM(
 #### `backend`
 {: .no_toc }
 
-**Type:** `Literal["openai", "portkey", "openrouter", "vllm", "litellm", "anthropic"]`  
+**Type:** `Literal["openai", "portkey", "openrouter", "vllm", "litellm", "anthropic"]`
 **Default:** `"openai"`
 
 The LM provider backend to use for the root model.
@@ -88,7 +92,7 @@ rlm = RLM(backend="vllm", ...)
 #### `backend_kwargs`
 {: .no_toc }
 
-**Type:** `dict[str, Any] | None`  
+**Type:** `dict[str, Any] | None`
 **Default:** `None`
 
 Configuration passed to the LM client. Required fields vary by backend:
@@ -115,23 +119,26 @@ backend_kwargs = {
 #### `environment`
 {: .no_toc }
 
-**Type:** `Literal["local", "modal", "docker"]`  
+**Type:** `Literal["local", "docker", "modal", "prime", "daytona", "e2b"]`
 **Default:** `"local"`
 
 The execution environment for running generated code.
 
 | Environment | Description |
 |:------------|:------------|
-| `local` | Same-process execution with sandboxed builtins |
+| `local` | Same-process execution with sandboxed builtins (default) |
 | `docker` | Containerized execution in Docker |
 | `modal` | Cloud sandbox via Modal |
+| `prime` | Cloud sandbox via Prime Intellect |
+| `daytona` | Cloud sandbox via Daytona |
+| `e2b` | Cloud sandbox via E2B |
 
 ---
 
 #### `environment_kwargs`
 {: .no_toc }
 
-**Type:** `dict[str, Any] | None`  
+**Type:** `dict[str, Any] | None`
 **Default:** `None`
 
 Configuration for the execution environment:
@@ -164,19 +171,24 @@ environment_kwargs = {
 #### `max_depth`
 {: .no_toc }
 
-**Type:** `int`  
+**Type:** `int`
 **Default:** `1`
 
-Maximum recursion depth for nested RLM calls. Depth>1 recursive subcalls are supported in the local environment via `llm_query()`.
+Maximum recursion depth for nested RLM calls. When `max_depth > 1`, the REPL provides `rlm_query()` and `rlm_query_batched()` functions that spawn child RLMs with their own REPL environments.
 
-When `depth >= max_depth`, the RLM falls back to a regular LM completion.
+When `depth >= max_depth`, `rlm_query()` falls back to a plain `llm_query()` call (no REPL, no iteration).
+
+```python
+# Enable one level of recursive sub-calls
+rlm = RLM(..., max_depth=2)
+```
 
 ---
 
 #### `max_iterations`
 {: .no_toc }
 
-**Type:** `int`  
+**Type:** `int`
 **Default:** `30`
 
 Maximum number of REPL iterations before forcing a final answer.
@@ -188,10 +200,7 @@ Each iteration consists of:
 
 ```python
 # For complex tasks, allow more iterations
-rlm = RLM(
-    ...,
-    max_iterations=50,
-)
+rlm = RLM(..., max_iterations=50)
 ```
 
 ---
@@ -199,63 +208,61 @@ rlm = RLM(
 #### `max_budget`
 {: .no_toc }
 
-**Type:** `float | None`  
+**Type:** `float | None`
 **Default:** `None`
 
-Maximum total USD cost for a completion. If exceeded, RLM raises `BudgetExceededError`. This requires a backend that reports cost.
+Maximum total USD cost for a completion. If exceeded, raises `BudgetExceededError`. Requires a backend that reports cost.
 
 ---
 
 #### `max_timeout`
 {: .no_toc }
 
-**Type:** `float | None`  
+**Type:** `float | None`
 **Default:** `None`
 
-Maximum wall-clock seconds for a completion. If exceeded, RLM raises `TimeoutExceededError`.
+Maximum wall-clock seconds for a completion. If exceeded, raises `TimeoutExceededError`. The partial answer (if any) is available on the exception.
 
 ---
 
 #### `max_tokens`
 {: .no_toc }
 
-**Type:** `int | None`  
+**Type:** `int | None`
 **Default:** `None`
 
-Maximum total tokens (input + output) for a completion. If exceeded, RLM raises `TokenLimitExceededError`.
+Maximum total tokens (input + output) for a completion. If exceeded, raises `TokenLimitExceededError`.
 
 ---
 
 #### `max_errors`
 {: .no_toc }
 
-**Type:** `int | None`  
+**Type:** `int | None`
 **Default:** `None`
 
-Maximum consecutive REPL errors before aborting. If exceeded, RLM raises `ErrorThresholdExceededError`.
+Maximum consecutive REPL errors before aborting. The error counter resets on a successful execution. If exceeded, raises `ErrorThresholdExceededError`.
 
 ---
 
 #### `custom_system_prompt`
 {: .no_toc }
 
-**Type:** `str | None`  
+**Type:** `str | None`
 **Default:** `None`
 
 Override the default RLM system prompt. The default prompt instructs the LM on:
 - How to use the `context` variable
-- How to call `llm_query()` and `llm_query_batched()`
-- How to signal completion with `FINAL()`
+- How to call `llm_query()` / `llm_query_batched()` for plain LM calls
+- How to call `rlm_query()` / `rlm_query_batched()` for recursive sub-calls
+- How to signal completion with `FINAL()` or `FINAL_VAR()`
 
 ```python
 custom_prompt = """You are a data analysis expert.
 Use the REPL to analyze the context variable.
 When done, output FINAL(your answer)."""
 
-rlm = RLM(
-    ...,
-    custom_system_prompt=custom_prompt,
-)
+rlm = RLM(..., custom_system_prompt=custom_prompt)
 ```
 
 ---
@@ -263,26 +270,24 @@ rlm = RLM(
 #### `other_backends` / `other_backend_kwargs`
 {: .no_toc }
 
-**Type:** `list[str] | None` / `list[dict] | None`  
+**Type:** `list[str] | None` / `list[dict] | None`
 **Default:** `None`
 
-Register additional LM backends available for sub-calls via `llm_query()`.
+Register additional LM backends. The first `other_backend` is used as the default for depth-routed sub-calls (e.g. `llm_query()` calls from code at depth > 0 are routed to the other backend). Additional backends are registered by model name and can be selected explicitly.
 
 ```python
 rlm = RLM(
     backend="openai",
     backend_kwargs={"model_name": "gpt-4o"},
-    other_backends=["anthropic", "openai"],
+    other_backends=["anthropic"],
     other_backend_kwargs=[
         {"model_name": "claude-sonnet-4-20250514"},
-        {"model_name": "gpt-4o-mini"},
     ],
 )
 
 # Inside REPL, code can call:
-# llm_query(prompt)  # Uses default (gpt-4o)
-# llm_query(prompt, model="claude-sonnet-4-20250514")  # Uses Claude
-# llm_query(prompt, model="gpt-4o-mini")  # Uses GPT-4o-mini
+# llm_query(prompt)  # Routed to other_backend (Claude) at depth > 0
+# llm_query(prompt, model="gpt-4o")  # Explicit model override
 ```
 
 ---
@@ -290,15 +295,20 @@ rlm = RLM(
 #### `logger`
 {: .no_toc }
 
-**Type:** `RLMLogger | None`  
+**Type:** `RLMLogger | None`
 **Default:** `None`
 
-Logger for saving iteration trajectories to disk.
+Logger for capturing trajectory metadata. When provided, the returned `RLMChatCompletion.metadata` field contains the full trajectory (iterations, code blocks, sub-calls).
 
 ```python
 from rlm.logger import RLMLogger
 
+# In-memory only (trajectory on result.metadata)
+logger = RLMLogger()
+
+# Also save to disk (JSONL for the visualizer)
 logger = RLMLogger(log_dir="./logs")
+
 rlm = RLM(..., logger=logger)
 ```
 
@@ -307,7 +317,7 @@ rlm = RLM(..., logger=logger)
 #### `verbose`
 {: .no_toc }
 
-**Type:** `bool`  
+**Type:** `bool`
 **Default:** `False`
 
 Enable rich console output showing:
@@ -315,6 +325,98 @@ Enable rich console output showing:
 - Each iteration's response
 - Code execution results
 - Final answer and statistics
+
+---
+
+#### `persistent`
+{: .no_toc }
+
+**Type:** `bool`
+**Default:** `False`
+
+When enabled, reuses the same environment across multiple `completion()` calls. This enables multi-turn conversations where each call adds a new context and the model retains all previous variables and state.
+
+Contexts are versioned (`context_0`, `context_1`, ...) with `context` always aliasing `context_0`. Conversation histories from previous calls are available as `history_0`, `history_1`, etc.
+
+Supports the context manager protocol for automatic cleanup:
+
+```python
+with RLM(..., persistent=True) as rlm:
+    result1 = rlm.completion("First context")
+    result2 = rlm.completion("Second context")  # Can access context_0 and context_1
+```
+
+---
+
+#### `custom_tools`
+{: .no_toc }
+
+**Type:** `dict[str, Any] | None`
+**Default:** `None`
+
+Custom functions and data available in the REPL environment. Callable values are added to globals (callable by the model), non-callable values are added to locals (accessible as variables).
+
+Two formats are supported:
+
+```python
+custom_tools = {
+    # Plain value
+    "fetch_data": my_fetch_function,
+    "API_KEY": "sk-...",
+
+    # With description (shown in system prompt)
+    "calculator": {
+        "tool": calc_function,
+        "description": "Performs arithmetic calculations",
+    },
+}
+```
+
+Reserved names (`llm_query`, `rlm_query`, `context`, `history`, `FINAL_VAR`, `SHOW_VARS`, and their batched variants) cannot be used as tool names.
+
+---
+
+#### `custom_sub_tools`
+{: .no_toc }
+
+**Type:** `dict[str, Any] | None`
+**Default:** `None`
+
+Separate set of custom tools for child RLMs spawned via `rlm_query()`. If `None`, children inherit the parent's `custom_tools`. Pass an empty dict `{}` to disable custom tools for children.
+
+---
+
+#### `compaction`
+{: .no_toc }
+
+**Type:** `bool`
+**Default:** `False`
+
+When enabled, automatically summarizes the conversation history when token usage exceeds `compaction_threshold_pct` of the model's context window. The full history (including summaries) is available in the REPL as the `history` variable.
+
+---
+
+#### `compaction_threshold_pct`
+{: .no_toc }
+
+**Type:** `float`
+**Default:** `0.85`
+
+Fraction of the model's context window that triggers compaction. Only used when `compaction=True`.
+
+---
+
+#### Event Callbacks
+{: .no_toc }
+
+Optional callbacks for monitoring execution progress:
+
+| Callback | Signature | Triggered when |
+|:---------|:----------|:---------------|
+| `on_iteration_start` | `(depth: int, iteration_num: int)` | An iteration begins |
+| `on_iteration_complete` | `(depth: int, iteration_num: int, duration: float)` | An iteration completes |
+| `on_subcall_start` | `(depth: int, model: str, prompt_preview: str)` | A child RLM is spawned |
+| `on_subcall_complete` | `(depth: int, model: str, duration: float, error: str \| None)` | A child RLM finishes |
 
 ---
 
@@ -356,10 +458,10 @@ result = rlm.completion(["doc1", "doc2", "doc3"])
 **`root_prompt`**
 {: .no_toc }
 
-Optional short prompt shown to the root LM. Useful for Q&A tasks where the question should be visible throughout.
+Optional short prompt shown to the root LM on every iteration. Useful for Q&A tasks where the question should be visible throughout.
 
 ```python
-# The context is the document, but the LM sees the question
+# The context is the document, but the LM sees the question each iteration
 result = rlm.completion(
     prompt=long_document,
     root_prompt="What is the main theme of this document?"
@@ -373,11 +475,12 @@ result = rlm.completion(
 ```python
 @dataclass
 class RLMChatCompletion:
-    root_model: str           # Model name used
-    prompt: str | dict        # Original input
-    response: str             # Final answer
+    root_model: str              # Model name used
+    prompt: str | dict           # Original input
+    response: str                # Final answer
     usage_summary: UsageSummary  # Token usage
-    execution_time: float     # Total seconds
+    execution_time: float        # Total seconds
+    metadata: dict | None        # Full trajectory when logger is provided
 ```
 
 #### Example
@@ -389,9 +492,14 @@ result = rlm.completion(
 
 print(result.response)          # "158"
 print(result.execution_time)    # 12.34
+print(result.metadata)          # Trajectory dict (if logger provided), else None
 print(result.usage_summary.to_dict())
 # {'model_usage_summaries': {'gpt-4o': {'total_calls': 5, ...}}}
 ```
+
+### `close()`
+
+Clean up persistent environment resources. Called automatically when using the context manager protocol (`with RLM(...) as rlm:`).
 
 ---
 
@@ -409,6 +517,7 @@ result.prompt          # Original input
 result.response        # Final answer string
 result.execution_time  # Total time in seconds
 result.usage_summary   # UsageSummary object
+result.metadata        # Full trajectory dict (if logger provided)
 ```
 
 ### `UsageSummary`
@@ -431,16 +540,29 @@ usage.to_dict()
 
 ---
 
+## REPL Functions
+
+The following functions are available to model-generated code inside the REPL:
+
+| Function | Description |
+|:---------|:------------|
+| `llm_query(prompt, model=None)` | Single plain LM completion. Fast, no REPL or iteration. |
+| `llm_query_batched(prompts, model=None)` | Multiple plain LM completions concurrently. |
+| `rlm_query(prompt, model=None)` | Spawn a child RLM with its own REPL for deeper thinking. Falls back to `llm_query` at max depth. |
+| `rlm_query_batched(prompts, model=None)` | Spawn multiple child RLMs. Falls back to `llm_query_batched` at max depth. |
+| `FINAL_VAR(variable_name)` | Return a REPL variable as the final answer. |
+| `SHOW_VARS()` | List all user-created variables in the REPL. |
+| `print(...)` | Print output visible to the model in the next iteration. |
+
+---
+
 ## Error Handling
 
 RLM follows a "fail fast" philosophy:
 
 ```python
 # Missing required argument
-rlm = RLM(
-    backend="vllm",
-    backend_kwargs={"model_name": "llama"},
-)
+rlm = RLM(backend="vllm", backend_kwargs={"model_name": "llama"})
 # Raises: AssertionError: base_url is required for vLLM
 
 # Unknown backend
@@ -448,13 +570,30 @@ rlm = RLM(backend="unknown")
 # Raises: ValueError: Unknown backend: unknown
 ```
 
-If the RLM exhausts `max_iterations` without finding a `FINAL()` answer, it prompts the LM one more time to provide a final answer based on the conversation history.
+If the RLM exhausts `max_iterations` without finding a `FINAL()` / `FINAL_VAR()` answer, it prompts the LM one more time to provide a final answer based on the conversation history.
 
-RLM also raises explicit exceptions when limits are exceeded:
-- `BudgetExceededError`
-- `TimeoutExceededError`
-- `TokenLimitExceededError`
-- `ErrorThresholdExceededError`
+RLM raises explicit exceptions when limits are exceeded:
+
+| Exception | Raised when | Key attributes |
+|:----------|:------------|:---------------|
+| `BudgetExceededError` | `max_budget` exceeded | `spent`, `budget` |
+| `TimeoutExceededError` | `max_timeout` exceeded | `elapsed`, `timeout`, `partial_answer` |
+| `TokenLimitExceededError` | `max_tokens` exceeded | `tokens_used`, `token_limit`, `partial_answer` |
+| `ErrorThresholdExceededError` | `max_errors` consecutive errors | `error_count`, `threshold`, `last_error`, `partial_answer` |
+| `CancellationError` | `KeyboardInterrupt` during completion | `partial_answer` |
+
+All exceptions are importable from the top-level package:
+
+```python
+from rlm import RLM, TimeoutExceededError, CancellationError
+
+try:
+    result = rlm.completion(prompt)
+except TimeoutExceededError as e:
+    print(f"Timed out after {e.elapsed:.1f}s, partial: {e.partial_answer}")
+except CancellationError as e:
+    print(f"Cancelled, partial: {e.partial_answer}")
+```
 
 ---
 
@@ -462,7 +601,7 @@ RLM also raises explicit exceptions when limits are exceeded:
 
 Each `completion()` call:
 1. Spawns its own `LMHandler` socket server
-2. Creates a fresh environment instance
+2. Creates a fresh environment instance (unless persistent)
 3. Cleans up both when done
 
 This makes `completion()` calls independent, but the `RLM` instance itself should not be shared across threads without external synchronization.
@@ -476,7 +615,7 @@ import os
 from rlm import RLM
 from rlm.logger import RLMLogger
 
-logger = RLMLogger(log_dir="./logs", file_name="analysis")
+logger = RLMLogger(log_dir="./logs")
 
 rlm = RLM(
     # Primary model
@@ -485,24 +624,35 @@ rlm = RLM(
         "api_key": os.getenv("ANTHROPIC_API_KEY"),
         "model_name": "claude-sonnet-4-20250514",
     },
-    
+
     # Execution environment
-    environment="docker",
-    environment_kwargs={
-        "image": "python:3.11-slim",
-    },
-    
-    # Additional models for sub-calls
+    environment="local",
+
+    # Additional model for sub-calls (routed at depth > 0)
     other_backends=["openai"],
     other_backend_kwargs=[{
         "api_key": os.getenv("OPENAI_API_KEY"),
         "model_name": "gpt-4o-mini",
     }],
-    
-    # Behavior
+
+    # Recursion: allow one level of child RLMs via rlm_query()
+    max_depth=2,
     max_iterations=40,
-    max_depth=1,
-    
+
+    # Limits
+    max_timeout=120.0,
+    max_budget=1.0,
+    max_errors=5,
+
+    # Custom tools available in the REPL
+    custom_tools={
+        "fetch_data": {"tool": my_fetch_fn, "description": "Fetch data from API"},
+    },
+
+    # Compaction for long conversations
+    compaction=True,
+    compaction_threshold_pct=0.85,
+
     # Debugging
     logger=logger,
     verbose=True,
@@ -510,6 +660,9 @@ rlm = RLM(
 
 result = rlm.completion(
     prompt=massive_document,
-    root_prompt="Summarize the key findings"
+    root_prompt="Summarize the key findings",
 )
+
+print(result.response)
+print(result.metadata)  # Full trajectory (iterations, sub-calls, etc.)
 ```

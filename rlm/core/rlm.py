@@ -17,6 +17,13 @@ from rlm.core.types import (
 )
 from rlm.environments import BaseEnv, SupportsPersistence, get_environment
 from rlm.logger import RLMLogger, VerbosePrinter
+from rlm.utils.exceptions import (
+    BudgetExceededError,
+    CancellationError,
+    ErrorThresholdExceededError,
+    TimeoutExceededError,
+    TokenLimitExceededError,
+)
 from rlm.utils.parsing import (
     find_code_blocks,
     find_final_answer,
@@ -30,78 +37,6 @@ from rlm.utils.prompts import (
 )
 from rlm.utils.rlm_utils import filter_sensitive_keys
 from rlm.utils.token_utils import count_tokens, get_context_limit
-
-
-class BudgetExceededError(Exception):
-    """Raised when the RLM execution exceeds the maximum budget."""
-
-    def __init__(self, spent: float, budget: float, message: str | None = None):
-        self.spent = spent
-        self.budget = budget
-        super().__init__(message or f"Budget exceeded: spent ${spent:.6f} of ${budget:.6f} budget")
-
-
-class TimeoutExceededError(Exception):
-    """Raised when the RLM execution exceeds the maximum timeout."""
-
-    def __init__(
-        self,
-        elapsed: float,
-        timeout: float,
-        partial_answer: str | None = None,
-        message: str | None = None,
-    ):
-        self.elapsed = elapsed
-        self.timeout = timeout
-        self.partial_answer = partial_answer
-        super().__init__(message or f"Timeout exceeded: {elapsed:.1f}s of {timeout:.1f}s limit")
-
-
-class TokenLimitExceededError(Exception):
-    """Raised when the RLM execution exceeds the maximum token limit."""
-
-    def __init__(
-        self,
-        tokens_used: int,
-        token_limit: int,
-        partial_answer: str | None = None,
-        message: str | None = None,
-    ):
-        self.tokens_used = tokens_used
-        self.token_limit = token_limit
-        self.partial_answer = partial_answer
-        super().__init__(
-            message or f"Token limit exceeded: {tokens_used:,} of {token_limit:,} tokens"
-        )
-
-
-class ErrorThresholdExceededError(Exception):
-    """Raised when the RLM encounters too many consecutive errors."""
-
-    def __init__(
-        self,
-        error_count: int,
-        threshold: int,
-        last_error: str | None = None,
-        partial_answer: str | None = None,
-        message: str | None = None,
-    ):
-        self.error_count = error_count
-        self.threshold = threshold
-        self.last_error = last_error
-        self.partial_answer = partial_answer
-        super().__init__(
-            message
-            or f"Error threshold exceeded: {error_count} consecutive errors (limit: {threshold})"
-        )
-
-
-class CancellationError(Exception):
-    """Raised when the RLM execution is cancelled by the user."""
-
-    def __init__(self, partial_answer: str | None = None, message: str | None = None):
-        self.partial_answer = partial_answer
-        super().__init__(message or "Execution cancelled by user")
 
 
 class RLM:
@@ -369,22 +304,7 @@ class RLM:
             try:
                 for i in range(self.max_iterations):
                     # Check timeout before each iteration
-                    if self.max_timeout is not None:
-                        elapsed = time.perf_counter() - time_start
-                        if elapsed > self.max_timeout:
-                            self.verbose.print_limit_exceeded(
-                                "timeout",
-                                f"{elapsed:.1f}s of {self.max_timeout:.1f}s",
-                            )
-                            raise TimeoutExceededError(
-                                elapsed=elapsed,
-                                timeout=self.max_timeout,
-                                partial_answer=self._best_partial_answer,
-                                message=(
-                                    f"Timeout exceeded after iteration {i}: "
-                                    f"{elapsed:.1f}s of {self.max_timeout:.1f}s limit"
-                                ),
-                            )
+                    self._check_timeout(i, time_start)
 
                     # Compaction: check if context needs summarization
                     if self.compaction and hasattr(environment, "append_compaction_entry"):
@@ -421,76 +341,8 @@ class RLM:
                         environment=environment,
                     )
 
-                    # Track errors from code execution (check stderr for errors)
-                    iteration_had_error = False
-                    for code_block in iteration.code_blocks:
-                        if code_block.result and code_block.result.stderr:
-                            iteration_had_error = True
-                            self._last_error = code_block.result.stderr
-                            break
-
-                    if iteration_had_error:
-                        self._consecutive_errors += 1
-                    else:
-                        self._consecutive_errors = 0  # Reset on success
-
-                    # Check error threshold
-                    if self.max_errors is not None and self._consecutive_errors >= self.max_errors:
-                        self.verbose.print_limit_exceeded(
-                            "errors",
-                            f"{self._consecutive_errors} consecutive errors (limit: {self.max_errors})",
-                        )
-                        raise ErrorThresholdExceededError(
-                            error_count=self._consecutive_errors,
-                            threshold=self.max_errors,
-                            last_error=self._last_error,
-                            partial_answer=self._best_partial_answer,
-                            message=(
-                                "Error threshold exceeded: "
-                                f"{self._consecutive_errors} consecutive errors "
-                                f"(limit: {self.max_errors})"
-                            ),
-                        )
-
-                    # Check budget after each iteration
-                    if self.max_budget is not None:
-                        current_usage = lm_handler.get_usage_summary()
-                        current_cost = current_usage.total_cost or 0.0
-                        self._cumulative_cost = current_cost
-                        if self._cumulative_cost > self.max_budget:
-                            self.verbose.print_budget_exceeded(
-                                self._cumulative_cost, self.max_budget
-                            )
-                            raise BudgetExceededError(
-                                spent=self._cumulative_cost,
-                                budget=self.max_budget,
-                                message=(
-                                    f"Budget exceeded after iteration {i + 1}: "
-                                    f"spent ${self._cumulative_cost:.6f} "
-                                    f"of ${self.max_budget:.6f} budget"
-                                ),
-                            )
-
-                    # Check token limit after each iteration
-                    if self.max_tokens is not None:
-                        current_usage = lm_handler.get_usage_summary()
-                        total_tokens = (
-                            current_usage.total_input_tokens + current_usage.total_output_tokens
-                        )
-                        if total_tokens > self.max_tokens:
-                            self.verbose.print_limit_exceeded(
-                                "tokens",
-                                f"{total_tokens:,} of {self.max_tokens:,} tokens",
-                            )
-                            raise TokenLimitExceededError(
-                                tokens_used=total_tokens,
-                                token_limit=self.max_tokens,
-                                partial_answer=self._best_partial_answer,
-                                message=(
-                                    f"Token limit exceeded after iteration {i + 1}: "
-                                    f"{total_tokens:,} of {self.max_tokens:,} tokens"
-                                ),
-                            )
+                    # Check error/budget/token limits after each iteration
+                    self._check_iteration_limits(iteration, i, lm_handler)
 
                     # Check if RLM is done and has a final answer.
                     # Prefer FINAL_VAR result from REPL execution.
@@ -573,6 +425,101 @@ class RLM:
                 execution_time=time_end - time_start,
                 metadata=self.logger.get_trajectory() if self.logger else None,
             )
+
+    def _check_timeout(self, iteration: int, time_start: float) -> None:
+        """Raise TimeoutExceededError if the timeout has been exceeded."""
+        if self.max_timeout is None:
+            return
+        elapsed = time.perf_counter() - time_start
+        if elapsed > self.max_timeout:
+            self.verbose.print_limit_exceeded(
+                "timeout",
+                f"{elapsed:.1f}s of {self.max_timeout:.1f}s",
+            )
+            raise TimeoutExceededError(
+                elapsed=elapsed,
+                timeout=self.max_timeout,
+                partial_answer=self._best_partial_answer,
+                message=(
+                    f"Timeout exceeded after iteration {iteration}: "
+                    f"{elapsed:.1f}s of {self.max_timeout:.1f}s limit"
+                ),
+            )
+
+    def _check_iteration_limits(
+        self, iteration: RLMIteration, iteration_num: int, lm_handler: LMHandler
+    ) -> None:
+        """Check error tracking, budget, and token limits after an iteration.
+
+        Raises ErrorThresholdExceededError, BudgetExceededError, or TokenLimitExceededError
+        if the respective limits are exceeded.
+        """
+        # Track errors from code execution (check stderr for errors)
+        iteration_had_error = False
+        for code_block in iteration.code_blocks:
+            if code_block.result and code_block.result.stderr:
+                iteration_had_error = True
+                self._last_error = code_block.result.stderr
+                break
+
+        if iteration_had_error:
+            self._consecutive_errors += 1
+        else:
+            self._consecutive_errors = 0  # Reset on success
+
+        # Check error threshold
+        if self.max_errors is not None and self._consecutive_errors >= self.max_errors:
+            self.verbose.print_limit_exceeded(
+                "errors",
+                f"{self._consecutive_errors} consecutive errors (limit: {self.max_errors})",
+            )
+            raise ErrorThresholdExceededError(
+                error_count=self._consecutive_errors,
+                threshold=self.max_errors,
+                last_error=self._last_error,
+                partial_answer=self._best_partial_answer,
+                message=(
+                    "Error threshold exceeded: "
+                    f"{self._consecutive_errors} consecutive errors "
+                    f"(limit: {self.max_errors})"
+                ),
+            )
+
+        # Check budget
+        if self.max_budget is not None:
+            current_usage = lm_handler.get_usage_summary()
+            current_cost = current_usage.total_cost or 0.0
+            self._cumulative_cost = current_cost
+            if self._cumulative_cost > self.max_budget:
+                self.verbose.print_budget_exceeded(self._cumulative_cost, self.max_budget)
+                raise BudgetExceededError(
+                    spent=self._cumulative_cost,
+                    budget=self.max_budget,
+                    message=(
+                        f"Budget exceeded after iteration {iteration_num + 1}: "
+                        f"spent ${self._cumulative_cost:.6f} "
+                        f"of ${self.max_budget:.6f} budget"
+                    ),
+                )
+
+        # Check token limit
+        if self.max_tokens is not None:
+            current_usage = lm_handler.get_usage_summary()
+            total_tokens = current_usage.total_input_tokens + current_usage.total_output_tokens
+            if total_tokens > self.max_tokens:
+                self.verbose.print_limit_exceeded(
+                    "tokens",
+                    f"{total_tokens:,} of {self.max_tokens:,} tokens",
+                )
+                raise TokenLimitExceededError(
+                    tokens_used=total_tokens,
+                    token_limit=self.max_tokens,
+                    partial_answer=self._best_partial_answer,
+                    message=(
+                        f"Token limit exceeded after iteration {iteration_num + 1}: "
+                        f"{total_tokens:,} of {self.max_tokens:,} tokens"
+                    ),
+                )
 
     def _get_compaction_status(self, message_history: list[dict[str, Any]]) -> tuple[int, int, int]:
         """Return (current_tokens, threshold_tokens, max_tokens) for compaction."""
@@ -795,8 +742,8 @@ class RLM:
             custom_system_prompt=self.system_prompt,
             other_backends=self.other_backends,
             other_backend_kwargs=self.other_backend_kwargs,
-            # Don't propagate logger/verbose to children to reduce noise
-            logger=None,
+            # Give child its own logger so its trajectory is captured in metadata
+            logger=RLMLogger() if self.logger else None,
             verbose=False,
             # Propagate custom tools to children (sub_tools become the child's tools)
             custom_tools=self.custom_sub_tools,

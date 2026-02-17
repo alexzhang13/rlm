@@ -8,9 +8,7 @@ Tests for the parameter propagation to child RLM instances:
 """
 
 import time
-from unittest.mock import Mock, patch, MagicMock
-
-import pytest
+from unittest.mock import Mock, patch
 
 import rlm.core.rlm as rlm_module
 from rlm import RLM
@@ -24,7 +22,9 @@ def create_mock_lm(responses: list[str], model_name: str = "mock-model") -> Mock
     mock.completion.side_effect = list(responses)
     mock.get_usage_summary.return_value = UsageSummary(
         model_usage_summaries={
-            model_name: ModelUsageSummary(total_calls=1, total_input_tokens=100, total_output_tokens=50)
+            model_name: ModelUsageSummary(
+                total_calls=1, total_input_tokens=100, total_output_tokens=50
+            )
         }
     )
     mock.get_last_usage.return_value = mock.get_usage_summary.return_value
@@ -379,11 +379,16 @@ class TestSubcallModelOverrideAtLeafDepth:
                 args, kwargs = call
                 if len(args) >= 2:
                     backend_kwargs = args[1]
-                    if isinstance(backend_kwargs, dict) and backend_kwargs.get("model_name") == "leaf-override-model":
+                    if (
+                        isinstance(backend_kwargs, dict)
+                        and backend_kwargs.get("model_name") == "leaf-override-model"
+                    ):
                         found_override_call = True
                         break
 
-            assert found_override_call, f"Expected get_client to be called with model_name='leaf-override-model', got calls: {call_args}"
+            assert found_override_call, (
+                f"Expected get_client to be called with model_name='leaf-override-model', got calls: {call_args}"
+            )
             assert result.response == "leaf response"
 
             parent.close()
@@ -403,7 +408,7 @@ class TestSubcallModelOverrideAtLeafDepth:
             )
 
             # Call _subcall without model override
-            result = parent._subcall("test prompt")
+            parent._subcall("test prompt")
 
             # Verify get_client was called with parent's model
             # The last call should use the parent's backend_kwargs

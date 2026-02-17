@@ -156,7 +156,7 @@ Environment implementations live in `rlm/environments/`. Choose the appropriate 
 - Inherit from `NonIsolatedEnv` or `IsolatedEnv` in `rlm/environments/base_env.py`
 - Implement all abstract methods: `setup`, `load_context`, `execute_code`
 - Return `REPLResult` from `execute_code`
-- Handle `lm_handler_address` for sub-LM calls via `llm_query()`
+- Handle `lm_handler_address` for LM calls via `llm_query()` and `rlm_query()`
 - Implement `cleanup()` for resource management
 - Register environment in `rlm/environments/__init__.py`
 
@@ -164,14 +164,17 @@ Environment implementations live in `rlm/environments/`. Choose the appropriate 
 - `setup()`: Initialize globals, locals, and helper functions
 - `load_context()`: Make context available as `context` variable
 - `execute_code()`: Execute code, capture stdout/stderr, return `REPLResult`
-- Always provide `llm_query` and `llm_query_batched` functions in environment globals
+- Always provide `llm_query`, `llm_query_batched`, `rlm_query`, and `rlm_query_batched` functions in environment globals
 
 ### State Management
 Environments must provide these globals to executed code:
 - `context`: The loaded context payload
-- `llm_query(prompt, model=None)`: For sub-LM calls
-- `llm_query_batched(prompts, model=None)`: For batched sub-LM calls
+- `llm_query(prompt, model=None)`: Plain single LM completion (no REPL, no iteration)
+- `llm_query_batched(prompts, model=None)`: Batched plain LM completions
+- `rlm_query(prompt, model=None)`: Recursive child RLM call (own REPL + iteration). Falls back to `llm_query` at max depth.
+- `rlm_query_batched(prompts, model=None)`: Batched recursive child RLM calls
 - `FINAL_VAR(variable_name)`: For returning final answers
+- `SHOW_VARS()`: For listing available variables
 
 ### Example Structure
 ```python
@@ -204,7 +207,8 @@ class MyEnvironment(NonIsolatedEnv):
 - Guidelines here are followed
 - Environment works with basic RLM completion calls
 - `cleanup()` properly releases all resources
-- Sub-LM calls work via `llm_query()`
+- Sub-LM calls work via `llm_query()` and `rlm_query()`
+- Reserved names (`llm_query`, `rlm_query`, `context`, `history`, `FINAL_VAR`, `SHOW_VARS`) are restored after each execution
 
 ## Architecture: Environment ↔ LM Handler Communication
 
@@ -223,7 +227,7 @@ Understanding how environments communicate with the LM Handler is essential for 
 │        ▼                                            │               │
 │  ┌─────────────┐       Socket (TCP)                 │               │
 │  │ LocalREPL   │────────────────────────────────────┘               │
-│  │ (exec code) │  llm_query() → send_lm_request()                   │
+│  │ (exec code) │  llm_query() / rlm_query() → LM calls               │
 │  └─────────────┘                                                    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -242,8 +246,8 @@ def socket_send(sock: socket.socket, data: dict) -> None:
 ```
 
 **Request Flow**:
-1. Environment's `llm_query(prompt)` is called during code execution
-2. Creates `LMRequest` dataclass and calls `send_lm_request(address, request)`
+1. Environment's `llm_query(prompt)` or `rlm_query(prompt)` is called during code execution
+2. For `llm_query`: creates `LMRequest` and calls `send_lm_request(address, request)`. For `rlm_query`: invokes `subcall_fn` to spawn a child RLM (or falls back to `llm_query` at max depth).
 3. Opens TCP connection to `LMHandler` at `(host, port)`
 4. Sends length-prefixed JSON request
 5. `LMHandler` processes via `LMRequestHandler.handle()`

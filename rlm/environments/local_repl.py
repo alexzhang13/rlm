@@ -192,6 +192,8 @@ class LocalREPL(NonIsolatedEnv):
         self.globals["SHOW_VARS"] = self._show_vars
         self.globals["llm_query"] = self._llm_query
         self.globals["llm_query_batched"] = self._llm_query_batched
+        self.globals["rlm_query"] = self._rlm_query
+        self.globals["rlm_query_batched"] = self._rlm_query_batched
 
         # Add custom tools to globals
         # Tools can be either plain values or (value, description) tuples
@@ -237,21 +239,14 @@ class LocalREPL(NonIsolatedEnv):
         return f"Available variables: {available}"
 
     def _llm_query(self, prompt: str, model: str | None = None) -> str:
-        """Query the LM, potentially spawning a recursive RLM call.
+        """Query the LM with a single plain completion (no REPL, no recursion).
+
+        This always makes a direct LM call via the handler, regardless of depth.
 
         Args:
             prompt: The prompt to send to the LM.
             model: Optional model name to use (if handler has multiple clients).
         """
-        # If we have a subcall callback, use it for recursive RLM calls
-        if self.subcall_fn is not None:
-            try:
-                completion = self.subcall_fn(prompt, model)
-                self._pending_llm_calls.append(completion)
-                return completion.response
-            except Exception as e:
-                return f"Error: LM query failed - {e}"
-
         if not self.lm_handler_address:
             return "Error: No LM handler configured"
 
@@ -262,17 +257,15 @@ class LocalREPL(NonIsolatedEnv):
             if not response.success:
                 return f"Error: {response.error}"
 
-            # Track this LLM call
-            self._pending_llm_calls.append(
-                response.chat_completion,
-            )
-
+            self._pending_llm_calls.append(response.chat_completion)
             return response.chat_completion.response
         except Exception as e:
             return f"Error: LM query failed - {e}"
 
     def _llm_query_batched(self, prompts: list[str], model: str | None = None) -> list[str]:
-        """Query the LM with multiple prompts, potentially as recursive RLM calls.
+        """Query the LM with multiple prompts concurrently (no REPL, no recursion).
+
+        This always makes direct LM calls via the handler, regardless of depth.
 
         Args:
             prompts: List of prompts to send to the LM.
@@ -281,18 +274,6 @@ class LocalREPL(NonIsolatedEnv):
         Returns:
             List of responses in the same order as input prompts.
         """
-        # If we have a subcall callback, use it for recursive RLM calls (sequential)
-        if self.subcall_fn is not None:
-            results = []
-            for prompt in prompts:
-                try:
-                    completion = self.subcall_fn(prompt, model)
-                    self._pending_llm_calls.append(completion)
-                    results.append(completion.response)
-                except Exception as e:
-                    results.append(f"Error: LM query failed - {e}")
-            return results
-
         if not self.lm_handler_address:
             return ["Error: No LM handler configured"] * len(prompts)
         try:
@@ -305,13 +286,61 @@ class LocalREPL(NonIsolatedEnv):
                 if not response.success:
                     results.append(f"Error: {response.error}")
                 else:
-                    # Track this LLM call in list of all calls -- we may want to do this hierarchically
                     self._pending_llm_calls.append(response.chat_completion)
                     results.append(response.chat_completion.response)
 
             return results
         except Exception as e:
             return [f"Error: LM query failed - {e}"] * len(prompts)
+
+    def _rlm_query(self, prompt: str, model: str | None = None) -> str:
+        """Spawn a recursive RLM sub-call for deeper thinking on a subtask.
+
+        When a subcall callback is available (max_depth > 1), this spawns a child
+        RLM with its own REPL that can reason over the prompt iteratively.
+        Falls back to a plain llm_query if no recursive capability is configured.
+
+        Args:
+            prompt: The prompt to send to the child RLM.
+            model: Optional model name override for the child.
+        """
+        if self.subcall_fn is not None:
+            try:
+                completion = self.subcall_fn(prompt, model)
+                self._pending_llm_calls.append(completion)
+                return completion.response
+            except Exception as e:
+                return f"Error: RLM query failed - {e}"
+
+        # Fall back to plain LM call if no recursive capability
+        return self._llm_query(prompt, model)
+
+    def _rlm_query_batched(self, prompts: list[str], model: str | None = None) -> list[str]:
+        """Spawn recursive RLM sub-calls for multiple prompts.
+
+        Each prompt gets its own child RLM for deeper thinking.
+        Falls back to llm_query_batched if no recursive capability is configured.
+
+        Args:
+            prompts: List of prompts for child RLMs.
+            model: Optional model name override for the children.
+
+        Returns:
+            List of responses in the same order as input prompts.
+        """
+        if self.subcall_fn is not None:
+            results = []
+            for prompt in prompts:
+                try:
+                    completion = self.subcall_fn(prompt, model)
+                    self._pending_llm_calls.append(completion)
+                    results.append(completion.response)
+                except Exception as e:
+                    results.append(f"Error: RLM query failed - {e}")
+            return results
+
+        # Fall back to plain batched LM call if no recursive capability
+        return self._llm_query_batched(prompts, model)
 
     def load_context(self, context_payload: dict | list | str):
         """Load context into the environment as context_0 (and 'context' alias)."""
@@ -435,6 +464,10 @@ class LocalREPL(NonIsolatedEnv):
                 self.globals["llm_query"] = self._llm_query
             elif name == "llm_query_batched":
                 self.globals["llm_query_batched"] = self._llm_query_batched
+            elif name == "rlm_query":
+                self.globals["rlm_query"] = self._rlm_query
+            elif name == "rlm_query_batched":
+                self.globals["rlm_query_batched"] = self._rlm_query_batched
             elif name == "FINAL_VAR":
                 self.globals["FINAL_VAR"] = self._final_var
             elif name == "SHOW_VARS":

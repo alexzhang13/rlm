@@ -131,7 +131,7 @@ This will display:
 | `backend_kwargs` | `dict` | `None` | Backend-specific configuration |
 | `environment` | `str` | `"local"` | Execution environment type |
 | `environment_kwargs` | `dict` | `None` | Environment configuration |
-| `max_depth` | `int` | `1` | Maximum recursion depth |
+| `max_depth` | `int` | `1` | Maximum recursion depth for `rlm_query()` |
 | `max_iterations` | `int` | `30` | Max REPL iterations per call |
 | `max_budget` | `float` | `None` | Max total USD cost (if provider reports cost) |
 | `max_timeout` | `float` | `None` | Max wall-clock seconds per completion |
@@ -140,9 +140,13 @@ This will display:
 | `custom_system_prompt` | `str` | `None` | Override default system prompt |
 | `other_backends` | `list` | `None` | Additional backends for sub-calls |
 | `other_backend_kwargs` | `list` | `None` | Configs for additional backends |
-| `logger` | `RLMLogger` | `None` | Logger for trajectory tracking |
+| `logger` | `RLMLogger` | `None` | Logger for trajectory tracking and `metadata` capture |
 | `verbose` | `bool` | `False` | Enable console output |
+| `persistent` | `bool` | `False` | Reuse environment across `completion()` calls |
 | `custom_tools` | `dict` | `None` | Custom functions/data available in REPL |
+| `custom_sub_tools` | `dict` | `None` | Custom tools for child RLMs (defaults to `custom_tools`) |
+| `compaction` | `bool` | `False` | Auto-summarize history when context fills up |
+| `compaction_threshold_pct` | `float` | `0.85` | Context usage fraction that triggers compaction |
 
 ### The `completion()` Method
 
@@ -163,10 +167,18 @@ result = rlm.completion(
 - `execution_time`: Total time in seconds
 - `root_model`: Model name used
 - `prompt`: Original input
+- `metadata`: Full trajectory dict (if `logger` was provided, else `None`)
 
 ### Depth>1 Recursion
 
-Depth>1 recursive subcalls are supported. When code inside the REPL calls `llm_query()` and `max_depth` allows it, RLM spawns a child RLM with its own REPL. When `depth >= max_depth`, it falls back to a plain LM completion.
+Depth>1 recursive subcalls are supported. The REPL provides two LM call functions:
+
+- **`llm_query(prompt)`** — Always makes a plain, single LM completion. Fast and lightweight. Use for simple extraction, summarization, or Q&A.
+- **`rlm_query(prompt)`** — Spawns a child RLM with its own REPL and iterative reasoning. Use for subtasks that need multi-step thinking or code execution. Falls back to `llm_query` when `depth >= max_depth`.
+
+Both have batched variants (`llm_query_batched`, `rlm_query_batched`) for processing multiple prompts concurrently.
+
+See [Architecture](architecture.md) for details on how handlers, environments, and recursive sub-calls work.
 
 ### Limits and Exceptions
 
@@ -175,12 +187,15 @@ RLM raises explicit exceptions when limits are exceeded:
 - `TimeoutExceededError`
 - `TokenLimitExceededError`
 - `ErrorThresholdExceededError`
+- `CancellationError` (on `KeyboardInterrupt`)
+
+All exceptions are importable from the top-level package (`from rlm import TimeoutExceededError, ...`).
 
 ---
 
 ## Choosing an Environment
 
-RLM supports three execution environments:
+RLM supports several execution environments:
 
 ### Local (Default)
 
@@ -439,5 +454,6 @@ Upload `.jsonl` log files to visualize:
 ## Next Steps
 
 - [API Reference](api/rlm.md) - Complete RLM class documentation
+- [Architecture](architecture.md) - How the handler, REPL, and recursive sub-calls work
 - [Environments](environments/) - Deep dive into each environment
 - [Backends](backends.md) - Detailed backend configuration

@@ -1,10 +1,10 @@
-from rlm.core.rlm import (
-    RLM,
+from rlm.core.rlm import RLM
+from rlm.utils.exceptions import (
     BudgetExceededError,
+    CancellationError,
+    ErrorThresholdExceededError,
     TimeoutExceededError,
     TokenLimitExceededError,
-    ErrorThresholdExceededError,
-    CancellationError,
 )
 
 __all__ = [
