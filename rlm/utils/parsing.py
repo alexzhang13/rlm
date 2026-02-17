@@ -47,12 +47,10 @@ def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | 
         variable_name = match.group(1).strip().strip('"').strip("'")
         if environment is not None:
             result = environment.execute_code(f"print(FINAL_VAR({variable_name!r}))")
-            final_answer = result.stdout
-            if isinstance(final_answer, str):
-                final_answer = final_answer.strip()
+            final_answer = result.stdout.strip()
             if final_answer == "":
                 return None
-            # Don't accept FINAL_VAR "variable not found" errors as final answer
+            # Don't treat FINAL_VAR "variable not found" as final answer (so RLM continues)
             if (
                 "Variable '" in final_answer
                 and "' not found" in final_answer
