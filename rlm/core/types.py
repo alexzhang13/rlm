@@ -131,6 +131,7 @@ class REPLResult:
     locals: dict
     execution_time: float
     llm_calls: list["RLMChatCompletion"]
+    final_answer: str | None = None
 
     def __init__(
         self,
@@ -139,12 +140,14 @@ class REPLResult:
         locals: dict,
         execution_time: float = None,
         rlm_calls: list["RLMChatCompletion"] = None,
+        final_answer: str | None = None,
     ):
         self.stdout = stdout
         self.stderr = stderr
         self.locals = locals
         self.execution_time = execution_time
         self.rlm_calls = rlm_calls or []
+        self.final_answer = final_answer
 
     def __str__(self):
         return f"REPLResult(stdout={self.stdout}, stderr={self.stderr}, locals={self.locals}, execution_time={self.execution_time}, rlm_calls={len(self.rlm_calls)})"
@@ -156,6 +159,7 @@ class REPLResult:
             "locals": {k: _serialize_value(v) for k, v in self.locals.items()},
             "execution_time": self.execution_time,
             "rlm_calls": [call.to_dict() for call in self.rlm_calls],
+            "final_answer": self.final_answer,
         }
 
 

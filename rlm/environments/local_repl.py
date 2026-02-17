@@ -132,6 +132,7 @@ class LocalREPL(NonIsolatedEnv):
         depth: int = 1,
         custom_tools: dict[str, Any] | None = None,
         custom_sub_tools: dict[str, Any] | None = None,
+        compaction: bool = False,
         **kwargs,
     ):
         super().__init__(persistent=persistent, depth=depth, **kwargs)
@@ -142,6 +143,7 @@ class LocalREPL(NonIsolatedEnv):
         self._lock = threading.Lock()
         self._context_count: int = 0
         self._history_count: int = 0
+        self.compaction = compaction
 
         # Custom tools: functions available in the REPL
         self.custom_tools = custom_tools or {}
@@ -155,6 +157,10 @@ class LocalREPL(NonIsolatedEnv):
 
         # Setup globals, locals, and modules in environment.
         self.setup()
+
+        if compaction:
+            self._compaction_history: list[Any] = []
+            self.locals["history"] = self._compaction_history
 
         # Load context if provided
         if context_payload is not None:
@@ -175,6 +181,8 @@ class LocalREPL(NonIsolatedEnv):
 
         # Track LLM calls made during code execution
         self._pending_llm_calls: list[RLMChatCompletion] = []
+        # When FINAL_VAR is called inside a REPL block, we store the value here for the main loop
+        self._last_final_answer: str | None = None
 
         # Add helper functions
         self.globals["FINAL_VAR"] = self._final_var
@@ -192,13 +200,19 @@ class LocalREPL(NonIsolatedEnv):
                 # For non-callable values (constants, data), add to locals
                 self.locals[name] = value
 
-    def _final_var(self, variable_name: str) -> str:
-        """Return the value of a variable as a final answer."""
+    def _final_var(self, variable_name: str | Any) -> str:
+        """Return the value of a variable as a final answer for the main model, or stringify a direct value."""
+        if not isinstance(variable_name, str):
+            answer = str(variable_name)
+            self._last_final_answer = answer
+            return answer
         variable_name = variable_name.strip().strip("\"'")
         if variable_name in self.locals:
-            return str(self.locals[variable_name])
+            answer = str(self.locals[variable_name])
+            self._last_final_answer = answer
+            return answer
 
-        # Provide helpful error message with available variables
+        # Provide helpful error message with available variables (do not set _last_final_answer)
         available = [k for k in self.locals.keys() if not k.startswith("_")]
         if available:
             return (
@@ -358,6 +372,17 @@ class LocalREPL(NonIsolatedEnv):
         """Return the number of conversation histories stored."""
         return self._history_count
 
+    def append_compaction_entry(self, entry: list[dict[str, Any]] | dict[str, Any]) -> None:
+        """
+        Append a trajectory segment or a summary to the compaction history.
+
+        Entry is either a list of message dicts (trajectory segment) or
+        a dict with "type": "summary" and "content": str.
+        """
+        if not self.compaction:
+            return
+        self._compaction_history.append(copy.deepcopy(entry))
+
     @contextmanager
     def _capture_output(self):
         """Thread-safe context manager to capture stdout/stderr."""
@@ -393,8 +418,10 @@ class LocalREPL(NonIsolatedEnv):
                 self.globals["SHOW_VARS"] = self._show_vars
             elif name == "context" and "context_0" in self.locals:
                 self.locals["context"] = self.locals["context_0"]
-            elif name == "history" and "history_0" in self.locals:
+            elif name == "history" and "history_0" in self.locals and not self.compaction:
                 self.locals["history"] = self.locals["history_0"]
+            elif name == "history" and self.compaction:
+                self.locals["history"] = self._compaction_history
 
     def execute_code(self, code: str) -> REPLResult:
         """Execute code in the persistent namespace and return result."""
@@ -422,12 +449,16 @@ class LocalREPL(NonIsolatedEnv):
                 stdout = stdout_buf.getvalue()
                 stderr = stderr_buf.getvalue() + f"\n{type(e).__name__}: {e}"
 
+        final_answer = self._last_final_answer
+        self._last_final_answer = None
+
         return REPLResult(
             stdout=stdout,
             stderr=stderr,
             locals=self.locals.copy(),
             execution_time=time.perf_counter() - start_time,
             rlm_calls=self._pending_llm_calls.copy(),
+            final_answer=final_answer,
         )
 
     def __enter__(self):
