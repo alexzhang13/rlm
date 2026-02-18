@@ -5,12 +5,13 @@ Generally though, I'll outline the things we 1) need to implement; 2) want to im
 There are likely more things we'll want to do, but here are some things I've been meaning to tackle. 
 
 ## Urgent TODOs
-- [ ] **Additional Sandboxes**. Any more interesting, commonly used sandboxes. We currently support: local, Docker, Modal, Prime Intellect, Daytona, and E2B.
+- [ ] **Additional Sandboxes**. Any more interesting, commonly used sandboxes (e.g. Prime Sandboxes are WIP atm).
+- [ ] **Persistent REPL across the client.** Currently, the REPL is only persistent across an RLM completion call, but for multi-turn settings we may want a `flag` to handle persistence. There's some trickiness here though, which is that after every turn, the input context will change / be added onto. I haven't decided yet (open to suggestions), but we could add `context_{x}` and tell the model that it has a new context or something in the next completion step.
 - [ ] **Finding interesting benchmarks / examples we can provide to get started**.
 - [ ] **Improve documentation**. See `docs/`.
 
 Low-hanging fruit of the urgent TODOs:
-- [ ] **Add better unit tests.** We have a Mock LM class and growing test coverage, but we need more comprehensive unit tests. Generally these should be made with most PRs.
+- [ ] **Add better unit tests.** I have a Mock LM class inspired by `verifiers`, but we need more comprehensive unit tests. Generally these should be made with most PRs.
 - [ ] **Do more comprehensive bug finding**: Just find bugs and report them, we'll try to squash them all
 
 ## Would-be-nice TODOs
