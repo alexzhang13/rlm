@@ -154,7 +154,7 @@ def build_rlm_system_prompt(
 
     return [
         {"role": "system", "content": final_system_prompt},
-        {"role": "assistant", "content": metadata_prompt},
+        {"role": "user", "content": metadata_prompt},
     ]
 
 
