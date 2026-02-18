@@ -1,3 +1,4 @@
+import ast
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -32,6 +33,7 @@ from rlm.utils.parsing import (
 from rlm.utils.prompts import (
     RLM_SYSTEM_PROMPT,
     QueryMetadata,
+    append_prompt_sections,
     build_rlm_system_prompt,
     build_user_prompt,
 )
@@ -61,6 +63,8 @@ class RLM:
         max_tokens: int | None = None,
         max_errors: int | None = None,
         custom_system_prompt: str | None = None,
+        tool_prompts: str | list[str] | None = None,
+        tool_code: str | None = None,
         other_backends: list[ClientBackend] | None = None,
         other_backend_kwargs: list[dict[str, Any]] | None = None,
         logger: RLMLogger | None = None,
@@ -89,6 +93,10 @@ class RLM:
             max_tokens: Maximum total tokens (input + output). Execution stops if exceeded, returning best answer if available.
             max_errors: Maximum consecutive errors before stopping. Execution stops if exceeded, returning best answer if available.
             custom_system_prompt: The custom system prompt to use for the RLM.
+            tool_prompts: Extra prompt section(s) appended to the system prompt (e.g., tool/function descriptions).
+                Accepts a single string or a list of strings.
+            tool_code: Python code executed in the environment before iterations. Merged into
+                environment_kwargs['setup_code']: existing setup_code runs first, then tool_code.
             other_backends: A list of other client backends that the environments can use to make sub-calls.
             other_backend_kwargs: The kwargs to pass to the other client backends (ordered to match other_backends).
             logger: The logger to use for the RLM.
@@ -141,6 +149,19 @@ class RLM:
         self.max_tokens = max_tokens
         self.max_errors = max_errors
         self.system_prompt = custom_system_prompt if custom_system_prompt else RLM_SYSTEM_PROMPT
+
+        if isinstance(tool_prompts, str):
+            tool_prompts = [tool_prompts]
+
+        base_system_prompt = custom_system_prompt if custom_system_prompt else RLM_SYSTEM_PROMPT
+        self.system_prompt = append_prompt_sections(base_system_prompt, tool_prompts)
+
+        if tool_code is not None:
+            try:
+                ast.parse(tool_code)
+            except SyntaxError as e:
+                raise ValueError(f"tool_code contains invalid Python syntax: {e}") from e
+        self.tool_code = tool_code
         self.logger = logger
         self.verbose = VerbosePrinter(enabled=verbose)
 
@@ -238,6 +259,16 @@ class RLM:
                 env_kwargs["custom_sub_tools"] = self.custom_sub_tools
             if self.compaction and self.environment_type == "local":
                 env_kwargs["compaction"] = True
+
+            # Merge tool_code into setup_code so user-defined functions exist in the REPL namespace.
+            # This only runs on environment creation; persistent envs inherit it on subsequent calls.
+            if self.tool_code and self.tool_code.strip():
+                existing_setup_code = env_kwargs.get("setup_code")
+                if existing_setup_code and existing_setup_code.strip():
+                    env_kwargs["setup_code"] = existing_setup_code.rstrip() + "\n\n" + self.tool_code.lstrip()
+                else:
+                    env_kwargs["setup_code"] = self.tool_code
+
             environment: BaseEnv = get_environment(self.environment_type, env_kwargs)
 
             if self.persistent:

@@ -50,6 +50,8 @@ RLM(
     max_tokens: int | None = None,
     max_errors: int | None = None,
     custom_system_prompt: str | None = None,
+    tool_prompts: str | list[str] | None = None,
+    tool_code: str | None = None,
     other_backends: list[str] | None = None,
     other_backend_kwargs: list[dict] | None = None,
     logger: RLMLogger | None = None,
@@ -263,6 +265,50 @@ Use the REPL to analyze the context variable.
 When done, output FINAL(your answer)."""
 
 rlm = RLM(..., custom_system_prompt=custom_prompt)
+```
+
+---
+
+#### `tool_prompts`
+{: .no_toc }
+
+**Type:** `str | list[str] | None`
+**Default:** `None`
+
+Extra prompt section(s) appended to the system prompt (without replacing the default) so the root LM knows about extra helper functions/tools you provide. Accepts a single string or a list of strings.
+
+```python
+rlm = RLM(
+    ...,
+    tool_prompts=[
+        "Extra tools available:\n- fetch(url: str) -> str: Fetch a URL and return text\n- summarize(text: str) -> str: Summarize text",
+    ],
+)
+```
+
+---
+
+#### `tool_code`
+{: .no_toc }
+
+**Type:** `str | None`  
+**Default:** `None`
+
+Python code executed in the environment before iterations. This is merged into `environment_kwargs["setup_code"]` so your helper functions exist in the REPL namespace. The code must be valid Python syntax (validated at initialization).
+
+**Execution order:** When both `tool_code` and `environment_kwargs["setup_code"]` are provided, `setup_code` runs first, then `tool_code` is appended after it. This means `tool_code` can reference variables or imports defined in `setup_code`.
+
+**Persistent mode:** When `persistent=True`, `tool_code` is injected only on the first environment creation. Subsequent calls reuse the persistent environment which already has the tool functions available.
+
+```python
+rlm = RLM(
+    ...,
+    tool_prompts=["You can call add(a, b) to add two numbers."],
+    tool_code="""
+def add(a, b):
+    return a + b
+""",
+)
 ```
 
 ---
