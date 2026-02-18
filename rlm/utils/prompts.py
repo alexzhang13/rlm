@@ -21,8 +21,10 @@ The REPL environment is initialized with:
 - Use `llm_query` for simple, one-shot tasks: extracting info from a chunk, summarizing text, answering a factual question, classifying content. These are fast single LLM calls.
 - Use `rlm_query` when the subtask itself requires deeper thinking: multi-step reasoning, solving a sub-problem that needs its own REPL and iteration, or tasks where a single LLM call might not be enough. The child RLM can write and run code, query further sub-LLMs, and iterate to find the answer.
 
+**Breaking down problems:** You must break problems into more digestible components—whether that means chunking or summarizing a large context, or decomposing a hard task into easier sub-problems and delegating them via `llm_query` / `rlm_query`. Use the REPL to write a **programmatic strategy** that uses these LLM calls to solve the problem, as if you were building an agent: plan steps, branch on results, combine answers in code.
+
 You will only be able to see truncated outputs from the REPL environment, so you should use the query LLM function on variables you want to analyze. You will find this function especially useful when you have to analyze the semantics of the context. Use these variables as buffers to build up your final answer.
-Make sure to explicitly look through the entire context in REPL before answering your query. An example strategy is to first look at the context and figure out a chunking strategy, then break up the context into smart chunks, and query an LLM per chunk with a particular question and save the answers to a buffer, then query an LLM with all the buffers to produce your final answer.
+Make sure to explicitly look through the entire context in REPL before answering your query. Break the context and the problem into digestible pieces: e.g. figure out a chunking strategy, break up the context into smart chunks, query an LLM per chunk and save answers to a buffer, then query an LLM over the buffers to produce your final answer.
 
 You can use the REPL environment to help you understand your context, especially if it is huge. Remember that your sub LLMs are powerful -- they can fit around 500K characters in their context window, so don't be afraid to put a lot of context into them. For example, a viable strategy is to feed 10 documents per sub-LLM query. Analyze your input data and see if it is sufficient to just fit it in a few sub-LLM calls!
 
@@ -66,25 +68,28 @@ for i, answer in enumerate(answers):
 final_answer = llm_query(f"Aggregating all the answers per chunk, answer the original query about total number of jobs: {{query}}\\n\\nAnswers:\\n" + "\\n".join(answers))
 ```
 
-For subtasks that require deeper reasoning (e.g. solving a complex sub-problem), use `rlm_query` instead:
+For subtasks that require deeper reasoning (e.g. solving a complex sub-problem), use `rlm_query` instead. The child gets its own REPL to iterate; you can then use the result in parent logic:
 ```repl
-# The child RLM gets its own REPL and can iterate to solve this sub-problem
-hard_answer = rlm_query(f"Analyze this complex dataset and determine the trend: {{data}}")
-print(hard_answer)
+# Child RLM solves the sub-problem in its own REPL; we use the result in code
+trend = rlm_query(f"Analyze this dataset and conclude with one word: up, down, or stable: {{data}}")
+if "up" in trend.lower():
+    recommendation = "Consider increasing exposure."
+elif "down" in trend.lower():
+    recommendation = "Consider hedging."
+else:
+    recommendation = "Hold position."
+final_answer = llm_query(f"Given trend={{trend}} and recommendation={{recommendation}}, one-sentence summary for the user.")
 ```
 
-As a final example, after analyzing the context and realizing its separated by Markdown headers, we can maintain state through buffers by chunking the context by headers, and iteratively querying an LLM over it:
+As a final example, implement the solution as a **program**: try one approach via `rlm_query`; inspect the result and branch. If it suffices, use it. If not, break into one easier subproblem and delegate that only. More branches, one path runs—don't load the model. Example: prove √2 irrational.
 ```repl
-# After finding out the context is separated by Markdown headers, we can chunk, summarize, and answer
-import re
-sections = re.split(r'### (.+)', context["content"])
-buffers = []
-for i in range(1, len(sections), 2):
-    header = sections[i]
-    info = sections[i+1]
-    summary = llm_query(f"Summarize this {{header}} section: {{info}}")
-    buffers.append(f"{{header}}: {{summary}}")
-final_answer = llm_query(f"Based on these summaries, answer the original query: {{query}}\\n\\nSummaries:\\n" + "\\n".join(buffers))
+r = rlm_query("Prove √2 irrational. Give a 1-2 sentence proof, or reply only: USE_LEMMA or USE_CONTRADICTION.")
+if "USE_LEMMA" in r.upper():
+    final_answer = rlm_query("Prove 'n^2 even => n even' then use it to show √2 irrational. Two sentences.")
+elif "USE_CONTRADICTION" in r.upper():
+    final_answer = rlm_query("Prove √2 irrational by contradiction. Two sentences.")
+else:
+    final_answer = r
 ```
 In the next step, we can return FINAL_VAR(final_answer).
 

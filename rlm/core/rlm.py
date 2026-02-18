@@ -301,6 +301,7 @@ class RLM:
         with self._spawn_completion_context(prompt) as (lm_handler, environment):
             message_history = self._setup_prompt(prompt)
 
+            compaction_count = 0
             try:
                 for i in range(self.max_iterations):
                     # Check timeout before each iteration
@@ -315,9 +316,10 @@ class RLM:
                             current_tokens, threshold_tokens, max_tokens
                         )
                         if current_tokens >= threshold_tokens:
+                            compaction_count += 1
                             self.verbose.print_compaction()
                             message_history = self._compact_history(
-                                lm_handler, environment, message_history
+                                lm_handler, environment, message_history, compaction_count
                             )
 
                     # Current prompt = message history + additional prompt suffix
@@ -541,6 +543,7 @@ class RLM:
         lm_handler: LMHandler,
         environment: BaseEnv,
         message_history: list[dict[str, Any]],
+        compaction_count: int = 1,
     ) -> list[dict[str, Any]]:
         """
         Summarize current trajectory, append summary to REPL history, and return
@@ -549,7 +552,15 @@ class RLM:
         summary_prompt = message_history + [
             {
                 "role": "user",
-                "content": "Very concisely summarize what you have been doing so far in 1–3 short paragraphs. Be extremely brief. This summary will be used to continue the conversation.",
+                "content": (
+                    "Summarize your progress so far. Include:\n"
+                    "1. Which steps/sub-tasks you have completed and which remain.\n"
+                    "2. Any concrete intermediate results (numbers, values, variable names) "
+                    "you computed — preserve these exactly.\n"
+                    "3. What your next action should be.\n"
+                    "Be concise (1–3 paragraphs) but preserve all key results and your "
+                    "current position in the task."
+                ),
             }
         ]
         summary = lm_handler.completion(summary_prompt)
@@ -560,7 +571,13 @@ class RLM:
             {"role": "assistant", "content": summary},
             {
                 "role": "user",
-                "content": "Continue from the above summary. The full history (including this summary) is in the REPL variable `history`. Your next action:",
+                "content": (
+                    f"Your conversation has been compacted {compaction_count} time(s). "
+                    "Continue from the above summary. Do NOT repeat work you have already "
+                    "completed. Use SHOW_VARS() to check which REPL variables exist, "
+                    "and check `history` for full context. "
+                    "Your next action:"
+                ),
             },
         ]
         return new_history
