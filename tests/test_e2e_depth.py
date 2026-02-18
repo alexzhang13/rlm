@@ -1,4 +1,5 @@
 """E2E test for depth>1 with real LLM via OpenRouter."""
+
 import os
 
 import pytest
