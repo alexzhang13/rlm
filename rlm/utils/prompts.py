@@ -3,6 +3,20 @@ from typing import Any
 
 from rlm.core.types import QueryMetadata
 
+
+def append_prompt_sections(base_prompt: str, extra_sections: str | list[str] | None) -> str:
+    if not extra_sections:
+        return base_prompt
+
+    non_empty = [section for section in extra_sections if section and section.strip()]
+    cleaned_sections = [section.strip() for section in non_empty]
+    if not cleaned_sections:
+        return base_prompt
+
+    # Keep the existing prompt verbatim; just append extra sections.
+    return base_prompt.rstrip() + "\n\n" + "\n\n".join(cleaned_sections) + "\n"
+
+
 # System prompt for the REPL environment with explicit final answer checking
 RLM_SYSTEM_PROMPT = textwrap.dedent(
     """You are tasked with answering a query with associated context. You can access, transform, and analyze this context interactively in a REPL environment that can recursively query sub-LLMs, which you are strongly encouraged to use as much as possible. You will be queried iteratively until you provide a final answer.
