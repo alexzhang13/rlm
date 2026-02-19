@@ -265,7 +265,9 @@ class RLM:
             if self.tool_code and self.tool_code.strip():
                 existing_setup_code = env_kwargs.get("setup_code")
                 if existing_setup_code and existing_setup_code.strip():
-                    env_kwargs["setup_code"] = existing_setup_code.rstrip() + "\n\n" + self.tool_code.lstrip()
+                    env_kwargs["setup_code"] = (
+                        existing_setup_code.rstrip() + "\n\n" + self.tool_code.lstrip()
+                    )
                 else:
                     env_kwargs["setup_code"] = self.tool_code
 
