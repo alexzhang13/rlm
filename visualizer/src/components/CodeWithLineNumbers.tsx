@@ -19,7 +19,7 @@ export function CodeWithLineNumbers({
   return (
     <div className="flex">
       {/* Line numbers */}
-      <div className="flex-shrink-0 pr-4 border-r border-border/30 select-none">
+      <div className="flex-shrink-0 border-r border-border/30 select-none">
         {lines.map((_, idx) => (
           <div 
             key={idx} 
@@ -32,7 +32,7 @@ export function CodeWithLineNumbers({
       </div>
       
       {/* Code */}
-      <div className="flex-1 pl-4 overflow-x-auto">
+      <div className="flex-shrink-0 pl-4">
         <SyntaxHighlight code={code} language={language} />
       </div>
     </div>
