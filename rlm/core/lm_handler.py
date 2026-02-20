@@ -63,12 +63,15 @@ class LMRequestHandler(StreamRequestHandler):
         client = handler.get_client(request.model, request.depth)
 
         start_time = time.perf_counter()
-        content = client.completion(request.prompt)
+        prompt = request.prompt
+        image_paths = request.image_paths
+        content = client.completion(prompt, image_paths) # TODO IMAGE: make sure other clients have implemented signature
         end_time = time.perf_counter()
 
         model_usage = client.get_last_usage()
         root_model = request.model or client.model_name
         usage_summary = UsageSummary(model_usage_summaries={root_model: model_usage})
+        # TODO IMAGE: modify RLMChatCompletion to include image_paths
         return LMResponse.success_response(
             chat_completion=RLMChatCompletion(
                 root_model=root_model,
@@ -85,11 +88,27 @@ class LMRequestHandler(StreamRequestHandler):
 
         start_time = time.perf_counter()
 
+        # Default image_path_lists to None per prompt if not provided or mismatched length
+        image_path_lists = request.image_path_lists
+        if not image_path_lists:
+            image_path_lists = [None] * len(request.prompts)
+        elif len(image_path_lists) != len(request.prompts):
+            # Length mismatch - this would cause strict=True to fail
+            return LMResponse.error_response(
+                f"Length mismatch: {len(request.prompts)} prompts but {len(image_path_lists)} image_path_lists"
+            )
+
         async def run_all():
-            tasks = [client.acompletion(prompt) for prompt in request.prompts]
-            return await asyncio.gather(*tasks)
+            tasks = [client.acompletion(prompt, image_paths) for prompt, image_paths in zip(request.prompts, image_path_lists, strict=True)]
+            return await asyncio.gather(*tasks, return_exceptions=True)
 
         results = asyncio.run(run_all())
+
+        # Check if any task returned an exception
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                print(f"Error in task {i}: {result}", file=__import__('sys').stderr)
+                results[i] = f"Error: {str(result)}"
         end_time = time.perf_counter()
 
         total_time = end_time - start_time
@@ -196,9 +215,9 @@ class LMHandler:
             self._server = None
             self._thread = None
 
-    def completion(self, prompt: str, model: str | None = None) -> str:
+    def completion(self, prompt: str, image_paths=None, model: str | None = None) -> str:
         """Direct completion call (for main process use)."""
-        return self.get_client(model).completion(prompt)
+        return self.get_client(model).completion(prompt, image_paths) # TODO IMAGE: Modify signature for all client handlers (not just openai.py)
 
     def __enter__(self):
         self.start()

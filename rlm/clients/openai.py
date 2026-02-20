@@ -1,6 +1,7 @@
 import os
 from collections import defaultdict
 from typing import Any
+import base64
 
 import openai
 from dotenv import load_dotenv
@@ -54,11 +55,43 @@ class OpenAIClient(BaseLM):
         self.model_total_tokens: dict[str, int] = defaultdict(int)
         self.model_costs: dict[str, float] = defaultdict(float)  # Cost in USD
 
-    def completion(self, prompt: str | list[dict[str, Any]], model: str | None = None) -> str:
+    def _extractImageLists(self, image_paths: list[str]) -> list[dict[str, Any]]:
+        images = []
+        if image_paths is not None:
+            # We create a list of image messages
+            for image_path in image_paths:
+                # Check if this is already a data URI
+                if isinstance(image_path, str) and image_path.startswith("data:"):
+                    images.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": image_path,
+                        },
+                    })
+                else:
+                    # It's a file path - read and encode it
+                    with open(image_path, 'rb') as img:
+                        extension = image_path.split('.')[-1]
+                        images.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/{extension};base64,{base64.b64encode(img.read()).decode('utf-8')}",
+                            },
+                        })
+        return images
+
+    def completion(self, prompt: str | list[dict[str, Any]], image_paths: list[str] | None = None, model: str | None = None) -> str:
+        # TODO IMAGE: load images and format them into OpenAI format
+        images = self._extractImageLists(image_paths)
+
         if isinstance(prompt, str):
             messages = [{"role": "user", "content": prompt}]
+            if len(images) > 0:
+                messages.append({"role": "user", "content": images})
         elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
             messages = prompt
+            if len(images) > 0:
+                messages.append({"role": "user", "content": images})
         else:
             raise ValueError(f"Invalid prompt type: {type(prompt)}")
 
@@ -77,12 +110,19 @@ class OpenAIClient(BaseLM):
         return response.choices[0].message.content
 
     async def acompletion(
-        self, prompt: str | list[dict[str, Any]], model: str | None = None
+        self, prompt: str | list[dict[str, Any]], image_paths: list[str] | None = None, model: str | None = None
     ) -> str:
+        # TODO IMAGE: load images and format them into OpenAI format
+        images = self._extractImageLists(image_paths)
+
         if isinstance(prompt, str):
             messages = [{"role": "user", "content": prompt}]
+            if len(images) > 0:
+                messages.append({"role": "user", "content": images})
         elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
             messages = prompt
+            if len(images) > 0:
+                messages.append({"role": "user", "content": images})
         else:
             raise ValueError(f"Invalid prompt type: {type(prompt)}")
 

@@ -5,16 +5,23 @@ from rlm.core.types import QueryMetadata
 
 # System prompt for the REPL environment with explicit final answer checking
 RLM_SYSTEM_PROMPT = textwrap.dedent(
-    """You are tasked with answering a query with associated context. You can access, transform, and analyze this context interactively in a REPL environment that can recursively query sub-LLMs, which you are strongly encouraged to use as much as possible. You will be queried iteratively until you provide a final answer.
+    """
+
+You are tasked with answering a query with associated context. You can access, transform, and analyze this context interactively in a REPL environment that can recursively query sub-LLMs, which you are strongly encouraged to use as much as possible. You will be queried iteratively until you provide a final answer.
 
 The REPL environment is initialized with:
 1. A `context` variable that contains extremely important information about your query. You should check the content of the `context` variable to understand what you are working with. Make sure you look through it sufficiently as you answer your query.
-2. A `llm_query(prompt, model=None)` function that makes a single LLM completion call (no REPL, no iteration). Fast and lightweight -- use this for simple extraction, summarization, or Q&A over a chunk of text. The sub-LLM can handle around 500K chars.
-3. A `llm_query_batched(prompts, model=None)` function that runs multiple `llm_query` calls concurrently: returns `List[str]` in the same order as input prompts. Much faster than sequential `llm_query` calls for independent queries.
-4. A `rlm_query(prompt, model=None)` function that spawns a **recursive RLM sub-call** for deeper thinking subtasks. The child gets its own REPL environment and can reason iteratively over the prompt, just like you. Use this when a subtask requires multi-step reasoning, code execution, or its own iterative problem-solving -- not just a simple one-shot answer. Falls back to `llm_query` if recursion is not available.
-5. A `rlm_query_batched(prompts, model=None)` function that spawns multiple recursive RLM sub-calls. Each prompt gets its own child RLM. Falls back to `llm_query_batched` if recursion is not available.
-6. A `SHOW_VARS()` function that returns all variables you have created in the REPL. Use this to check what variables exist before using FINAL_VAR.
-7. The ability to use `print()` statements to view the output of your REPL code and continue your reasoning.
+2. A  `context_documents` dictionary containing the accompanying images and pdfs to the query. You should check the content of the `context_documents` dictionary with its fields to understand what data we are working with. The tools for inspection are listed below.
+```json
+context_documents = {{
+    "pdfs": {{}},
+    "images": {{}},
+}}
+```
+3. A `llm_query` function that allows you to query an LLM (that can handle around 500K chars and a list of up to 10 image paths) inside your REPL environment. The image path argument is optional though. (`llm_query(prompt:str, image_paths: list[str]) -> str`)
+4. A `llm_query_batched` function that allows you to query multiple prompts concurrently: `llm_query_batched(prompts: List[str], image_path_lists: List[List[str]]) -> List[str]`. This is much faster than sequential `llm_query` calls when you have multiple independent queries. Results are returned in the same order as the input prompts.
+5. A `SHOW_VARS()` function that returns all variables you have created in the REPL. Use this to check what variables exist before using FINAL_VAR.
+6. The ability to use `print()` statements to view the output of your REPL code and continue your reasoning.
 {custom_tools_section}
 
 **When to use `llm_query` vs `rlm_query`:**
@@ -42,7 +49,7 @@ You can use the REPL environment to help you understand your context, especially
 When you want to execute Python code in the REPL environment, wrap it in triple backticks with 'repl' language identifier. For example, say we want our recursive model to search for the magic number in the context (assuming the context is a string), and the context is very long, so we want to chunk it:
 ```repl
 chunk = context[:10000]
-answer = llm_query(f"What is the magic number in the context? Here is the chunk: {{chunk}}")
+answer = llm_query(f"What is the magic number in the context? Here is the chunk: {{chunk}}", image_paths=None)
 print(answer)
 ```
 
@@ -70,8 +77,52 @@ for i in range(10):
     else:
         chunk_str = "\n".join(context[i*chunk_size:])
     chunks.append(chunk_str)
+```
+
+Images and PDFs that are included in the user's original prompt are located in the `context_documents` field. The `llm_query` function can only take paths to images.
+As another example to exemplify the use of images:
+```repl
+query = "Can you look at this venn diagram of the characters to determine how accurate it is given the book?"
+image_path = "/prompt/images/venn_diagram.png"
+final_answer = llm_query(query, image_paths=[image_path])
+```
+
+However PDFs can be converted to images with the following libraries that you have NATIVELY installed: `pymupdf`, `pillow` and `pytesseract`
+EVERYTIME you create a new image, or PDF, make sure to save it to a path in `/tmp/` and then use that path in your `llm_query` function.
+PDF's get stored into `/tmp/rlm_images/` and images get stored into `/tmp/rlm_pdfs/`
+```repl
+import fitz  # PyMuPDF
+from PIL import Image
+import io
+
+def pdf_to_images(pdf_path, page_num):
+    # Convert a specific page of a PDF to an image and return a list of PIL Image objects.
+    doc = fitz.open(pdf_path)
+    page = doc.load_page(page_num)
+    pix = page.get_pixmap()
+    img_data = pix.tobytes("png")
+    img = Image.open(io.BytesIO(img_data))
+    return img
+
+# Example usage:
+pdf_images = pdf_to_images("/prompt/pdfs/my_document.pdf", 5)
+path = f"/tmp/rlm_images/page_5.png"
+pdf_images.save(path)
+
+final_answer = llm_query(query, image_paths=[path])
+```
+
+These can then be re-used in subsequent `llm_query` calls:
+
+```repl
+query = "On page 5 of the book there is an organigram of the United Nations sub-organizations. Extract the relationships."
+image_path = "/tmp/rlm_images/page_5.png"
+final_answer = llm_query(query, image_paths=[image_path])
+```
+
 
 # Use batched query for concurrent processing - much faster than sequential calls!
+```repl
 prompts = [f"Try to answer the following query: {{query}}. Here are the documents:\n{{chunk}}. Only answer if you are confident in your answer based on the evidence." for chunk in chunks]
 answers = llm_query_batched(prompts)
 for i, answer in enumerate(answers):
@@ -79,7 +130,20 @@ for i, answer in enumerate(answers):
 final_answer = llm_query(f"Aggregating all the answers per chunk, answer the original query about total number of jobs: {{query}}\\n\\nAnswers:\\n" + "\\n".join(answers))
 ```
 
+The same can be used with a list of image paths for each prompt:
+
+```repl
+prompts=["On Page 5 there is the organigram of the UN ILO. Extract the most important names with roles", "On Page 12 there is the organigram of the UN WHO. Extract the most important names with roles"]
+image_path_list=[["/tmp/rlm_images/page_5.png"], ["/tmp/rlm_images/page_12.png"]]
+answers = llm_query_batched(prompts, image_paths=image_path_list)
+for i, answer in enumerate(answers):
+    print(f"I got the answer from prompt {{i}}: {{answer}}")
+final_answer = llm_query(f"Aggregating all the answers per chunk, answer the original query about total number of jobs: {{query}}\n\nAnswers:\n" + "\n".join(answers))
+```
 For subtasks that require deeper reasoning (e.g. solving a complex sub-problem), use `rlm_query` instead. The child gets its own REPL to iterate; you can then use the result in parent logic:
+
+As a final example, after analyzing the context and realizing its separated by Markdown headers, we can maintain state through buffers by chunking the context by headers, and iteratively querying an LLM over it:
+
 ```repl
 # Child RLM solves the sub-problem in its own REPL; we use the result in code
 trend = rlm_query(f"Analyze this dataset and conclude with one word: up, down, or stable: {{data}}")

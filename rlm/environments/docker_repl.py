@@ -8,6 +8,7 @@ Or use any Python 3.11+ image with: pip install dill requests
 """
 
 import base64
+import glob
 import json
 import os
 import subprocess
@@ -52,11 +53,23 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
 
+    def _encode_image_paths_to_data_uris(self, image_paths: list[str] | None) -> list[str] | None:
+        """Pass through image paths and data URIs unchanged.
+
+        Note: File encoding happens in the container code (in injected llm_query functions)
+        before paths are sent to this proxy. The proxy just passes through whatever it receives.
+        """
+        return image_paths
+
     def _handle_single(self, body: dict) -> dict:
         if not self.lm_handler_address:
             return {"error": "No LM handler configured"}
 
-        request = LMRequest(prompt=body.get("prompt"), model=body.get("model"), depth=self.depth)
+        # Encode local image paths to data URIs so host can access them
+        image_paths = body.get("image_paths")
+        image_paths = self._encode_image_paths_to_data_uris(image_paths)
+
+        request = LMRequest(prompt=body.get("prompt"), image_paths=image_paths, model=body.get("model"), depth=self.depth)
         response = send_lm_request(self.lm_handler_address, request)
 
         if not response.success:
@@ -72,8 +85,13 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
             return {"error": "No LM handler configured"}
 
         prompts = body.get("prompts", [])
+        image_path_lists = body.get("image_path_lists", [])
+
+        # Encode local image paths to data URIs so host can access them
+        image_path_lists = [self._encode_image_paths_to_data_uris(img_paths) for img_paths in image_path_lists]
+
         responses = send_lm_request_batched(
-            self.lm_handler_address, prompts, model=body.get("model"), depth=self.depth
+            self.lm_handler_address, prompts, image_path_lists, model=body.get("model"), depth=self.depth
         )
 
         results = []
@@ -103,17 +121,49 @@ except ImportError:
 PROXY = "http://host.docker.internal:{proxy_port}"
 STATE = "/workspace/state.dill"
 
-def llm_query(prompt, model=None):
+def _encode_local_images_to_data_uris(image_paths):
+    """Encode local image files to base64 data URIs for transmission."""
+    if not image_paths:
+        return image_paths
+
+    encoded = []
+    for path in image_paths:
+        if isinstance(path, str) and path.startswith("data:"):
+            encoded.append(path)  # Already encoded
+            continue
+
+        try:
+            if os.path.exists(path):
+                with open(path, 'rb') as f:
+                    img_data = base64.b64encode(f.read()).decode('utf-8')
+                    ext = path.split('.')[-1].lower()
+                    mime = 'jpeg' if ext in ('jpg', 'jpeg') else (ext if ext in ('png', 'gif', 'webp') else 'png')
+                    encoded.append(f"data:image/{{mime}};base64,{{img_data}}")
+            else:
+                encoded.append(path)  # File doesn't exist, let handler report error
+        except Exception:
+            encoded.append(path)  # Encoding failed, let handler report error
+
+    return encoded
+
+def llm_query(prompt, image_paths=None, model=None):
+    if image_paths is not None and len(image_paths) > 10:
+        raise ValueError("Too many images")
     try:
-        r = requests.post(f"{{PROXY}}/llm_query", json={{"prompt": prompt, "model": model, "depth": {depth}}}, timeout=300)
+        # Encode local image files to data URIs in the container
+        image_paths = _encode_local_images_to_data_uris(image_paths)
+        r = requests.post(f"{{PROXY}}/llm_query", json={{"prompt": prompt, "image_paths": image_paths, "model": model, "depth": {depth}}}, timeout=300)
         d = r.json()
         return d.get("response") or f"Error: {{d.get('error')}}"
     except Exception as e:
         return f"Error: {{e}}"
 
-def llm_query_batched(prompts, model=None):
+def llm_query_batched(prompts, image_path_lists=None, model=None):
     try:
-        r = requests.post(f"{{PROXY}}/llm_query_batched", json={{"prompts": prompts, "model": model, "depth": {depth}}}, timeout=300)
+        # Encode local image files to data URIs in the container
+        if image_path_lists:
+            image_path_lists = [_encode_local_images_to_data_uris(paths) for paths in image_path_lists]
+        r = requests.post(f"{{PROXY}}/llm_query_batched", json={{"prompts": prompts, "image_path_lists": image_path_lists, "model": model, "depth": {depth}}}, timeout=300)
         d = r.json()
         return d.get("responses") or [f"Error: {{d.get('error')}}"] * len(prompts)
     except Exception as e:
@@ -165,6 +215,7 @@ try:
     sys.stdout, sys.stderr = stdout_buf, stderr_buf
     combined = {{**_globals, **_locals}}
     exec(code, combined, combined)
+    # Update _locals with all new variables (including context/context_documents from setup code)
     for k, v in combined.items():
         if k not in _globals and not k.startswith("_"):
             _locals[k] = v
@@ -221,6 +272,7 @@ class DockerREPL(NonIsolatedEnv):
         self.temp_dir = tempfile.mkdtemp(prefix="docker_repl_", dir=base_dir)
         self.pending_calls: list[RLMChatCompletion] = []
         self._calls_lock = threading.Lock()
+        self.context_setup_code = ""  # Store context/document loading code for every execution
 
         self.setup()
 
@@ -278,20 +330,83 @@ class DockerREPL(NonIsolatedEnv):
         )
 
     def load_context(self, context_payload: dict | list | str):
-        """Load context by writing to a file in the mounted workspace."""
+        """Load context by writing to a file in the mounted workspace.
+
+        Stores the setup code to be prepended to every execution, ensuring
+        context and context_documents are available in all code runs.
+        """
         if isinstance(context_payload, str):
             context_path = os.path.join(self.temp_dir, "context.txt")
             with open(context_path, "w") as f:
                 f.write(context_payload)
-            self.execute_code(
-                "with open('/workspace/context.txt', 'r') as f:\n    context = f.read()"
+
+            # Store setup code for prepending to every execution
+            self.context_setup_code = textwrap.dedent(
+                '''
+import glob
+import json
+import os
+from PIL import Image
+import fitz
+
+with open('/workspace/context.txt', 'r') as f:
+    context = f.read()
+pdf_paths = sorted(glob.glob('/prompt/pdfs/*.pdf'))
+img_paths = sorted(glob.glob('/prompt/images/*.png') + glob.glob('/prompt/images/*.jpg') + glob.glob('/prompt/images/*.jpeg'))
+
+context_documents = {
+    "pdfs": {},
+    "images": {},
+}
+
+for pdf_path in pdf_paths:
+    pdf_name = os.path.basename(pdf_path)
+    try:
+        pdf = fitz.open(pdf_path)
+        context_documents["pdfs"][pdf_name] = {
+            "path": pdf_path,
+            "pages": len(pdf),
+            "text": pdf.get_text(),
+            "images": len(pdf.get_images()) if pdf else 0,
+            "preview": f"[PDF: {pdf_name} ({len(pdf)} pages)]"
+        }
+        pdf.close()
+    except Exception as e:
+        context_documents["pdfs"][pdf_name] = {
+            "path": pdf_path,
+            "error": str(e)
+        }
+
+for img_path in img_paths:
+    img_name = os.path.basename(img_path)
+    try:
+        img = Image.open(img_path)
+        context_documents["images"][img_name] = {
+            "path": img_path,
+            "size": img.size,
+            "format": img.format,
+            "mode": img.mode
+        }
+        img.close()
+    except Exception as e:
+        context_documents["images"][img_name] = {
+            "path": img_path,
+            "error": str(e)
+        }
+                '''
             )
         else:
             context_path = os.path.join(self.temp_dir, "context.json")
             with open(context_path, "w") as f:
                 json.dump(context_payload, f)
-            self.execute_code(
-                "import json\nwith open('/workspace/context.json', 'r') as f:\n    context = json.load(f)"
+
+            # Store setup code for prepending to every execution
+            self.context_setup_code = textwrap.dedent(
+                '''
+import json
+with open('/workspace/context.json', 'r') as f:
+    context = json.load(f)
+                '''
             )
 
     def execute_code(self, code: str) -> REPLResult:
@@ -300,7 +415,10 @@ class DockerREPL(NonIsolatedEnv):
         with self._calls_lock:
             self.pending_calls.clear()
 
-        script = _build_exec_script(code, self.proxy_port, self.depth)
+        # Prepend context/document setup code so it's available in every execution
+        full_code = self.context_setup_code + "\n" + code
+
+        script = _build_exec_script(full_code, self.proxy_port, self.depth)
         result = subprocess.run(
             ["docker", "exec", self.container_id, "python", "-c", script],
             capture_output=True,

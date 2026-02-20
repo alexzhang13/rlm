@@ -269,7 +269,7 @@ class RLM:
         return message_history
 
     def completion(
-        self, prompt: str | dict[str, Any], root_prompt: str | None = None
+        self, prompt: str | dict[str, Any], root_prompt: str | None = None, image_paths: list[str] | None = None
     ) -> RLMChatCompletion:
         """
         Recursive Language Model completion call. This is the main entry point for querying an RLM, and
@@ -321,7 +321,6 @@ class RLM:
                             message_history = self._compact_history(
                                 lm_handler, environment, message_history, compaction_count
                             )
-
                     # Current prompt = message history + additional prompt suffix
                     context_count = (
                         environment.get_context_count()
@@ -341,6 +340,7 @@ class RLM:
                         prompt=current_prompt,
                         lm_handler=lm_handler,
                         environment=environment,
+                        image_paths=image_paths,
                     )
 
                     # Check error/budget/token limits after each iteration
@@ -587,13 +587,14 @@ class RLM:
         prompt: str | dict[str, Any],
         lm_handler: LMHandler,
         environment: BaseEnv,
+        image_paths: list[str] | None = None,
     ) -> RLMIteration:
         """
         Perform a single iteration of the RLM, including prompting the model
         and code execution + tool execution.
         """
         iter_start = time.perf_counter()
-        response = lm_handler.completion(prompt)
+        response = lm_handler.completion(prompt, image_paths=image_paths)
         code_block_strs = find_code_blocks(response)
         code_blocks = []
 

@@ -26,7 +26,9 @@ class LMRequest:
     """
 
     prompt: str | dict[str, Any] | None = None
+    image_paths: list[str] | None = None
     prompts: list[str | dict[str, Any]] | None = None
+    image_path_lists: list[list[str]] | None = None
     model: str | None = None
     depth: int = 0
 
@@ -44,6 +46,10 @@ class LMRequest:
             d["prompts"] = self.prompts
         if self.model is not None:
             d["model"] = self.model
+        if self.image_paths is not None:
+            d["image_paths"] = self.image_paths
+        if self.image_path_lists is not None:
+            d["image_path_lists"] = self.image_path_lists
         d["depth"] = self.depth
         return d
 
@@ -52,7 +58,9 @@ class LMRequest:
         """Create from dict."""
         return cls(
             prompt=data.get("prompt"),
+            image_paths=data.get("image_paths"),
             prompts=data.get("prompts"),
+            image_path_lists=data.get("image_path_lists"),
             model=data.get("model"),
             depth=data.get("depth", -1),  # TODO: Default should throw an error
         )
@@ -204,7 +212,8 @@ def socket_request(address: tuple[str, int], data: dict, timeout: int = 300) -> 
 def send_lm_request(
     address: tuple[str, int], request: LMRequest, timeout: int = 300, depth: int | None = None
 ) -> LMResponse:
-    """Send an LM request and return typed response.
+    """
+    Send an LM request and return typed response.
 
     Args:
         address: (host, port) tuple of LM Handler server.
@@ -227,6 +236,7 @@ def send_lm_request(
 def send_lm_request_batched(
     address: tuple[str, int],
     prompts: list[str | dict[str, Any]],
+    image_path_lists: list[list[str]],
     model: str | None = None,
     timeout: int = 300,
     depth: int = 0,
@@ -244,7 +254,7 @@ def send_lm_request_batched(
         List of LMResponse objects, one per prompt, in the same order.
     """
     try:
-        request = LMRequest(prompts=prompts, model=model, depth=depth)
+        request = LMRequest(prompts=prompts, image_path_lists=image_path_lists, model=model, depth=depth)
         response_data = socket_request(address, request.to_dict(), timeout)
         response = LMResponse.from_dict(response_data)
 

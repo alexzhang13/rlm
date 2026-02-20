@@ -19,11 +19,11 @@ class BaseLM(ABC):
         self.kwargs = kwargs
 
     @abstractmethod
-    def completion(self, prompt: str | dict[str, Any]) -> str:
+    def completion(self, prompt: str | dict[str, Any], image_paths: list[str] | None = None) -> str:
         raise NotImplementedError
 
     @abstractmethod
-    async def acompletion(self, prompt: str | dict[str, Any]) -> str:
+    async def acompletion(self, prompt: str | dict[str, Any], image_paths: list[str] | None = None) -> str:
         raise NotImplementedError
 
     @abstractmethod

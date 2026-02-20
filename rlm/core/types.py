@@ -302,3 +302,19 @@ class QueryMetadata:
             raise ValueError(f"Invalid prompt type: {type(prompt)}")
 
         self.context_total_length = sum(self.context_lengths)
+
+    
+@dataclass
+class ImageReference:
+    path: str
+    index_in_prompt: int
+    metadata: dict[str, Any] | None = None
+    VALID_EXTENSIONS: tuple[str] = (".png", ".jpg", ".jpeg")
+
+    def __post_init__(self):
+        if not os.path.exists(self.path):
+            raise FileNotFoundError(f"File not found: {self.path}")
+        if not self.path.lower().endswith(self.VALID_EXTENSIONS):
+            raise ValueError(f"Invalid file extension: {self.path} \nHas to be PNG/JPG/JPEG or PDF")
+
+

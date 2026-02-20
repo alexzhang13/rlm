@@ -1,6 +1,7 @@
 .PHONY: help install install-dev install-modal run-all \
         quickstart docker-repl lm-repl modal-repl \
-        lint format test check
+        lint format test check \
+        build-vlm-all build-vlm-basic test-vlm test-vlm-basic
 
 help:
 	@echo "RLM Examples Makefile"
@@ -22,6 +23,10 @@ help:
 	@echo "  make format         - Run ruff formatter"
 	@echo "  make test           - Run tests"
 	@echo "  make check          - Run lint + format + tests"
+	@echo ""
+	@echo "VLM Tests (require Docker + OPENAI_API_KEY):"
+	@echo "  make test-vlm       - Build all VLM images and run all VLM tests"
+	@echo "  make test-vlm-basic - Build and run test_one_image + test_pdf2image only"
 
 install:
 	uv sync
@@ -56,3 +61,34 @@ test: install-dev
 	uv run pytest
 
 check: lint format test
+
+# VLM Tests (require Docker and OPENAI_API_KEY)
+VLM_DOCKERFILE = tests/vlm/Dockerfile
+VLM_FIXTURES   = test_one_image test_n_images test_pdf2image test_supported_formats
+
+build-vlm-all:
+	@for fixture in $(VLM_FIXTURES); do \
+		echo "Building rlm-vlm-$$fixture..."; \
+		docker build -f $(VLM_DOCKERFILE) --build-arg FIXTURE=$$fixture -t rlm-vlm-$$fixture . ; \
+	done
+
+build-vlm-basic:
+	docker build -f $(VLM_DOCKERFILE) --build-arg FIXTURE=test_one_image -t rlm-vlm-test-one-image .
+	docker build -f $(VLM_DOCKERFILE) --build-arg FIXTURE=test_pdf2image  -t rlm-vlm-test-pdf2image  .
+
+docker-rm-all:
+	@for fixture in $(VLM_FIXTURES); do \
+		echo "Removing rlm-vlm-$$fixture..."; \
+		docker rmi rlm-vlm-$$fixture; \
+	done
+
+MAX_ITERATIONS ?= 10
+
+test-vlm: build-vlm-all
+	uv run pytest tests/vlm/ -v --max-iterations=$(MAX_ITERATIONS)
+
+test-vlm-basic: build-vlm-basic
+	uv run pytest tests/vlm/ -k "test_one_image or test_pdf2image" -v --max-iterations=$(MAX_ITERATIONS)
+
+clean:
+	docker-rm-all
