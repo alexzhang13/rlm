@@ -1,0 +1,19 @@
+FROM python:3.11-slim 
+
+RUN pip install requests dill pymupdf pillow pytesseract
+
+# Create all the needed directories
+RUN mkdir -p /workspace
+
+RUN mkdir -p /prompt/images
+RUN mkdir -p /prompt/pdfs
+RUN mkdir -p /tmp/rlm_images
+RUN mkdir -p /tmp/rlm_pdfs
+
+# BEFORE: COPY ./prompt/images /prompt/images, etc.
+COPY ./prompt/images /prompt/images
+COPY ./prompt/pdfs /prompt/pdfs
+
+WORKDIR /workspace
+
+CMD ["tail", "-f", "/dev/null"]

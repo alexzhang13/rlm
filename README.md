@@ -1,163 +1,113 @@
+# VLM extension for Recursive Language Models (RLMs)
 
----
+This repository extends the [Recursive Language Models (RLMs)](https://github.com/alexzhang13/rlm) with support for vision-language models (VLMs), allowing images and PDFs to be passed in together with the query. The examples and tests for this implementation make use of US Congressional documents.
 
-<h1 align="center" style="font-size:2.8em">
-<span>Recursive Language Models (<span style="color:orange">RLM</span>s)</span>
-</h1>
+<h3>VLM Example: Congressional Document Analysis</h3>
+<p>RLM with VLM support can reason over scanned documents,
+tables, and figures that are not extractable as indexed
+  text.</p>
 
-<p align="center" style="font-size:1.3em">
-  <a href="https://arxiv.org/abs/2512.24601">Full Paper</a> •
-  <a href="https://alexzhang13.github.io/blog/2025/rlm/">Blogpost</a> •
-  <a href="https://alexzhang13.github.io/rlm/">Documentation</a> •
-  <a href="https://github.com/alexzhang13/rlm-minimal">RLM Minimal</a>
-</p>
+<table>
+    <tr>
+      <td align="center" width="33%">
+        <img src="media/doc1.png" width="100%" alt="Congressional
+   document page 1"/>
+        <br/><sub>Congressional Research Service (CRS) document about the situation in Venezuela, 2022</sub>
+      </td>
+      <td align="center" width="33%">
+        <img src="media/doc2.png" width="100%" alt="Congressional
+   document page 2"/>
+        <br/><sub>CRS document about the situation in Yemen, 2026</sub>
+      </td>
+      <td align="center" width="33%">
+        <img src="media/doc3.png" width="100%" alt="Congressional
+   document page 3"/>
+        <br/><sub>A scan of the letter inside a committee report of the House Natural Resources Committee</sub>
+      </td>
+    </tr>
+</table>
 
-<p align="center">
-  <a href="https://github.com/alexzhang13/rlm/actions/workflows/style.yml">
-    <img src="https://github.com/alexzhang13/rlm/actions/workflows/style.yml/badge.svg" alt="Style" />
-  </a>
-  <a href="https://github.com/alexzhang13/rlm/actions/workflows/test.yml">
-    <img src="https://github.com/alexzhang13/rlm/actions/workflows/test.yml/badge.svg" alt="Test" />
-  </a>
-</p>
+**Disclaimer**: This extension is **OpenAI client only** for the moment and **only works in a Docker environment**.
 
-<p align="center">
-  <a href="https://arxiv.org/abs/2512.24601">
-    <img src="media/paper_preview.png" alt="Paper Preview" width="300"/>
-  </a>
-</p>
+## Overview of the Extension
 
-## Overview
-Recursive Language Models (RLMs) are a task-agnostic inference paradigm for language models (LMs) to handle near-infinite length contexts by enabling the LM to *programmatically* examine, decompose, and recursively call itself over its input. RLMs replace the canonical `llm.completion(prompt, model)` call with a `rlm.completion(prompt, model)` call. RLMs offload the context as a variable in a REPL environment that the LM can interact with and launch sub-LM calls inside of.
+Now, PDFs and images (JPG/JPEG/PNG) can be passed to the new `prompt/` directory that contains all the files that come with the prompt:
 
-This repository provides an extensible inference engine for using RLMs around standard API-based and local LLMs. The initial experiments and idea were proposed in a [blogpost](https://alexzhang13.github.io/blog/2025/rlm/) in 2025, with expanded results in an [arXiv preprint](https://arxiv.org/abs/2512.24601).
-
-> [!NOTE]
-> This repository contains inference code for RLMs with support for various sandbox environments. Open-source contributions are welcome. This repository is maintained by the authors of the paper from the MIT OASYS lab.
-
-## Quick Setup
-You can try out RLMs quickly by installing from PyPi:
-```bash
-pip install rlms
+```
+prompt/    
+  ├──pdfs/                                                   
+  │   ├── doc1.pdf                                          
+  │   └── doc2.pdf
+  └──images/
+      ├── img1.png                                  
+      ├── img2.jpeg
+      └── img3.jpg
 ```
 
-The default RLM client uses a REPL environment that runs on the host process through Python `exec` calls. It uses the same virtual environment as the host process (i.e. it will have access to the same dependencies), but with some limitations in its available global modules. As an example, we can call RLM completions using GPT-5-nano:
-```python
-from rlm import RLM
+These files get loaded during the start-up of the Docker container (see `Dockerfile.vlm`).
 
-rlm = RLM(
-    backend="openai",
-    backend_kwargs={"model_name": "gpt-5-nano"},
-    verbose=True,  # For printing to console with rich, disabled by default.
-)
-
-print(rlm.completion("Print me the first 100 powers of two, each on a newline.").response)
-```
-
-<details>
-<summary><b>Manual Setup</b></summary>
-
-Set up the dependencies with `uv` (or your virtual environment of choice):
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv init && uv venv --python 3.12  # change version as needed
-uv pip install -e .
-```
-
-This project includes a `Makefile` to simplify common tasks.
-
-- `make install`: Install base dependencies.
-- `make check`: Run linter, formatter, and tests.
-
-To run a quick test, the following will run an RLM query with the OpenAI client using your environment variable `OPENAI_API_KEY` (feel free to change this). This will generate console output as well as a log which you can use with the visualizer to explore the trajectories.
-```bash
-make quickstart
-```
-
-</details>
-
-## REPL Environments
-We support two types of REPL environments -- isolated, and non-isolated. Non-isolated environments (default) run code execution on the same machine as the RLM (e.g. through `exec`), which is pretty reasonable for some local low-risk tasks, like simple benchmarking, but can be problematic if the prompts or tool calls can interact with malicious users. Fully isolated environments use cloud-based sandboxes (e.g. Prime Sandboxes, [Modal Sandboxes](https://modal.com/docs/guide/sandboxes)) to run code generated by the RLM, ensuring complete isolation from the host process. Environments can be added, but we natively support the following: `local` (default), `docker`, `modal`, `prime`, `daytona`, `e2b`.
+We changed the signature of the `llm_query` and the `llm_query_batched` methods to accept paths and lists of paths to images:
 
 ```python
-rlm = RLM(
-    environment="...", # "local", "docker", "modal", "prime", "daytona", "e2b"
-    environment_kwargs={...},
-)
+llm_query(prompt: str, image_paths: List[str] = None, **kwargs)
+llm_query_batched(prompts: List[str], image_path_lists: List[List[str]] = None, **kwargs)
 ```
 
-### Local Environments
-The default `local` environment `LocalREPL` runs in the same process as the RLM itself, with specified global and local namespaces for minimal security. Using this REPL is generally safe, but should not be used for production settings. It also shares the same virtual environment (e.g. Conda or uv) as the host process.
+These image paths then get encoded to data URI's inside the container and then passed to the OpenAI client on the host machine. The original idea was to lazy load the images on the host machine, but this is not possible since the host machine does not have access to the filesystem container.
 
-#### Docker <img src="https://github.com/docker.png" alt="Docker" height="20" style="vertical-align: middle;"/> (*requires [Docker installed](https://docs.docker.com/desktop/setup/install/)*)
-We also support a Docker-based environment called `DockerREPL` that launches the REPL environment as a Docker image. By default, we use the `python:3.11-slim` image, but the user can specify custom images as well.
+## How To Run the Example
 
-### Isolated Environments
-We support several different REPL environments that run on separate, cloud-based machines. Whenever a recursive sub-call is made in these instances, it is requested from the host process.
-
-#### Modal Sandboxes <img src="https://github.com/modal-labs.png" alt="Modal" height="20" style="vertical-align: middle;"/>
-To use [Modal Sandboxes](https://modal.com/docs/guide/sandboxes) as the REPL environment, you need to install and authenticate your Modal account.
+1. Clone this repository
 ```bash
-uv add modal  # add modal library
-modal setup   # authenticate account
+git clone https://github.com/famitzsy8/rvlm.git
 ```
 
-#### Prime Intellect Sandboxes <img src="https://github.com/PrimeIntellect-ai.png" alt="Prime Intellect" height="20" style="vertical-align: middle;"/>
-> [!NOTE]
-> **Prime Intellect Sandboxes** are currently a beta feature. See the [documentation](https://docs.primeintellect.ai/sandboxes/overview) for more information. We noticed slow runtimes when using these sandboxes, which is currently an open issue.
-
-
-To use [Prime Sandboxes](https://docs.primeintellect.ai/sandboxes/sdk), install the SDK and set your API key:
+2. Build the Docker image
 ```bash
-uv pip install -e ".[prime]"
-export PRIME_API_KEY=...
+docker build -t rlm-vlm-tryout -f Dockerfile.vlm .
 ```
 
-
-### Model Providers
-We currently support most major clients (OpenAI, Anthropic), as well as the router platforms (OpenRouter, Portkey, LiteLLM). For local models, we recommend using vLLM (which interfaces with the [OpenAI client](https://github.com/alexzhang13/rlm/blob/main/rlm/clients/openai.py)). To view or add support for more clients, start by looking at [`rlm/clients/`](https://github.com/alexzhang13/rlm/tree/main/rlm/clients).
-
-## Relevant Reading
-* **[Dec '25]** [Recursive Language Models arXiv](https://arxiv.org/abs/2512.24601)
-* **[Oct '25]** [Recursive Language Models Blogpost](https://alexzhang13.github.io/blog/2025/rlm/)
-
-If you use this code or repository in your research, please cite:
-
-```bibtex
-@misc{zhang2026recursivelanguagemodels,
-      title={Recursive Language Models},
-      author={Alex L. Zhang and Tim Kraska and Omar Khattab},
-      year={2026},
-      eprint={2512.24601},
-      archivePrefix={arXiv},
-      primaryClass={cs.AI},
-      url={https://arxiv.org/abs/2512.24601},
-}
+3. Set your OpenAI API key in your terminal
+```bash
+export OPENAI_API_KEY=your_openai_api_key
 ```
 
-## Optional: Trajectory metadata and logging
-`RLMChatCompletion` has an optional `metadata` field (default `None`) that holds the full trajectory (run config + all iterations and sub-calls) so you can reconstruct the run. Pass an `RLMLogger` to capture it:
-
-- **In-memory only** (trajectory on `completion.metadata`): `logger=RLMLogger()` (no `log_dir`).
-- **Also save to disk** (JSONL for the visualizer): `logger=RLMLogger(log_dir="./logs")`.
-
-## Optional Debugging: Visualizing RLM Trajectories
-We provide a simple visualizer to inspect code, sub-LM, and root-LM calls. Use `RLMLogger(log_dir="./logs")` so each completion writes a `.jsonl` file:
-```python
-from rlm.logger import RLMLogger
-from rlm import RLM
-
-logger = RLMLogger(log_dir="./logs")
-rlm = RLM(..., logger=logger)
+4. Run the script (by default with `gpt-5.2`)
+```bash
+uv run python -m examples.vlm_example
 ```
 
-To run the visualizer locally, we use Node.js and shadcn/ui:
-```
-cd visualizer/
-npm run dev        # default localhost:3001
-```
+## How to Run the Tests
 
-You'll have the option to select saved `.jsonl` files 
-<p align="center">
-  <img src="media/visualizer.png" alt="RLM Visualizer Example" width="800"/>
-</p>
+We have 4 `pytest` fixtures inside of `tests/vlm/fixtures/`:
+
+- `test_one_image`: Tests a prompt with a single image
+- `test_n_images`: Tests a prompt with multiple images
+- `test_pdf2image`: Tests a prompt with a PDF (and if the model can convert the PDF to images)
+- `test_supported_formats`: Tests the prompt with 3 images of the different supported formats (JPG, JPEG, PNG)
+
+1. Clone this repository
+```bash
+git clone https://github.com/famitzsy8/rvlm.git
+```
+2. Set the OpenAI API key in your terminal
+```bash
+export OPENAI_API_KEY=your_openai_api_key
+```
+3. Run the tests
+```bash
+make test-vlm
+```
+If you want to see the output of the tests (that can be quite long) wrap them into this command:
+```bash
+make test-vlm 2>&1 | tee test-vlm.txt
+```
+This ensures that you have all the output saved, but see it live when running the tests from your terminal.
+
+## A Note on the Examples and the Tests
+
+The prime motivation for this extension was my own quest to process large and complex documents from the United States Congress without polluting context. Most of the nitty-gritty details happen in hearings and are logged onto committee reports that can be long with multiple figures, tables and explanatory images. Now it is possible to detect and look at figures with the VLMs.
+
+## Unhandled Features
+
+- Currently we can ONLY use OpenAI models that support images as input. You can find the input descriptions for the OpenAI models [here](https://developers.openai.com/api/docs/models). Selection of a non-VLM model or a model not from OpenAI will raise errors.
