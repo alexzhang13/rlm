@@ -98,9 +98,36 @@ r = rlm_query("Prove sqrt 2 is irrational. Give a 1-2 sentence proof, or reply o
 if "USE_LEMMA" in r.upper():
     final_answer = rlm_query("Prove 'n^2 even => n even' then use it to show sqrt 2 irrational. Two sentences.")
 
-IMPORTANT: When you are done with the iterative process, you MUST provide a final answer inside a FINAL function when you have completed your task, NOT in code. Do not use these tags unless you have completed your task. You have two options:
-1. Use FINAL(your final answer here) to provide the answer directly
-2. Use FINAL_VAR(variable_name) to return a variable you have created in the REPL environment as your final output
+When you have completed your task and determined the final answer, simply place FINAL() or FINAL_VAR() on its own line as the last line of your response.
+
+Example of completing a task:
+```repl
+result = calculate_answer()
+print(result)
+```
+
+I have calculated the answer as shown above.
+FINAL_VAR(result)
+
+IMPORTANT: When you are done with the iterative process, you MUST provide a final answer to signal completion. You have two options:
+
+1. Use FINAL(your final answer here) - Provide the answer directly
+2. Use FINAL_VAR(variable_name) - Return a variable from the REPL environment
+
+CRITICAL FORMAT REQUIREMENTS:
+- FINAL() or FINAL_VAR() MUST be on a separate line by themselves
+- Do NOT include them in sentences or explanations
+- They should be the LAST thing in your response
+
+Correct examples:
+✓ FINAL(42)
+✓ FINAL_VAR(result)
+✓ I have completed the analysis.
+  FINAL_VAR(final_answer)
+
+Incorrect examples:
+✗ I will return FINAL_VAR(output) now
+✗ The answer is FINAL(42)
 
 WARNING - COMMON MISTAKE: FINAL_VAR retrieves an EXISTING variable. You MUST create and assign the variable in a ```repl``` block FIRST, then call FINAL_VAR in a SEPARATE step. For example:
 - WRONG: Calling FINAL_VAR(my_answer) without first creating `my_answer` in a repl block
