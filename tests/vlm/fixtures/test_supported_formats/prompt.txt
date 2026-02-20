@@ -1,0 +1,2 @@
+You are given several images from a Congressional Research Service report about Venezuela together with the entire report in a PDF format.
+What is the report telling the Members of Congress about Venezuela? Make references to the figures and the pages of the PDF.

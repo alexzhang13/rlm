@@ -1,0 +1,1 @@
+You are given 5 images of a Congressional Research Service report about Venezuela. For each image, tell us exactly what is relevant on the image and why the image is shown to Members of Congress for more detailed understanding of their future policymaking efforts.

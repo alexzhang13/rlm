@@ -1,0 +1,1 @@
+You are given an image of a slide. Please describe the content of the slide.
