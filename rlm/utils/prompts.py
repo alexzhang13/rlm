@@ -147,7 +147,7 @@ def build_rlm_system_prompt(
     tools_formatted = format_tools_for_prompt(custom_tools)
     if tools_formatted:
         custom_tools_section = (
-            f"\n6. Custom tools and data available in the REPL:\n{tools_formatted}"
+            f"\n**Custom tools and data available in the REPL:**\n{tools_formatted}"
         )
     else:
         custom_tools_section = ""
