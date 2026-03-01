@@ -251,33 +251,99 @@ class TestDepth1LimitChecks:
         assert rlm._consecutive_errors == 0
 
     def test_budget_check_raises(self):
-        """_check_iteration_limits should raise BudgetExceededError when budget exceeded."""
-        from rlm.core.types import RLMIteration
+        """_completion_turn syncs handler cost; _check_iteration_limits detects overspend."""
+        from rlm.core.types import REPLResult
 
-        rlm = RLM(
+        rlm_inst = RLM(
             backend="openai",
             backend_kwargs={"model_name": "test"},
             max_budget=0.01,
         )
 
+        # Mock handler: completion returns no code blocks, handler spent $0.05
         mock_handler = Mock()
+        mock_handler.completion.return_value = "No code to run."
         mock_handler.get_usage_summary.return_value = UsageSummary(
             model_usage_summaries={
                 "test": ModelUsageSummary(
-                    total_calls=10,
-                    total_input_tokens=10000,
-                    total_output_tokens=10000,
-                    total_cost=0.05,
+                    total_calls=1, total_input_tokens=0, total_output_tokens=0, total_cost=0.05
                 )
             }
         )
 
-        iteration = RLMIteration(prompt="test", response="code", code_blocks=[])
+        mock_env = Mock()
+
+        # _completion_turn calls _update_handler_cost → adds $0.05 to _cumulative_cost
+        iteration = rlm_inst._completion_turn(
+            prompt=[{"role": "user", "content": "test"}],
+            lm_handler=mock_handler,
+            environment=mock_env,
+        )
+
+        assert rlm_inst._cumulative_cost == 0.05
 
         with pytest.raises(BudgetExceededError) as exc_info:
-            rlm._check_iteration_limits(iteration, 0, mock_handler)
-        assert exc_info.value.spent > 0.01
+            rlm_inst._check_iteration_limits(iteration, 0, mock_handler)
+        assert exc_info.value.spent == 0.05
         assert exc_info.value.budget == 0.01
+
+    def test_budget_includes_child_cost_after_iteration(self):
+        """Regression: _cumulative_cost must include both handler and child subcall costs.
+
+        Exercises the real flow: _completion_turn calls _update_handler_cost
+        (syncing handler cost delta into _cumulative_cost), then executes code
+        blocks where _subcall adds child cost to _cumulative_cost.
+        _check_iteration_limits should see the accumulated total.
+        """
+        from rlm.core.types import REPLResult
+
+        rlm_inst = RLM(
+            backend="openai",
+            backend_kwargs={"model_name": "test"},
+            max_budget=5.0,
+        )
+
+        # Mock handler: completion returns a response with a code block,
+        # handler spent $1.0
+        mock_handler = Mock()
+        mock_handler.completion.return_value = (
+            "Running subcall\n```repl\nrlm_query('hello')\n```"
+        )
+        mock_handler.get_usage_summary.return_value = UsageSummary(
+            model_usage_summaries={
+                "test": ModelUsageSummary(
+                    total_calls=1, total_input_tokens=0, total_output_tokens=0, total_cost=1.0
+                )
+            }
+        )
+
+        # Mock environment: execute_code simulates _subcall adding $9 child cost
+        mock_env = Mock()
+
+        def execute_with_child_cost(code_str):
+            rlm_inst._cumulative_cost += 9.0
+            return REPLResult(stdout="", stderr="", locals={})
+
+        mock_env.execute_code.side_effect = execute_with_child_cost
+
+        # _completion_turn:
+        # 1. lm_handler.completion() → response with code block
+        # 2. _update_handler_cost() → adds $1 handler delta
+        # 3. execute_code() → child adds $9 via side effect
+        iteration = rlm_inst._completion_turn(
+            prompt=[{"role": "user", "content": "test"}],
+            lm_handler=mock_handler,
+            environment=mock_env,
+        )
+
+        # Total: $1 (handler) + $9 (child) = $10 > $5 budget
+        assert rlm_inst._cumulative_cost == 10.0
+
+        with pytest.raises(BudgetExceededError) as exc_info:
+            rlm_inst._check_iteration_limits(iteration, 0, mock_handler)
+
+        assert exc_info.value.spent == 10.0
+        assert exc_info.value.budget == 5.0
 
     def test_token_limit_check_raises(self):
         """_check_iteration_limits should raise TokenLimitExceededError when tokens exceeded."""
