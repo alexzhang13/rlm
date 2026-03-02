@@ -696,6 +696,9 @@ class RLM:
                 end_time = time.perf_counter()
                 model_usage = client.get_last_usage()
                 usage_summary = UsageSummary(model_usage_summaries={root_model: model_usage})
+                # Track fallback LM cost in parent's cumulative total
+                if usage_summary.total_cost:
+                    self._cumulative_cost += usage_summary.total_cost
                 return RLMChatCompletion(
                     root_model=root_model,
                     prompt=prompt,

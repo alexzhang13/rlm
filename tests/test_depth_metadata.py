@@ -345,6 +345,35 @@ class TestDepth1LimitChecks:
         assert exc_info.value.spent == 10.0
         assert exc_info.value.budget == 5.0
 
+    def test_fallback_lm_cost_tracked(self):
+        """At max_depth, _subcall does a plain LM completion. Its cost must
+        still be added to _cumulative_cost for budget tracking."""
+
+        rlm_inst = RLM(
+            backend="openai",
+            backend_kwargs={"model_name": "test"},
+            max_budget=5.0,
+            max_depth=1,  # next_depth=1 >= 1 → fallback path
+        )
+
+        assert rlm_inst._cumulative_cost == 0.0
+
+        # Mock get_client to return a client that reports $3 cost
+        mock_client = Mock()
+        mock_client.model_name = "test"
+        mock_client.completion.return_value = "fallback answer"
+        mock_client.get_last_usage.return_value = ModelUsageSummary(
+            total_calls=1, total_input_tokens=100, total_output_tokens=50, total_cost=3.0
+        )
+
+        with patch("rlm.core.rlm.get_client", return_value=mock_client):
+            result = rlm_inst._subcall("test prompt")
+
+        assert result.response == "fallback answer"
+        assert result.usage_summary.total_cost == 3.0
+        # Fallback LM cost must be tracked in parent's _cumulative_cost
+        assert rlm_inst._cumulative_cost == 3.0
+
     def test_token_limit_check_raises(self):
         """_check_iteration_limits should raise TokenLimitExceededError when tokens exceeded."""
         from rlm.core.types import RLMIteration
