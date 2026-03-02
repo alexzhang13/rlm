@@ -16,6 +16,7 @@ RESERVED_TOOL_NAMES: frozenset[str] = frozenset(
         "llm_query_batched",
         "rlm_query",
         "rlm_query_batched",
+        "FINAL",
         "FINAL_VAR",
         "SHOW_VARS",
         "context",

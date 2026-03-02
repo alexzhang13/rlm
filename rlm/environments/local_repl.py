@@ -188,6 +188,7 @@ class LocalREPL(NonIsolatedEnv):
         self._last_final_answer: str | None = None
 
         # Add helper functions
+        self.globals["FINAL"] = self._final
         self.globals["FINAL_VAR"] = self._final_var
         self.globals["SHOW_VARS"] = self._show_vars
         self.globals["llm_query"] = self._llm_query
@@ -204,6 +205,12 @@ class LocalREPL(NonIsolatedEnv):
             else:
                 # For non-callable values (constants, data), add to locals
                 self.locals[name] = value
+
+    def _final(self, value: Any) -> str:
+        """Store and return a direct final value (compat with models calling FINAL in REPL)."""
+        answer = str(value)
+        self._last_final_answer = answer
+        return answer
 
     def _final_var(self, variable_name: str | Any) -> str:
         """Return the value of a variable as a final answer for the main model, or stringify a direct value."""
@@ -468,6 +475,8 @@ class LocalREPL(NonIsolatedEnv):
                 self.globals["rlm_query"] = self._rlm_query
             elif name == "rlm_query_batched":
                 self.globals["rlm_query_batched"] = self._rlm_query_batched
+            elif name == "FINAL":
+                self.globals["FINAL"] = self._final
             elif name == "FINAL_VAR":
                 self.globals["FINAL_VAR"] = self._final_var
             elif name == "SHOW_VARS":
