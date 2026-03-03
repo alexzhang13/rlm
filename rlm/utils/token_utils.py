@@ -64,6 +64,10 @@ MODEL_CONTEXT_LIMITS: dict[str, int] = {
     "glm-4-9b": 1_000_000,
     "glm-4": 128_000,
     "glm": 128_000,
+    # Claude CLI aliases (used by claude_cli backend)
+    "sonnet": 200_000,
+    "opus": 200_000,
+    "haiku": 200_000,
 }
 
 
