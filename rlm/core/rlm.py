@@ -1,7 +1,7 @@
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from rlm.clients import BaseLM, get_client
 from rlm.core.lm_handler import LMHandler
@@ -38,6 +38,9 @@ from rlm.utils.prompts import (
 from rlm.utils.rlm_utils import filter_sensitive_keys
 from rlm.utils.token_utils import count_tokens, get_context_limit
 
+if TYPE_CHECKING:
+    from rlm.utils.cache import LLMCallCache
+
 
 class RLM:
     """
@@ -70,6 +73,7 @@ class RLM:
         custom_sub_tools: dict[str, Any] | None = None,
         compaction: bool = False,
         compaction_threshold_pct: float = 0.85,
+        cache: "LLMCallCache | None" = None,
         on_subcall_start: Callable[[int, str, str], None] | None = None,
         on_subcall_complete: Callable[[int, str, float, str | None], None] | None = None,
         on_iteration_start: Callable[[int, int], None] | None = None,
@@ -102,6 +106,10 @@ class RLM:
                 when root context reaches compaction_threshold_pct of the model's context limit.
             compaction_threshold_pct: When compaction is on, trigger summarization when root
                 message token count reaches this fraction of the model context limit (default 0.85).
+            cache: Optional LLMCallCache for memoizing llm_query calls. When provided, identical prompts
+                will return cached responses instead of making redundant API calls. Useful for recursive
+                workloads with overlapping subproblems (e.g., Fibonacci-like decomposition).
+                Note: caching is only supported for environment='local'; for other environments, the cache is ignored.
             on_subcall_start: Callback fired when a child RLM starts. Args: (depth, model, prompt_preview).
             on_subcall_complete: Callback fired when a child RLM completes. Args: (depth, model, duration, error_or_none).
             on_iteration_start: Callback fired when an iteration starts. Args: (depth, iteration_num).
@@ -132,6 +140,9 @@ class RLM:
 
         self.compaction = compaction
         self.compaction_threshold_pct = compaction_threshold_pct
+
+        # LLM call cache for memoization
+        self.cache = cache
 
         self.depth = depth
         self.max_depth = max_depth
@@ -238,6 +249,9 @@ class RLM:
                 env_kwargs["custom_sub_tools"] = self.custom_sub_tools
             if self.compaction and self.environment_type == "local":
                 env_kwargs["compaction"] = True
+            # Pass cache for LLM call memoization
+            if self.cache is not None and self.environment_type == "local":
+                env_kwargs["cache"] = self.cache
             environment: BaseEnv = get_environment(self.environment_type, env_kwargs)
 
             if self.persistent:

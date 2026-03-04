@@ -10,7 +10,7 @@ import time
 import uuid
 from collections.abc import Callable
 from contextlib import contextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from rlm.core.comms_utils import LMRequest, send_lm_request, send_lm_request_batched
 from rlm.core.types import REPLResult, RLMChatCompletion
@@ -20,6 +20,9 @@ from rlm.environments.base_env import (
     extract_tool_value,
     validate_custom_tools,
 )
+
+if TYPE_CHECKING:
+    from rlm.utils.cache import LLMCallCache
 
 # =============================================================================
 # Safe Builtins
@@ -135,12 +138,14 @@ class LocalREPL(NonIsolatedEnv):
         custom_tools: dict[str, Any] | None = None,
         custom_sub_tools: dict[str, Any] | None = None,
         compaction: bool = False,
+        cache: "LLMCallCache | None" = None,
         **kwargs,
     ):
         super().__init__(persistent=persistent, depth=depth, **kwargs)
 
         self.lm_handler_address = lm_handler_address
         self.subcall_fn = subcall_fn  # Callback for recursive RLM calls (depth > 1 support)
+        self.cache = cache  # Optional LLM call cache for memoization
         self.original_cwd = os.getcwd()
         self.temp_dir = tempfile.mkdtemp(prefix=f"repl_env_{uuid.uuid4()}_")
         self._lock = threading.Lock()
@@ -242,6 +247,7 @@ class LocalREPL(NonIsolatedEnv):
         """Query the LM with a single plain completion (no REPL, no recursion).
 
         This always makes a direct LM call via the handler, regardless of depth.
+        Supports optional caching to avoid redundant API calls.
 
         Args:
             prompt: The prompt to send to the LM.
@@ -250,15 +256,24 @@ class LocalREPL(NonIsolatedEnv):
         if not self.lm_handler_address:
             return "Error: No LM handler configured"
 
-        try:
+        # Define the actual API call function
+        def make_api_call() -> str:
             request = LMRequest(prompt=prompt, model=model, depth=self.depth)
             response = send_lm_request(self.lm_handler_address, request)
 
             if not response.success:
-                return f"Error: {response.error}"
+                raise RuntimeError(response.error)
 
             self._pending_llm_calls.append(response.chat_completion)
             return response.chat_completion.response
+
+        try:
+            # Use cache if available
+            if self.cache is not None:
+                result, was_cached = self.cache.get_or_call(prompt, model, make_api_call)
+                return result
+            else:
+                return make_api_call()
         except Exception as e:
             return f"Error: LM query failed - {e}"
 
@@ -266,6 +281,7 @@ class LocalREPL(NonIsolatedEnv):
         """Query the LM with multiple prompts concurrently (no REPL, no recursion).
 
         This always makes direct LM calls via the handler, regardless of depth.
+        Supports optional caching to avoid redundant API calls.
 
         Args:
             prompts: List of prompts to send to the LM.
@@ -276,7 +292,46 @@ class LocalREPL(NonIsolatedEnv):
         """
         if not self.lm_handler_address:
             return ["Error: No LM handler configured"] * len(prompts)
+
         try:
+            # With caching: check cache first, only send uncached prompts to API
+            if self.cache is not None:
+                results: list[str | None] = [None] * len(prompts)
+                uncached_prompts: list[tuple[int, str]] = []
+
+                # Check cache for each prompt
+                for i, prompt in enumerate(prompts):
+                    cached = self.cache.get(prompt, model)
+                    if cached is not None:
+                        results[i] = cached
+                        self.cache.record_hit()
+                    else:
+                        uncached_prompts.append((i, prompt))
+                        self.cache.record_miss()
+
+                # Make API calls only for uncached prompts
+                if uncached_prompts:
+                    uncached_texts = [p for _, p in uncached_prompts]
+                    responses = send_lm_request_batched(
+                        self.lm_handler_address, uncached_texts, model=model, depth=self.depth
+                    )
+
+                    for (idx, prompt), response in zip(uncached_prompts, responses):
+                        if not response.success:
+                            results[idx] = f"Error: LM query failed - {response.error}"
+                        else:
+                            self._pending_llm_calls.append(response.chat_completion)
+                            result = response.chat_completion.response
+                            results[idx] = result
+                            # Cache the successful response
+                            self.cache.set(prompt, model, result)
+
+                return [
+                    r if r is not None else f"Error: Unexpected cache failure for prompt at index {i}"
+                    for i, r in enumerate(results)
+                ]
+
+            # Without caching: send all prompts directly
             responses = send_lm_request_batched(
                 self.lm_handler_address, prompts, model=model, depth=self.depth
             )
@@ -284,7 +339,7 @@ class LocalREPL(NonIsolatedEnv):
             results = []
             for response in responses:
                 if not response.success:
-                    results.append(f"Error: {response.error}")
+                    results.append(f"Error: LM query failed - {response.error}")
                 else:
                     self._pending_llm_calls.append(response.chat_completion)
                     results.append(response.chat_completion.response)
