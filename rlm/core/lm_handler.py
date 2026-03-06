@@ -85,8 +85,14 @@ class LMRequestHandler(StreamRequestHandler):
 
         start_time = time.perf_counter()
 
+        sem = asyncio.Semaphore(handler.batch_max_concurrent)
+
+        async def run_one(prompt: str):
+            async with sem:
+                return await client.acompletion(prompt)
+
         async def run_all():
-            tasks = [client.acompletion(prompt) for prompt in request.prompts]
+            tasks = [run_one(prompt) for prompt in request.prompts]
             return await asyncio.gather(*tasks)
 
         results = asyncio.run(run_all())
@@ -132,6 +138,7 @@ class LMHandler:
         host: str = "127.0.0.1",
         port: int = 0,  # auto-assign available port
         other_backend_client: BaseLM | None = None,
+        batch_max_concurrent: int = 16,
     ):
         self.default_client = client
         self.other_backend_client = other_backend_client
@@ -140,6 +147,7 @@ class LMHandler:
         self._server: ThreadingLMServer | None = None
         self._thread: Thread | None = None
         self._port = port
+        self.batch_max_concurrent = batch_max_concurrent
 
         self.register_client(client.model_name, client)
 

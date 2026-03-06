@@ -14,12 +14,17 @@ load_dotenv()
 DEFAULT_OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DEFAULT_OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 DEFAULT_VERCEL_API_KEY = os.getenv("AI_GATEWAY_API_KEY")
+DEFAULT_PRIME_API_KEY = os.getenv("PRIME_API_KEY")
 DEFAULT_PRIME_INTELLECT_BASE_URL = "https://api.pinference.ai/api/v1/"
 
 
 class OpenAIClient(BaseLM):
     """
     LM Client for running models with the OpenAI API. Works with vLLM as well.
+
+    Any additional keyword arguments (e.g. default_headers, default_query, max_retries)
+    are passed through to the underlying openai.OpenAI and openai.AsyncOpenAI constructors.
+    Only model_name is excluded, since it is not a client constructor argument.
     """
 
     def __init__(
@@ -38,12 +43,19 @@ class OpenAIClient(BaseLM):
                 api_key = DEFAULT_OPENROUTER_API_KEY
             elif base_url == "https://ai-gateway.vercel.sh/v1":
                 api_key = DEFAULT_VERCEL_API_KEY
+            elif base_url == DEFAULT_PRIME_INTELLECT_BASE_URL:
+                api_key = DEFAULT_PRIME_API_KEY
 
-        # For vLLM, set base_url to local vLLM server address.
-        self.client = openai.OpenAI(api_key=api_key, base_url=base_url, timeout=self.timeout)
-        self.async_client = openai.AsyncOpenAI(
-            api_key=api_key, base_url=base_url, timeout=self.timeout
-        )
+        # Pass through arbitrary kwargs to the OpenAI client (e.g. default_headers, default_query, max_retries).
+        # Exclude model_name since it is not an OpenAI client constructor argument.
+        client_kwargs = {
+            "api_key": api_key,
+            "base_url": base_url,
+            "timeout": self.timeout,
+            **{k: v for k, v in self.kwargs.items() if k != "model_name"},
+        }
+        self.client = openai.OpenAI(**client_kwargs)
+        self.async_client = openai.AsyncOpenAI(**client_kwargs)
         self.model_name = model_name
         self.base_url = base_url  # Track for cost extraction
 
