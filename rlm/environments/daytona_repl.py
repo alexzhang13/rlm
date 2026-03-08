@@ -610,9 +610,23 @@ class DaytonaREPL(IsolatedEnv):
 
     def load_context(self, context_payload: ContextPayload):
         """Load context into the sandbox environment."""
-        from rlm.utils.dataframe_utils import build_context_code
+        from rlm.utils.dataframe_utils import (
+            build_dataframe_context_code,
+            dataframe_to_parquet_b64,
+            get_dataframe_type,
+        )
 
-        self.execute_code(build_context_code(context_payload))
+        df_type = get_dataframe_type(context_payload)
+        if df_type is not None:
+            parquet_b64, df_type = dataframe_to_parquet_b64(context_payload)
+            self.execute_code(build_dataframe_context_code(parquet_b64, df_type))
+        elif isinstance(context_payload, str):
+            escaped = context_payload.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
+            self.execute_code(f'context = """{escaped}"""')
+        else:
+            context_json = json.dumps(context_payload)
+            escaped_json = context_json.replace("\\", "\\\\").replace("'", "\\'")
+            self.execute_code(f"import json; context = json.loads('{escaped_json}')")
 
     def execute_code(self, code: str) -> REPLResult:
         """Execute code in the Daytona sandbox and return result."""

@@ -2,12 +2,10 @@
 
 import base64
 import io
-import json
 
 import pytest
 
 from rlm.utils.dataframe_utils import (
-    build_context_code,
     build_dataframe_context_code,
     dataframe_metadata,
     dataframe_to_parquet_b64,
@@ -157,81 +155,3 @@ class TestBuildDataframeContextCode:
         exec(code, ns)
         assert "my_df" in ns
         assert ns["my_df"]["v"].tolist() == [1]
-
-
-# ---------------------------------------------------------------------------
-# Unified dispatch — build_context_code()
-# ---------------------------------------------------------------------------
-
-
-class TestBuildContextCode:
-    """Tests for the unified build_context_code() dispatcher."""
-
-    def test_string_payload(self):
-        code = build_context_code("hello world")
-        ns = {}
-        exec(code, ns)
-        assert ns["context"] == "hello world"
-
-    def test_dict_payload(self):
-        payload = {"key": "value", "num": 42}
-        code = build_context_code(payload)
-        ns = {}
-        exec(code, ns)
-        assert ns["context"] == payload
-
-    def test_list_payload(self):
-        payload = [1, 2, "three"]
-        code = build_context_code(payload)
-        ns = {}
-        exec(code, ns)
-        assert ns["context"] == payload
-
-    def test_dataframe_payload(self):
-        pd = pytest.importorskip("pandas")
-        df = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
-        code = build_context_code(df)
-        ns = {}
-        exec(code, ns)
-        assert ns["context"]["a"].tolist() == [1, 2]
-        assert ns["context"]["b"].tolist() == [3, 4]
-
-    def test_empty_string(self):
-        code = build_context_code("")
-        ns = {}
-        exec(code, ns)
-        assert ns["context"] == ""
-
-    def test_empty_dict(self):
-        code = build_context_code({})
-        ns = {}
-        exec(code, ns)
-        assert ns["context"] == {}
-
-    def test_empty_list(self):
-        code = build_context_code([])
-        ns = {}
-        exec(code, ns)
-        assert ns["context"] == []
-
-    def test_special_chars_in_string(self):
-        payload = 'He said "hello" and she said \'goodbye\'\nNew line\ttab'
-        code = build_context_code(payload)
-        ns = {}
-        exec(code, ns)
-        assert ns["context"] == payload
-
-    def test_custom_var_name(self):
-        code = build_context_code("data", var_name="my_var")
-        ns = {}
-        exec(code, ns)
-        assert ns["my_var"] == "data"
-        assert "context" not in ns
-
-    def test_nested_dict(self):
-        payload = {"outer": {"inner": [1, 2, 3]}, "flag": True}
-        code = build_context_code(payload)
-        ns = {}
-        exec(code, ns)
-        assert ns["context"]["outer"]["inner"] == [1, 2, 3]
-        assert ns["context"]["flag"] is True
