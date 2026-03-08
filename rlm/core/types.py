@@ -2,8 +2,6 @@ from dataclasses import dataclass
 from types import ModuleType
 from typing import Any, Literal
 
-from rlm.utils.dataframe_utils import dataframe_metadata, get_dataframe_type
-
 # Type alias for context payloads. At runtime this is Any (to accept pandas
 # DataFrames without requiring pandas), but intended types are:
 # str | dict[str, Any] | list[Any] | pd.DataFrame
@@ -271,6 +269,8 @@ class QueryMetadata:
     context_summary: str | None = None
 
     def __init__(self, prompt: "ContextPayload"):
+        from rlm.utils.dataframe_utils import dataframe_metadata, get_dataframe_type
+
         df_type = get_dataframe_type(prompt)
         if df_type is not None:
             rows, cols = prompt.shape
