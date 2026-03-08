@@ -2,6 +2,13 @@ from dataclasses import dataclass
 from types import ModuleType
 from typing import Any, Literal
 
+from rlm.utils.dataframe_utils import dataframe_metadata, get_dataframe_type
+
+# Type alias for context payloads. At runtime this is Any (to accept pandas
+# DataFrames without requiring pandas), but intended types are:
+# str | dict[str, Any] | list[Any] | pd.DataFrame
+ContextPayload = Any
+
 ClientBackend = Literal[
     "openai",
     "portkey",
@@ -261,8 +268,18 @@ class QueryMetadata:
     context_lengths: list[int]
     context_total_length: int
     context_type: str
+    context_summary: str | None = None
 
-    def __init__(self, prompt: str | list[str] | dict[Any, Any] | list[dict[Any, Any]]):
+    def __init__(self, prompt: "ContextPayload"):
+        df_type = get_dataframe_type(prompt)
+        if df_type is not None:
+            rows, cols = prompt.shape
+            self.context_lengths = [rows]
+            self.context_total_length = rows * cols
+            self.context_type = f"{df_type}_dataframe"
+            self.context_summary = dataframe_metadata(prompt)
+            return
+
         if isinstance(prompt, str):
             self.context_lengths = [len(prompt)]
             self.context_type = "str"
@@ -302,3 +319,4 @@ class QueryMetadata:
             raise ValueError(f"Invalid prompt type: {type(prompt)}")
 
         self.context_total_length = sum(self.context_lengths)
+        self.context_summary = None

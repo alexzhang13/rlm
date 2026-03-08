@@ -3,12 +3,13 @@ import json
 import textwrap
 import threading
 import time
+from typing import Any
 
 import modal
 import requests
 
 from rlm.core.comms_utils import LMRequest, send_lm_request, send_lm_request_batched
-from rlm.core.types import REPLResult, RLMChatCompletion
+from rlm.core.types import ContextPayload, REPLResult, RLMChatCompletion
 from rlm.environments.base_env import IsolatedEnv
 from rlm.environments.constants import APT_PACKAGES, PIP_PACKAGES
 
@@ -297,7 +298,7 @@ class ModalREPL(IsolatedEnv):
         image: modal.Image | None = None,
         timeout: int = 600,
         lm_handler_address: tuple[str, int] | None = None,
-        context_payload: dict | list | str | None = None,
+        context_payload: ContextPayload | None = None,
         setup_code: str | None = None,
         persistent: bool = False,
         depth: int = 1,
@@ -435,17 +436,11 @@ class ModalREPL(IsolatedEnv):
 
         return {"error": "Unknown request type"}
 
-    def load_context(self, context_payload: dict | list | str):
+    def load_context(self, context_payload: ContextPayload):
         """Load context into the sandbox environment."""
-        if isinstance(context_payload, str):
-            escaped = context_payload.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
-            context_code = f'context = """{escaped}"""'
-        else:
-            context_json = json.dumps(context_payload)
-            escaped_json = context_json.replace("\\", "\\\\").replace("'", "\\'")
-            context_code = f"import json; context = json.loads('{escaped_json}')"
+        from rlm.utils.dataframe_utils import build_context_code
 
-        self.execute_code(context_code)
+        self.execute_code(build_context_code(context_payload))
 
     def execute_code(self, code: str) -> REPLResult:
         """Execute code in the Modal sandbox and return result."""

@@ -27,6 +27,7 @@ PIP_PACKAGES = [
     "tqdm>=4.66.0",
     "python-dateutil>=2.8.2",
     "regex>=2023.0.0",
+    "pyarrow>=14.0.0",
     # For state serialization
     "dill>=0.3.7",
 ]

@@ -2,6 +2,8 @@
 
 import os
 
+import pytest
+
 from rlm.environments.local_repl import LocalREPL
 
 
@@ -278,3 +280,50 @@ class TestLocalREPLSimulatingRLMNoPersistence:
         assert "NameError" in result.stderr
         assert "my_helper" in result.stderr
         completion_2_env.cleanup()
+
+
+class TestLocalREPLDataFrame:
+    """Tests for DataFrame context loading in LocalREPL."""
+
+    def test_dataframe_context(self):
+        """Test that a DataFrame is accessible as `context` and supports operations."""
+        pd = pytest.importorskip("pandas")
+        df = pd.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+        with LocalREPL(context_payload=df) as repl:
+            result = repl.execute_code("total = int(context['a'].sum())")
+            assert result.stderr == ""
+            assert repl.locals["total"] == 6
+
+            result = repl.execute_code("cols = list(context.columns)")
+            assert result.stderr == ""
+            assert repl.locals["cols"] == ["a", "b"]
+
+    def test_dataframe_preserves_dtypes(self):
+        """Test that int/float/str types survive the parquet round-trip."""
+        pd = pytest.importorskip("pandas")
+        df = pd.DataFrame({
+            "int_col": [1, 2, 3],
+            "float_col": [1.5, 2.5, 3.5],
+            "str_col": ["a", "b", "c"],
+        })
+        with LocalREPL(context_payload=df) as repl:
+            repl.execute_code(
+                "dtypes = {c: str(context[c].dtype) for c in context.columns}"
+            )
+            dtypes = repl.locals["dtypes"]
+            assert "int" in dtypes["int_col"]
+            assert "float" in dtypes["float_col"]
+            assert dtypes["str_col"] == "object"
+
+    def test_dataframe_versioned_context(self):
+        """Test add_context with multiple DataFrames."""
+        pd = pytest.importorskip("pandas")
+        df1 = pd.DataFrame({"x": [10, 20]})
+        df2 = pd.DataFrame({"y": [30, 40]})
+        with LocalREPL(context_payload=df1) as repl:
+            repl.add_context(df2)
+            result = repl.execute_code(
+                "val = int(context_0['x'].sum()) + int(context_1['y'].sum())"
+            )
+            assert result.stderr == ""
+            assert repl.locals["val"] == 100
