@@ -41,21 +41,24 @@ def dataframe_metadata(value: Any) -> str:
         raise ValueError(f"Unsupported DataFrame type: {type(value)}")
 
     rows, cols = value.shape
+    all_cols = list(value.columns)
     dtypes = {col: str(dtype) for col, dtype in value.dtypes.items()}
     null_counts = value.isna().sum().to_dict()
     memory_bytes = int(value.memory_usage(deep=True).sum())
-    head_rows = value.head(3).to_dict(orient="records")
-    tail_rows = value.tail(3).to_dict(orient="records")
 
     if cols > 20:
-        displayed_cols = list(dtypes.keys())[:20]
+        displayed_cols = all_cols[:20]
+        extra = cols - 20
         dtypes = {col: dtypes[col] for col in displayed_cols}
-        dtypes["..."] = f"{cols - 20} more columns"
+        dtypes["..."] = f"{extra} more columns"
+        null_counts = {col: null_counts[col] for col in displayed_cols}
+        null_counts["..."] = f"{extra} more columns"
+        preview_df = value[displayed_cols]
+    else:
+        preview_df = value
 
-    if cols > 20:
-        displayed_nulls = list(null_counts.keys())[:20]
-        null_counts = {col: null_counts[col] for col in displayed_nulls}
-        null_counts["..."] = f"{cols - 20} more columns"
+    head_rows = preview_df.head(3).to_dict(orient="records")
+    tail_rows = preview_df.tail(3).to_dict(orient="records")
 
     summary_lines = [
         f"DataFrame type: {df_type}",

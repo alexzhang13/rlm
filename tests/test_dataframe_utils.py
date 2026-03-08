@@ -122,6 +122,9 @@ class TestDataframeMetadata:
         df = pd.DataFrame({f"col_{i}": [i] for i in range(25)})
         meta = dataframe_metadata(df)
         assert "5 more columns" in meta
+        # Head/tail rows should also be truncated to displayed columns
+        assert "col_20" not in meta
+        assert "col_0" in meta
 
     def test_rejects_non_dataframe(self):
         with pytest.raises(ValueError, match="Unsupported DataFrame type"):
