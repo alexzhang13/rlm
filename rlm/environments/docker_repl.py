@@ -4,7 +4,7 @@ Docker REPL environment that runs Python code in a Docker container.
 Setup:
     docker build -t rlm-sandbox -f Dockerfile.sandbox .
 
-Or use any Python 3.11+ image with: pip install dill requests pandas pyarrow
+Or use any Python 3.11+ image with: pip install dill requests
 """
 
 import base64
@@ -273,27 +273,28 @@ class DockerREPL(NonIsolatedEnv):
 
         self.container_id = result.stdout.strip()
 
-        # Install dependencies
+        # Install base dependencies
         subprocess.run(
-            [
-                "docker",
-                "exec",
-                self.container_id,
-                "pip",
-                "install",
-                "-q",
-                "dill",
-                "requests",
-                "pandas",
-                "pyarrow",
-            ],
+            ["docker", "exec", self.container_id, "pip", "install", "-q", "dill", "requests"],
             capture_output=True,
         )
+        self._pandas_installed = False
+
+    def _ensure_pandas(self):
+        """Install pandas and pyarrow in the container if not already installed."""
+        if self._pandas_installed:
+            return
+        subprocess.run(
+            ["docker", "exec", self.container_id, "pip", "install", "-q", "pandas", "pyarrow"],
+            capture_output=True,
+        )
+        self._pandas_installed = True
 
     def load_context(self, context_payload: ContextPayload):
         """Load context by writing to a file in the mounted workspace."""
         df_type = get_dataframe_type(context_payload)
         if df_type is not None:
+            self._ensure_pandas()
             context_path = os.path.join(self.temp_dir, "context.parquet")
             parquet_bytes, df_type = dataframe_to_parquet_bytes(context_payload)
             with open(context_path, "wb") as f:
