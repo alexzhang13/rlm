@@ -269,7 +269,9 @@ class RLM:
             )
         return message_history
 
-    def completion(self, prompt: ContextPayload, root_prompt: str | None = None) -> RLMChatCompletion:
+    def completion(
+        self, prompt: ContextPayload, root_prompt: str | None = None
+    ) -> RLMChatCompletion:
         """
         Recursive Language Model completion call. This is the main entry point for querying an RLM, and
         can replace a regular LM completion call.

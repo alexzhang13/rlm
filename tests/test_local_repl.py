@@ -301,15 +301,15 @@ class TestLocalREPLDataFrame:
     def test_dataframe_preserves_dtypes(self):
         """Test that int/float/str types survive the parquet round-trip."""
         pd = pytest.importorskip("pandas")
-        df = pd.DataFrame({
-            "int_col": [1, 2, 3],
-            "float_col": [1.5, 2.5, 3.5],
-            "str_col": ["a", "b", "c"],
-        })
+        df = pd.DataFrame(
+            {
+                "int_col": [1, 2, 3],
+                "float_col": [1.5, 2.5, 3.5],
+                "str_col": ["a", "b", "c"],
+            }
+        )
         with LocalREPL(context_payload=df) as repl:
-            repl.execute_code(
-                "dtypes = {c: str(context[c].dtype) for c in context.columns}"
-            )
+            repl.execute_code("dtypes = {c: str(context[c].dtype) for c in context.columns}")
             dtypes = repl.locals["dtypes"]
             assert "int" in dtypes["int_col"]
             assert "float" in dtypes["float_col"]
