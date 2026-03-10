@@ -1,5 +1,6 @@
 """Tests for rlm_query and rlm_query_batched in LocalREPL."""
 
+import time
 from unittest.mock import MagicMock
 
 from rlm.core.types import RLMChatCompletion, UsageSummary
@@ -75,13 +76,14 @@ class TestRlmQueryBatchedWithSubcallFn:
     """Tests for rlm_query_batched when subcall_fn is provided."""
 
     def test_batched_calls_subcall_fn_per_prompt(self):
-        """rlm_query_batched should call subcall_fn once per prompt."""
-        completions = [
-            _make_completion("answer 1"),
-            _make_completion("answer 2"),
-            _make_completion("answer 3"),
-        ]
-        subcall_fn = MagicMock(side_effect=completions)
+        """rlm_query_batched should call subcall_fn once per prompt (thread-safe)."""
+        # Use prompt-keyed dict instead of ordered side_effect for thread safety
+        prompt_responses = {
+            "q1": _make_completion("answer 1"),
+            "q2": _make_completion("answer 2"),
+            "q3": _make_completion("answer 3"),
+        }
+        subcall_fn = MagicMock(side_effect=lambda prompt, model: prompt_responses[prompt])
         repl = LocalREPL(subcall_fn=subcall_fn)
         result = repl.execute_code(
             "answers = rlm_query_batched(['q1', 'q2', 'q3'])\nprint(len(answers))"
@@ -94,12 +96,18 @@ class TestRlmQueryBatchedWithSubcallFn:
 
     def test_batched_tracks_all_pending_calls(self):
         """rlm_query_batched should track all completions in rlm_calls."""
-        completions = [_make_completion(f"resp {i}") for i in range(3)]
-        subcall_fn = MagicMock(side_effect=completions)
+        prompt_responses = {
+            "a": _make_completion("resp 0"),
+            "b": _make_completion("resp 1"),
+            "c": _make_completion("resp 2"),
+        }
+        subcall_fn = MagicMock(side_effect=lambda prompt, model: prompt_responses[prompt])
         repl = LocalREPL(subcall_fn=subcall_fn)
         result = repl.execute_code("rlm_query_batched(['a', 'b', 'c'])")
         assert len(result.rlm_calls) == 3
-        assert [c.response for c in result.rlm_calls] == ["resp 0", "resp 1", "resp 2"]
+        # Order may vary due to parallel execution; check all responses present
+        responses = sorted(c.response for c in result.rlm_calls)
+        assert responses == ["resp 0", "resp 1", "resp 2"]
         repl.cleanup()
 
     def test_batched_with_model_override(self):
@@ -114,21 +122,21 @@ class TestRlmQueryBatchedWithSubcallFn:
 
     def test_batched_partial_failure(self):
         """If one subcall_fn call fails, others should still succeed."""
-        subcall_fn = MagicMock(
-            side_effect=[
-                _make_completion("ok 1"),
-                RuntimeError("boom"),
-                _make_completion("ok 3"),
-            ]
-        )
+
+        def _side_effect(prompt, model):
+            if prompt == "b":
+                raise RuntimeError("boom")
+            return _make_completion(f"ok {prompt}")
+
+        subcall_fn = MagicMock(side_effect=_side_effect)
         repl = LocalREPL(subcall_fn=subcall_fn)
         result = repl.execute_code("answers = rlm_query_batched(['a', 'b', 'c'])")
         assert result.stderr == ""
         answers = repl.locals["answers"]
-        assert answers[0] == "ok 1"
+        assert answers[0] == "ok a"
         assert "Error" in answers[1]
         assert "boom" in answers[1]
-        assert answers[2] == "ok 3"
+        assert answers[2] == "ok c"
         repl.cleanup()
 
     def test_batched_empty_prompts(self):
@@ -207,4 +215,52 @@ class TestRlmQueryScaffoldRestoration:
         repl.execute_code("rlm_query_batched = 'garbage'")
         repl.execute_code("answers = rlm_query_batched(['q1'])")
         assert repl.locals["answers"] == ["real"]
+        repl.cleanup()
+
+
+class TestRlmQueryBatchedParallel:
+    """Tests that rlm_query_batched runs concurrently, not sequentially."""
+
+    def test_batched_runs_concurrently(self):
+        """N subcalls with 0.1s delay each should complete in ~0.1s, not N*0.1s."""
+        n = 5
+        delay = 0.1
+
+        def _slow_subcall(prompt, model):
+            time.sleep(delay)
+            return _make_completion(f"done-{prompt}")
+
+        subcall_fn = MagicMock(side_effect=_slow_subcall)
+        repl = LocalREPL(subcall_fn=subcall_fn)
+        prompts = [f"p{i}" for i in range(n)]
+        code = f"answers = rlm_query_batched({prompts!r})"
+
+        start = time.perf_counter()
+        result = repl.execute_code(code)
+        elapsed = time.perf_counter() - start
+
+        assert result.stderr == ""
+        assert subcall_fn.call_count == n
+        answers = repl.locals["answers"]
+        assert len(answers) == n
+        assert all(a.startswith("done-") for a in answers)
+        # Parallel: should take ~delay, not n*delay. Use 2*delay as generous bound.
+        assert elapsed < 2 * delay, f"Took {elapsed:.2f}s, expected < {2 * delay:.2f}s (parallel)"
+        repl.cleanup()
+
+    def test_batched_preserves_order(self):
+        """Results should be in the same order as input prompts despite parallel execution."""
+
+        def _varied_delay(prompt, model):
+            # Vary delays to encourage out-of-order completion
+            idx = int(prompt.replace("p", ""))
+            time.sleep(0.05 * (5 - idx))  # p0 slowest, p4 fastest
+            return _make_completion(f"result-{prompt}")
+
+        subcall_fn = MagicMock(side_effect=_varied_delay)
+        repl = LocalREPL(subcall_fn=subcall_fn)
+        result = repl.execute_code("answers = rlm_query_batched(['p0','p1','p2','p3','p4'])")
+        assert result.stderr == ""
+        answers = repl.locals["answers"]
+        assert answers == [f"result-p{i}" for i in range(5)]
         repl.cleanup()

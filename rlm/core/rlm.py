@@ -1,3 +1,4 @@
+import threading
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -74,6 +75,9 @@ class RLM:
         on_subcall_complete: Callable[[int, str, float, str | None], None] | None = None,
         on_iteration_start: Callable[[int, int], None] | None = None,
         on_iteration_complete: Callable[[int, int, float], None] | None = None,
+        # Internal: shared handler/client for child RLMs (reduces per-subcall overhead)
+        _shared_lm_handler_address: tuple[str, int] | None = None,
+        _shared_client: "BaseLM | None" = None,
     ):
         """
         Args:
@@ -152,10 +156,17 @@ class RLM:
 
         # Tracking (cumulative across all calls including children)
         self._cumulative_cost: float = 0.0
+        self._cumulative_cost_lock = threading.Lock()
         self._consecutive_errors: int = 0
         self._last_error: str | None = None
         self._best_partial_answer: str | None = None
         self._completion_start_time: float | None = None  # Set when completion() starts
+
+        # Shared handler/client for child RLMs (Phase D optimization)
+        self._shared_lm_handler_address = _shared_lm_handler_address
+        self._shared_client = _shared_client
+        self._active_handler_address: tuple[str, int] | None = None
+        self._active_client: BaseLM | None = None
 
         # Persistence support
         self.persistent = persistent
@@ -192,24 +203,44 @@ class RLM:
 
         When persistent=True, the environment is reused across calls.
         When persistent=False (default), creates fresh environment each call.
+
+        When _shared_lm_handler_address is set (child RLM reusing parent's handler),
+        skips creating a new LMHandler/TCP server and creates a proxy instead.
         """
-        # Create client and wrap in handler
-        client: BaseLM = get_client(self.backend, self.backend_kwargs)
+        owns_handler = False
 
-        # Create other_backend_client if provided (for depth=1 routing)
-        other_backend_client: BaseLM | None = None
-        if self.other_backends and self.other_backend_kwargs:
-            other_backend_client = get_client(self.other_backends[0], self.other_backend_kwargs[0])
+        if self._shared_lm_handler_address is not None and self._shared_client is not None:
+            # Reuse parent's handler — create a lightweight proxy
+            lm_handler = _SharedLMHandlerProxy(self._shared_client, self._shared_lm_handler_address)
+            # Active handler info for children to reuse
+            self._active_handler_address = self._shared_lm_handler_address
+            self._active_client = self._shared_client
+        else:
+            # Create client and wrap in handler
+            client: BaseLM = get_client(self.backend, self.backend_kwargs)
 
-        lm_handler = LMHandler(client, other_backend_client=other_backend_client)
+            # Create other_backend_client if provided (for depth=1 routing)
+            other_backend_client: BaseLM | None = None
+            if self.other_backends and self.other_backend_kwargs:
+                other_backend_client = get_client(
+                    self.other_backends[0], self.other_backend_kwargs[0]
+                )
 
-        # Register other clients to be available as sub-call options (by model name)
-        if self.other_backends and self.other_backend_kwargs:
-            for backend, kwargs in zip(self.other_backends, self.other_backend_kwargs, strict=True):
-                other_client: BaseLM = get_client(backend, kwargs)
-                lm_handler.register_client(other_client.model_name, other_client)
+            lm_handler = LMHandler(client, other_backend_client=other_backend_client)
 
-        lm_handler.start()
+            # Register other clients to be available as sub-call options (by model name)
+            if self.other_backends and self.other_backend_kwargs:
+                for backend, kwargs in zip(
+                    self.other_backends, self.other_backend_kwargs, strict=True
+                ):
+                    other_client: BaseLM = get_client(backend, kwargs)
+                    lm_handler.register_client(other_client.model_name, other_client)
+
+            lm_handler.start()
+            owns_handler = True
+            # Active handler info for children to reuse
+            self._active_handler_address = (lm_handler.host, lm_handler.port)
+            self._active_client = client
 
         # Environment: reuse if persistent, otherwise create fresh
         if self.persistent and self._persistent_env is not None:
@@ -221,11 +252,12 @@ class RLM:
                     f"implement required methods (update_handler_address, add_context, get_context_count). "
                     f"This should have been caught at initialization."
                 )
-            environment.update_handler_address((lm_handler.host, lm_handler.port))
+            handler_addr = self._active_handler_address
+            environment.update_handler_address(handler_addr)
             environment.add_context(prompt)
         else:
             env_kwargs = self.environment_kwargs.copy()
-            env_kwargs["lm_handler_address"] = (lm_handler.host, lm_handler.port)
+            env_kwargs["lm_handler_address"] = self._active_handler_address
             env_kwargs["context_payload"] = prompt
             env_kwargs["depth"] = self.depth + 1  # Environment depth is RLM depth + 1
             # For local environment with max_depth > 1, pass subcall callback for recursive RLM calls
@@ -246,7 +278,10 @@ class RLM:
         try:
             yield lm_handler, environment
         finally:
-            lm_handler.stop()
+            self._active_handler_address = None
+            self._active_client = None
+            if owns_handler:
+                lm_handler.stop()
             if not self.persistent and hasattr(environment, "cleanup"):
                 environment.cleanup()
 
@@ -491,7 +526,8 @@ class RLM:
         if self.max_budget is not None:
             current_usage = lm_handler.get_usage_summary()
             current_cost = current_usage.total_cost or 0.0
-            self._cumulative_cost = current_cost
+            with self._cumulative_cost_lock:
+                self._cumulative_cost = current_cost
             if self._cumulative_cost > self.max_budget:
                 self.verbose.print_budget_exceeded(self._cumulative_cost, self.max_budget)
                 raise BudgetExceededError(
@@ -703,7 +739,8 @@ class RLM:
         # Calculate remaining budget for child (if budget tracking enabled)
         remaining_budget = None
         if self.max_budget is not None:
-            remaining_budget = self.max_budget - self._cumulative_cost
+            with self._cumulative_cost_lock:
+                remaining_budget = self.max_budget - self._cumulative_cost
             if remaining_budget <= 0:
                 return RLMChatCompletion(
                     root_model=resolved_model,
@@ -743,7 +780,7 @@ class RLM:
         subcall_start = time.perf_counter()
         error_msg: str | None = None
 
-        # Spawn a child RLM with its own LocalREPL
+        # Spawn a child RLM, sharing parent's handler when possible
         child = RLM(
             backend=self.backend,
             backend_kwargs=child_backend_kwargs,
@@ -768,16 +805,21 @@ class RLM:
             # Propagate callbacks to children for nested tracking
             on_subcall_start=self.on_subcall_start,
             on_subcall_complete=self.on_subcall_complete,
+            # Share parent's handler/client to avoid per-child TCP server overhead
+            _shared_lm_handler_address=self._active_handler_address,
+            _shared_client=self._active_client,
         )
         try:
             result = child.completion(prompt, root_prompt=None)
             # Track child's cost in parent's cumulative cost
             if result.usage_summary and result.usage_summary.total_cost:
-                self._cumulative_cost += result.usage_summary.total_cost
+                with self._cumulative_cost_lock:
+                    self._cumulative_cost += result.usage_summary.total_cost
             return result
         except BudgetExceededError as e:
             # Propagate child's spending to parent
-            self._cumulative_cost += e.spent
+            with self._cumulative_cost_lock:
+                self._cumulative_cost += e.spent
             error_msg = f"Budget exceeded - {e}"
             return RLMChatCompletion(
                 root_model=resolved_model,
@@ -849,3 +891,43 @@ class RLM:
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
         self.close()
         return False
+
+
+class _SharedLMHandlerProxy:
+    """Lightweight proxy that reuses a parent's BaseLM client without spawning a TCP server.
+
+    Exposes the same interface as LMHandler for completion() and get_usage_summary(),
+    but start()/stop() are no-ops since the parent owns the actual handler lifecycle.
+    """
+
+    def __init__(self, client: BaseLM, address: tuple[str, int]):
+        self._client = client
+        self._host, self._port = address
+
+    @property
+    def host(self) -> str:
+        return self._host
+
+    @property
+    def port(self) -> int:
+        return self._port
+
+    @property
+    def address(self) -> tuple[str, int]:
+        return (self._host, self._port)
+
+    def start(self) -> tuple[str, int]:
+        return self.address
+
+    def stop(self) -> None:
+        pass  # Parent owns the handler
+
+    def completion(self, prompt: str, model: str | None = None) -> str:
+        # BaseLM.completion() does not accept model, but concrete implementations
+        # (AnthropicClient, OpenAIClient) do. Forward when possible.
+        if model is not None:
+            return self._client.completion(prompt, model=model)
+        return self._client.completion(prompt)
+
+    def get_usage_summary(self) -> UsageSummary:
+        return self._client.get_usage_summary()

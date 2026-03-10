@@ -9,6 +9,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from typing import Any
 
@@ -316,9 +317,10 @@ class LocalREPL(NonIsolatedEnv):
         return self._llm_query(prompt, model)
 
     def _rlm_query_batched(self, prompts: list[str], model: str | None = None) -> list[str]:
-        """Spawn recursive RLM sub-calls for multiple prompts.
+        """Spawn recursive RLM sub-calls for multiple prompts in parallel.
 
-        Each prompt gets its own child RLM for deeper thinking.
+        Each prompt gets its own child RLM for deeper thinking. When a subcall_fn
+        is configured, all prompts are dispatched concurrently via ThreadPoolExecutor.
         Falls back to llm_query_batched if no recursive capability is configured.
 
         Args:
@@ -329,14 +331,23 @@ class LocalREPL(NonIsolatedEnv):
             List of responses in the same order as input prompts.
         """
         if self.subcall_fn is not None:
-            results = []
-            for prompt in prompts:
-                try:
-                    completion = self.subcall_fn(prompt, model)
-                    self._pending_llm_calls.append(completion)
-                    results.append(completion.response)
-                except Exception as e:
-                    results.append(f"Error: RLM query failed - {e}")
+            if not prompts:
+                return []
+            results: list[str | None] = [None] * len(prompts)
+            with ThreadPoolExecutor(max_workers=min(len(prompts), 16)) as executor:
+                future_to_idx = {
+                    executor.submit(self.subcall_fn, prompt, model): i
+                    for i, prompt in enumerate(prompts)
+                }
+                for future in as_completed(future_to_idx):
+                    idx = future_to_idx[future]
+                    try:
+                        completion = future.result()
+                        # list.append is GIL-protected in CPython — safe for concurrent use
+                        self._pending_llm_calls.append(completion)
+                        results[idx] = completion.response
+                    except Exception as e:
+                        results[idx] = f"Error: RLM query failed - {e}"
             return results
 
         # Fall back to plain batched LM call if no recursive capability
@@ -483,8 +494,9 @@ class LocalREPL(NonIsolatedEnv):
         """Execute code in the persistent namespace and return result."""
         start_time = time.perf_counter()
 
-        # Clear pending LLM calls from previous execution
-        self._pending_llm_calls = []
+        # Clear pending LLM calls from previous execution (use .clear() to keep
+        # the same list reference, preventing stale references from other threads)
+        self._pending_llm_calls.clear()
 
         with self._capture_output() as (stdout_buf, stderr_buf), self._temp_cwd():
             try:
