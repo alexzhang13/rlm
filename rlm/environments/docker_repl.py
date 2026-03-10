@@ -16,7 +16,6 @@ import textwrap
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Any
 
 from rlm.core.comms_utils import LMRequest, send_lm_request, send_lm_request_batched
 from rlm.core.types import ContextPayload, REPLResult, RLMChatCompletion

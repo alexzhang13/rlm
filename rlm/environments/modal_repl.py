@@ -3,7 +3,6 @@ import json
 import textwrap
 import threading
 import time
-from typing import Any
 
 import modal
 import requests
