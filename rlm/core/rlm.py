@@ -8,6 +8,7 @@ from rlm.core.lm_handler import LMHandler
 from rlm.core.types import (
     ClientBackend,
     CodeBlock,
+    ContextPayload,
     EnvironmentType,
     REPLResult,
     RLMChatCompletion,
@@ -186,7 +187,7 @@ class RLM:
             self.verbose.print_metadata(metadata)
 
     @contextmanager
-    def _spawn_completion_context(self, prompt: str | dict[str, Any]):
+    def _spawn_completion_context(self, prompt: ContextPayload):
         """
         Spawn an LM handler and environment for a single completion call.
 
@@ -250,7 +251,7 @@ class RLM:
             if not self.persistent and hasattr(environment, "cleanup"):
                 environment.cleanup()
 
-    def _setup_prompt(self, prompt: str | dict[str, Any]) -> list[dict[str, Any]]:
+    def _setup_prompt(self, prompt: ContextPayload) -> list[dict[str, Any]]:
         """
         Setup the system prompt for the RLM. Also include metadata about the prompt and build
         up the initial message history.
@@ -269,7 +270,7 @@ class RLM:
         return message_history
 
     def completion(
-        self, prompt: str | dict[str, Any], root_prompt: str | None = None
+        self, prompt: ContextPayload, root_prompt: str | None = None
     ) -> RLMChatCompletion:
         """
         Recursive Language Model completion call. This is the main entry point for querying an RLM, and
@@ -278,7 +279,7 @@ class RLM:
         Spawns its own environment and LM handler for the duration of this call.
 
         Args:
-            prompt: A single string or dictionary of messages to pass as context to the model.
+            prompt: A string, dict/list, or pandas DataFrame to pass as context to the model.
             root_prompt: We allow the RLM's root LM to see a (small) prompt that the user specifies. A common example of this
             is if the user is asking the RLM to answer a question, we can pass the question as the root prompt.
         Returns:

@@ -155,7 +155,19 @@ def build_rlm_system_prompt(
     # Insert custom tools section into the system prompt
     final_system_prompt = system_prompt.format(custom_tools_section=custom_tools_section)
 
-    metadata_prompt = f"Your context is a {context_type} with {context_total_length} total characters, and is broken up into chunks of char lengths: {context_lengths}."
+    if "dataframe" in context_type:
+        metadata_prompt = (
+            f"Your context is a {context_type}. It has {context_total_length} total cells "
+            f"and is broken up into chunk lengths: {context_lengths}."
+        )
+    else:
+        metadata_prompt = (
+            f"Your context is a {context_type} with {context_total_length} total characters, "
+            f"and is broken up into chunks of char lengths: {context_lengths}."
+        )
+
+    if query_metadata.context_summary:
+        metadata_prompt = metadata_prompt + "\n\n" + query_metadata.context_summary
 
     return [
         {"role": "system", "content": final_system_prompt},

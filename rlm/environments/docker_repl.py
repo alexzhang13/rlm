@@ -18,8 +18,9 @@ import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from rlm.core.comms_utils import LMRequest, send_lm_request, send_lm_request_batched
-from rlm.core.types import REPLResult, RLMChatCompletion
+from rlm.core.types import ContextPayload, REPLResult, RLMChatCompletion
 from rlm.environments.base_env import NonIsolatedEnv
+from rlm.utils.dataframe_utils import dataframe_to_parquet_bytes, get_dataframe_type
 
 
 class LLMProxyHandler(BaseHTTPRequestHandler):
@@ -196,7 +197,7 @@ class DockerREPL(NonIsolatedEnv):
         self,
         image: str = "python:3.11-slim",
         lm_handler_address: tuple[str, int] | None = None,
-        context_payload: dict | list | str | None = None,
+        context_payload: ContextPayload | None = None,
         setup_code: str | None = None,
         persistent: bool = False,
         depth: int = 1,
@@ -271,15 +272,36 @@ class DockerREPL(NonIsolatedEnv):
 
         self.container_id = result.stdout.strip()
 
-        # Install dependencies
+        # Install base dependencies
         subprocess.run(
             ["docker", "exec", self.container_id, "pip", "install", "-q", "dill", "requests"],
             capture_output=True,
         )
+        self._pandas_installed = False
 
-    def load_context(self, context_payload: dict | list | str):
+    def _ensure_pandas(self):
+        """Install pandas and pyarrow in the container if not already installed."""
+        if self._pandas_installed:
+            return
+        subprocess.run(
+            ["docker", "exec", self.container_id, "pip", "install", "-q", "pandas", "pyarrow"],
+            capture_output=True,
+        )
+        self._pandas_installed = True
+
+    def load_context(self, context_payload: ContextPayload):
         """Load context by writing to a file in the mounted workspace."""
-        if isinstance(context_payload, str):
+        df_type = get_dataframe_type(context_payload)
+        if df_type is not None:
+            self._ensure_pandas()
+            context_path = os.path.join(self.temp_dir, "context.parquet")
+            parquet_bytes, df_type = dataframe_to_parquet_bytes(context_payload)
+            with open(context_path, "wb") as f:
+                f.write(parquet_bytes)
+            self.execute_code(
+                "import pandas as pd\ncontext = pd.read_parquet('/workspace/context.parquet')"
+            )
+        elif isinstance(context_payload, str):
             context_path = os.path.join(self.temp_dir, "context.txt")
             with open(context_path, "w") as f:
                 f.write(context_payload)

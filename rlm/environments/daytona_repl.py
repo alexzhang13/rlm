@@ -23,7 +23,7 @@ from daytona import (
 )
 
 from rlm.core.comms_utils import LMRequest, send_lm_request, send_lm_request_batched
-from rlm.core.types import REPLResult, RLMChatCompletion
+from rlm.core.types import ContextPayload, REPLResult, RLMChatCompletion
 from rlm.environments.base_env import IsolatedEnv, extract_tool_value, validate_custom_tools
 
 # =============================================================================
@@ -64,6 +64,7 @@ def get_default_image() -> Image:
             "tqdm>=4.66.0",
             "python-dateutil>=2.8.2",
             "regex>=2023.0.0",
+            "pyarrow>=14.0.0",
             # For state serialization
             "dill>=0.3.7",
         )
@@ -391,7 +392,7 @@ class DaytonaREPL(IsolatedEnv):
         auto_stop_interval: int = 0,
         image: Image | None = None,
         lm_handler_address: tuple[str, int] | None = None,
-        context_payload: dict | list | str | None = None,
+        context_payload: ContextPayload | None = None,
         setup_code: str | None = None,
         persistent: bool = False,
         depth: int = 1,
@@ -607,17 +608,25 @@ class DaytonaREPL(IsolatedEnv):
 
         return {"error": "Unknown request type"}
 
-    def load_context(self, context_payload: dict | list | str):
+    def load_context(self, context_payload: ContextPayload):
         """Load context into the sandbox environment."""
-        if isinstance(context_payload, str):
+        from rlm.utils.dataframe_utils import (
+            build_dataframe_context_code,
+            dataframe_to_parquet_b64,
+            get_dataframe_type,
+        )
+
+        df_type = get_dataframe_type(context_payload)
+        if df_type is not None:
+            parquet_b64, df_type = dataframe_to_parquet_b64(context_payload)
+            self.execute_code(build_dataframe_context_code(parquet_b64, df_type))
+        elif isinstance(context_payload, str):
             escaped = context_payload.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
-            context_code = f'context = """{escaped}"""'
+            self.execute_code(f'context = """{escaped}"""')
         else:
             context_json = json.dumps(context_payload)
             escaped_json = context_json.replace("\\", "\\\\").replace("'", "\\'")
-            context_code = f"import json; context = json.loads('{escaped_json}')"
-
-        self.execute_code(context_code)
+            self.execute_code(f"import json; context = json.loads('{escaped_json}')")
 
     def execute_code(self, code: str) -> REPLResult:
         """Execute code in the Daytona sandbox and return result."""
