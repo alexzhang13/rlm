@@ -1,3 +1,4 @@
+import threading
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -70,6 +71,7 @@ class RLM:
         custom_sub_tools: dict[str, Any] | None = None,
         compaction: bool = False,
         compaction_threshold_pct: float = 0.85,
+        max_concurrent_subcalls: int = 1,
         on_subcall_start: Callable[[int, str, str], None] | None = None,
         on_subcall_complete: Callable[[int, str, float, str | None], None] | None = None,
         on_iteration_start: Callable[[int, int], None] | None = None,
@@ -102,6 +104,10 @@ class RLM:
                 when root context reaches compaction_threshold_pct of the model's context limit.
             compaction_threshold_pct: When compaction is on, trigger summarization when root
                 message token count reaches this fraction of the model context limit (default 0.85).
+            max_concurrent_subcalls: Max children dispatched in parallel per rlm_query_batched() call.
+                Default 1 = sequential (identical to previous behavior). Set >1 to enable parallel
+                sub-agent execution. A global semaphore (default 16 slots) bounds total concurrent
+                children across all depths to prevent thread/memory explosion.
             on_subcall_start: Callback fired when a child RLM starts. Args: (depth, model, prompt_preview).
             on_subcall_complete: Callback fired when a child RLM completes. Args: (depth, model, duration, error_or_none).
             on_iteration_start: Callback fired when an iteration starts. Args: (depth, iteration_num).
@@ -132,6 +138,7 @@ class RLM:
 
         self.compaction = compaction
         self.compaction_threshold_pct = compaction_threshold_pct
+        self.max_concurrent_subcalls = max_concurrent_subcalls
 
         self.depth = depth
         self.max_depth = max_depth
@@ -156,6 +163,8 @@ class RLM:
         self._last_error: str | None = None
         self._best_partial_answer: str | None = None
         self._completion_start_time: float | None = None  # Set when completion() starts
+        # Lock for thread-safe cost/error tracking when children run in parallel
+        self._state_lock = threading.Lock()
 
         # Persistence support
         self.persistent = persistent
@@ -231,6 +240,7 @@ class RLM:
             # For local environment with max_depth > 1, pass subcall callback for recursive RLM calls
             if self.environment_type == "local" and self.max_depth > 1:
                 env_kwargs["subcall_fn"] = self._subcall
+                env_kwargs["max_concurrent_subcalls"] = self.max_concurrent_subcalls
             # Pass custom tools to the environment
             if self.custom_tools is not None:
                 env_kwargs["custom_tools"] = self.custom_tools
@@ -307,6 +317,15 @@ class RLM:
                     # Check timeout before each iteration
                     self._check_timeout(i, time_start)
 
+                    # Fire iteration start callback
+                    if self.on_iteration_start:
+                        try:
+                            self.on_iteration_start(self.depth, i + 1)
+                        except Exception:
+                            pass
+
+                    iter_start = time.perf_counter()
+
                     # Compaction: check if context needs summarization
                     if self.compaction and hasattr(environment, "append_compaction_entry"):
                         current_tokens, threshold_tokens, max_tokens = self._get_compaction_status(
@@ -369,6 +388,13 @@ class RLM:
 
                     # Verbose output for this iteration
                     self.verbose.print_iteration(iteration, i + 1)
+
+                    # Fire iteration complete callback
+                    if self.on_iteration_complete:
+                        try:
+                            self.on_iteration_complete(self.depth, i + 1, time.perf_counter() - iter_start)
+                        except Exception:
+                            pass
 
                     if final_answer is not None:
                         time_end = time.perf_counter()
@@ -701,9 +727,11 @@ class RLM:
                 )
 
         # Calculate remaining budget for child (if budget tracking enabled)
+        # Read _cumulative_cost under lock for thread-safe snapshot
         remaining_budget = None
         if self.max_budget is not None:
-            remaining_budget = self.max_budget - self._cumulative_cost
+            with self._state_lock:
+                remaining_budget = self.max_budget - self._cumulative_cost
             if remaining_budget <= 0:
                 return RLMChatCompletion(
                     root_model=resolved_model,
@@ -765,19 +793,25 @@ class RLM:
             # Propagate custom tools to children (sub_tools become the child's tools)
             custom_tools=self.custom_sub_tools,
             custom_sub_tools=self.custom_sub_tools,
+            # Propagate concurrency settings to children
+            max_concurrent_subcalls=self.max_concurrent_subcalls,
             # Propagate callbacks to children for nested tracking
             on_subcall_start=self.on_subcall_start,
             on_subcall_complete=self.on_subcall_complete,
+            on_iteration_start=self.on_iteration_start,
+            on_iteration_complete=self.on_iteration_complete,
         )
         try:
             result = child.completion(prompt, root_prompt=None)
-            # Track child's cost in parent's cumulative cost
+            # Thread-safe: track child's cost in parent's cumulative cost
             if result.usage_summary and result.usage_summary.total_cost:
-                self._cumulative_cost += result.usage_summary.total_cost
+                with self._state_lock:
+                    self._cumulative_cost += result.usage_summary.total_cost
             return result
         except BudgetExceededError as e:
-            # Propagate child's spending to parent
-            self._cumulative_cost += e.spent
+            # Thread-safe: propagate child's spending to parent
+            with self._state_lock:
+                self._cumulative_cost += e.spent
             error_msg = f"Budget exceeded - {e}"
             return RLMChatCompletion(
                 root_model=resolved_model,

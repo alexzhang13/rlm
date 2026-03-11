@@ -1,5 +1,7 @@
 """Tests for rlm_query and rlm_query_batched in LocalREPL."""
 
+import threading
+import time
 from unittest.mock import MagicMock
 
 from rlm.core.types import RLMChatCompletion, UsageSummary
@@ -208,3 +210,228 @@ class TestRlmQueryScaffoldRestoration:
         repl.execute_code("answers = rlm_query_batched(['q1'])")
         assert repl.locals["answers"] == ["real"]
         repl.cleanup()
+
+
+# =============================================================================
+# Parallel execution tests (max_concurrent_subcalls > 1)
+# =============================================================================
+
+
+def _make_slow_subcall_fn(delay: float = 0.3):
+    """Create a thread-safe subcall_fn that sleeps to simulate real LLM latency.
+
+    Returns the function. The function records the prompt in its response
+    so result ordering can be verified.
+    """
+    def subcall_fn(prompt: str, model: str | None = None) -> RLMChatCompletion:
+        time.sleep(delay)
+        return _make_completion(f"answer_for_{prompt}")
+
+    return subcall_fn
+
+
+class TestRlmQueryBatchedParallel:
+    """Tests for parallel rlm_query_batched when max_concurrent_subcalls > 1."""
+
+    def test_parallel_faster_than_sequential(self):
+        """Parallel execution should be measurably faster than an actual sequential run."""
+        delay = 0.3
+        prompts = ["q0", "q1", "q2", "q3", "q4"]
+        subcall_fn = _make_slow_subcall_fn(delay)
+
+        # Actual sequential run (max_concurrent=1)
+        seq_repl = LocalREPL(subcall_fn=subcall_fn, max_concurrent_subcalls=1)
+        seq_start = time.perf_counter()
+        seq_repl.execute_code(f"answers = rlm_query_batched({prompts})")
+        seq_elapsed = time.perf_counter() - seq_start
+        seq_answers = seq_repl.locals["answers"]
+        seq_repl.cleanup()
+
+        # Actual parallel run (max_concurrent=5)
+        par_repl = LocalREPL(
+            subcall_fn=subcall_fn,
+            max_concurrent_subcalls=5,
+            subcall_semaphore=threading.Semaphore(16),
+        )
+        par_start = time.perf_counter()
+        par_repl.execute_code(f"answers = rlm_query_batched({prompts})")
+        par_elapsed = time.perf_counter() - par_start
+        par_answers = par_repl.locals["answers"]
+        par_repl.cleanup()
+
+        # Both should produce the same results
+        assert len(seq_answers) == len(par_answers) == 5
+        assert seq_answers == par_answers
+
+        # Parallel should be at least 2x faster than sequential
+        assert par_elapsed < seq_elapsed * 0.6, (
+            f"Parallel ({par_elapsed:.2f}s) not fast enough vs sequential ({seq_elapsed:.2f}s)"
+        )
+
+    def test_parallel_results_maintain_order(self):
+        """Results should match input prompt order, not completion order."""
+        # Give each prompt a different delay so they finish out of order
+        delays = {"p0": 0.25, "p1": 0.05, "p2": 0.15, "p3": 0.01, "p4": 0.10}
+
+        def subcall_fn(prompt: str, model: str | None = None) -> RLMChatCompletion:
+            time.sleep(delays.get(prompt, 0.05))
+            return _make_completion(f"answer_for_{prompt}")
+
+        repl = LocalREPL(
+            subcall_fn=subcall_fn,
+            max_concurrent_subcalls=5,
+            subcall_semaphore=threading.Semaphore(16),
+        )
+        result = repl.execute_code(
+            "answers = rlm_query_batched(['p0', 'p1', 'p2', 'p3', 'p4'])"
+        )
+        assert result.stderr == ""
+        answers = repl.locals["answers"]
+        for i in range(5):
+            assert answers[i] == f"answer_for_p{i}", f"answers[{i}] = {answers[i]}"
+        repl.cleanup()
+
+    def test_parallel_partial_failure(self):
+        """One failed subcall should not block or corrupt other results."""
+        def subcall_fn(prompt: str, model: str | None = None) -> RLMChatCompletion:
+            time.sleep(0.05)
+            if prompt == "c":
+                raise RuntimeError("child exploded")
+            return _make_completion(f"ok_{prompt}")
+
+        repl = LocalREPL(
+            subcall_fn=subcall_fn,
+            max_concurrent_subcalls=4,
+            subcall_semaphore=threading.Semaphore(16),
+        )
+        result = repl.execute_code(
+            "answers = rlm_query_batched(['a', 'b', 'c', 'd'])"
+        )
+        assert result.stderr == ""
+        answers = repl.locals["answers"]
+        assert len(answers) == 4
+        assert answers[0] == "ok_a"
+        assert answers[1] == "ok_b"
+        assert "Error" in answers[2] and "child exploded" in answers[2]
+        assert answers[3] == "ok_d"
+        repl.cleanup()
+
+    def test_parallel_tracks_pending_calls(self):
+        """All successful completions should be tracked in rlm_calls."""
+        def subcall_fn(prompt: str, model: str | None = None) -> RLMChatCompletion:
+            time.sleep(0.02)
+            return _make_completion(f"resp_{prompt}")
+
+        repl = LocalREPL(
+            subcall_fn=subcall_fn,
+            max_concurrent_subcalls=4,
+            subcall_semaphore=threading.Semaphore(16),
+        )
+        result = repl.execute_code(
+            "rlm_query_batched(['a', 'b', 'c', 'd'])"
+        )
+        assert len(result.rlm_calls) == 4
+        repl.cleanup()
+
+    def test_sequential_fallback_when_max_concurrent_1(self):
+        """max_concurrent_subcalls=1 should execute sequentially (default behavior)."""
+        completions = [_make_completion(f"seq_{i}") for i in range(3)]
+        subcall_fn = MagicMock(side_effect=completions)
+
+        repl = LocalREPL(subcall_fn=subcall_fn, max_concurrent_subcalls=1)
+        result = repl.execute_code("answers = rlm_query_batched(['a', 'b', 'c'])")
+
+        assert result.stderr == ""
+        assert repl.locals["answers"] == ["seq_0", "seq_1", "seq_2"]
+        assert subcall_fn.call_count == 3
+        # Verify calls were in order (sequential)
+        calls = [c[0][0] for c in subcall_fn.call_args_list]
+        assert calls == ["a", "b", "c"]
+        repl.cleanup()
+
+    def test_single_prompt_skips_parallel_path(self):
+        """A single prompt should use sequential path even with max_concurrent > 1."""
+        subcall_fn = MagicMock(return_value=_make_completion("single"))
+        repl = LocalREPL(
+            subcall_fn=subcall_fn,
+            max_concurrent_subcalls=8,
+            subcall_semaphore=threading.Semaphore(16),
+        )
+        result = repl.execute_code("answers = rlm_query_batched(['only'])")
+        assert repl.locals["answers"] == ["single"]
+        subcall_fn.assert_called_once_with("only", None)
+        repl.cleanup()
+
+
+class TestGlobalSemaphoreBounding:
+    """Tests that the global semaphore correctly bounds total concurrency."""
+
+    def test_semaphore_limits_concurrent_children(self):
+        """With semaphore(2), at most 2 children should run simultaneously."""
+        max_seen = 0
+        current = 0
+        lock = threading.Lock()
+
+        def subcall_fn(prompt: str, model: str | None = None) -> RLMChatCompletion:
+            nonlocal max_seen, current
+            with lock:
+                current += 1
+                if current > max_seen:
+                    max_seen = current
+            time.sleep(0.15)
+            with lock:
+                current -= 1
+            return _make_completion(f"ok_{prompt}")
+
+        sem = threading.Semaphore(2)
+        repl = LocalREPL(
+            subcall_fn=subcall_fn,
+            max_concurrent_subcalls=5,  # pool allows 5
+            subcall_semaphore=sem,       # but semaphore only allows 2
+        )
+        result = repl.execute_code(
+            "answers = rlm_query_batched(['a', 'b', 'c', 'd', 'e'])"
+        )
+        assert result.stderr == ""
+        assert len(repl.locals["answers"]) == 5
+        assert all(a.startswith("ok_") for a in repl.locals["answers"])
+        # Semaphore should have limited concurrent execution to 2
+        assert max_seen <= 2, f"max concurrent was {max_seen}, expected <= 2"
+        repl.cleanup()
+
+    def test_semaphore_shared_across_repls(self):
+        """Two REPLs sharing the same semaphore should respect the combined limit."""
+        max_seen = 0
+        current = 0
+        lock = threading.Lock()
+
+        def subcall_fn(prompt: str, model: str | None = None) -> RLMChatCompletion:
+            nonlocal max_seen, current
+            with lock:
+                current += 1
+                if current > max_seen:
+                    max_seen = current
+            time.sleep(0.15)
+            with lock:
+                current -= 1
+            return _make_completion("ok")
+
+        shared_sem = threading.Semaphore(3)
+        repl1 = LocalREPL(subcall_fn=subcall_fn, max_concurrent_subcalls=4, subcall_semaphore=shared_sem)
+        repl2 = LocalREPL(subcall_fn=subcall_fn, max_concurrent_subcalls=4, subcall_semaphore=shared_sem)
+
+        # Run both in parallel threads
+        def run_repl(repl):
+            repl.execute_code("rlm_query_batched(['x', 'y', 'z'])")
+
+        t1 = threading.Thread(target=run_repl, args=(repl1,))
+        t2 = threading.Thread(target=run_repl, args=(repl2,))
+        t1.start()
+        t2.start()
+        t1.join(timeout=10)
+        t2.join(timeout=10)
+
+        # 6 total tasks, but semaphore(3) means at most 3 concurrent
+        assert max_seen <= 3, f"max concurrent was {max_seen}, expected <= 3"
+        repl1.cleanup()
+        repl2.cleanup()
