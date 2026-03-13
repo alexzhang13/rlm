@@ -1,6 +1,5 @@
 import copy
 import io
-import json
 import os
 import shutil
 import sys
@@ -364,22 +363,16 @@ class LocalREPL(NonIsolatedEnv):
 
         var_name = f"context_{context_index}"
 
+        # Store context directly in locals (with isolation for mutable types)
         if isinstance(context_payload, str):
-            context_path = os.path.join(self.temp_dir, f"context_{context_index}.txt")
-            with open(context_path, "w") as f:
-                f.write(context_payload)
-            self.execute_code(f"with open(r'{context_path}', 'r') as f:\n    {var_name} = f.read()")
+            self.locals[var_name] = context_payload
         else:
-            context_path = os.path.join(self.temp_dir, f"context_{context_index}.json")
-            with open(context_path, "w") as f:
-                json.dump(context_payload, f)
-            self.execute_code(
-                f"import json\nwith open(r'{context_path}', 'r') as f:\n    {var_name} = json.load(f)"
-            )
+            # Dicts/lists - deep copy for isolation as per SupportsPersistence protocol
+            self.locals[var_name] = copy.deepcopy(context_payload)
 
         # Alias context_0 as 'context' for backward compatibility
         if context_index == 0:
-            self.execute_code(f"context = {var_name}")
+            self.locals["context"] = self.locals[var_name]
 
         self._context_count = max(self._context_count, context_index + 1)
         return context_index
