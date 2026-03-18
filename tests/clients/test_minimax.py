@@ -1,205 +1,352 @@
-"""Tests for the MiniMax client."""
+"""Tests for the MiniMax client backend."""
 
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from dotenv import load_dotenv
 
-from rlm.clients.minimax import MinimaxClient
+from rlm.clients import get_client
+from rlm.clients.openai import (
+    DEFAULT_MINIMAX_BASE_URL,
+    OpenAIClient,
+)
 from rlm.core.types import ModelUsageSummary, UsageSummary
 
 load_dotenv()
 
 
-def _make_mock_response(content="Hello", prompt_tokens=10, completion_tokens=5):
-    """Create a properly structured mock API response."""
-    mock_usage = MagicMock(spec=[
-        "prompt_tokens", "completion_tokens", "total_tokens",
-    ])
-    mock_usage.prompt_tokens = prompt_tokens
-    mock_usage.completion_tokens = completion_tokens
-    mock_usage.total_tokens = prompt_tokens + completion_tokens
+class TestMiniMaxClientUnit:
+    """Unit tests for MiniMax backend (no API calls required)."""
 
-    mock_choice = MagicMock()
-    mock_choice.message.content = content
+    def test_get_client_returns_openai_client(self):
+        """MiniMax backend should return an OpenAIClient instance."""
+        with patch("rlm.clients.openai.openai.OpenAI"):
+            with patch("rlm.clients.openai.openai.AsyncOpenAI"):
+                client = get_client(
+                    backend="minimax",
+                    backend_kwargs={
+                        "api_key": "test-key",
+                        "model_name": "MiniMax-M2.7",
+                    },
+                )
+                assert isinstance(client, OpenAIClient)
 
-    mock_response = MagicMock()
-    mock_response.choices = [mock_choice]
-    mock_response.usage = mock_usage
-    return mock_response
+    def test_default_base_url(self):
+        """MiniMax backend should set the default base URL."""
+        with patch("rlm.clients.openai.openai.OpenAI") as mock_openai:
+            with patch("rlm.clients.openai.openai.AsyncOpenAI"):
+                get_client(
+                    backend="minimax",
+                    backend_kwargs={
+                        "api_key": "test-key",
+                        "model_name": "MiniMax-M2.7",
+                    },
+                )
+                call_kwargs = mock_openai.call_args[1]
+                assert call_kwargs["base_url"] == "https://api.minimax.io/v1"
 
+    def test_custom_base_url_preserved(self):
+        """User-provided base_url should not be overwritten."""
+        custom_url = "https://custom.minimax.example.com/v1"
+        with patch("rlm.clients.openai.openai.OpenAI") as mock_openai:
+            with patch("rlm.clients.openai.openai.AsyncOpenAI"):
+                get_client(
+                    backend="minimax",
+                    backend_kwargs={
+                        "api_key": "test-key",
+                        "model_name": "MiniMax-M2.7",
+                        "base_url": custom_url,
+                    },
+                )
+                call_kwargs = mock_openai.call_args[1]
+                assert call_kwargs["base_url"] == custom_url
 
-class TestMinimaxClientUnit:
-    """Unit tests that don't require API calls."""
+    def test_api_key_passed_through(self):
+        """Explicit API key should be passed to the OpenAI client."""
+        with patch("rlm.clients.openai.openai.OpenAI") as mock_openai:
+            with patch("rlm.clients.openai.openai.AsyncOpenAI"):
+                get_client(
+                    backend="minimax",
+                    backend_kwargs={
+                        "api_key": "minimax-test-key-123",
+                        "model_name": "MiniMax-M2.7",
+                    },
+                )
+                call_kwargs = mock_openai.call_args[1]
+                assert call_kwargs["api_key"] == "minimax-test-key-123"
 
-    def test_init_with_api_key(self):
-        """Test client initialization with explicit API key."""
-        client = MinimaxClient(api_key="test-key", model_name="MiniMax-M2.5")
-        assert client.model_name == "MiniMax-M2.5"
+    def test_api_key_from_env(self):
+        """MINIMAX_API_KEY env var should be used when no explicit key is given."""
+        with patch.dict(os.environ, {"MINIMAX_API_KEY": "env-minimax-key"}):
+            with patch(
+                "rlm.clients.openai.DEFAULT_MINIMAX_API_KEY", "env-minimax-key"
+            ):
+                with patch("rlm.clients.openai.openai.OpenAI") as mock_openai:
+                    with patch("rlm.clients.openai.openai.AsyncOpenAI"):
+                        get_client(
+                            backend="minimax",
+                            backend_kwargs={
+                                "model_name": "MiniMax-M2.7",
+                            },
+                        )
+                        call_kwargs = mock_openai.call_args[1]
+                        assert call_kwargs["api_key"] == "env-minimax-key"
 
-    def test_init_default_model(self):
-        """Test client uses default model name."""
-        client = MinimaxClient(api_key="test-key")
-        assert client.model_name == "MiniMax-M2.5"
+    def test_model_name_stored(self):
+        """Model name should be stored on the client."""
+        with patch("rlm.clients.openai.openai.OpenAI"):
+            with patch("rlm.clients.openai.openai.AsyncOpenAI"):
+                client = get_client(
+                    backend="minimax",
+                    backend_kwargs={
+                        "api_key": "test-key",
+                        "model_name": "MiniMax-M2.7-highspeed",
+                    },
+                )
+                assert client.model_name == "MiniMax-M2.7-highspeed"
 
-    def test_init_default_base_url(self):
-        """Test client uses MiniMax base URL by default."""
-        client = MinimaxClient(api_key="test-key")
-        assert str(client.base_url) == "https://api.minimax.io/v1"
+    def test_completion_with_mocked_response(self):
+        """Test completion with a mocked API response."""
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "Hello from MiniMax!"
+        mock_response.usage.prompt_tokens = 15
+        mock_response.usage.completion_tokens = 8
+        mock_response.usage.total_tokens = 23
+        mock_response.usage.cost = None
+        mock_response.usage.model_extra = {}
 
-    def test_init_custom_base_url(self):
-        """Test client accepts custom base URL."""
-        client = MinimaxClient(api_key="test-key", base_url="https://api.minimaxi.com/v1")
-        assert str(client.base_url) == "https://api.minimaxi.com/v1"
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_response
 
-    def test_init_custom_model(self):
-        """Test client accepts custom model name."""
-        client = MinimaxClient(api_key="test-key", model_name="MiniMax-M2.5-highspeed")
-        assert client.model_name == "MiniMax-M2.5-highspeed"
+        with patch("rlm.clients.openai.openai.OpenAI", return_value=mock_client):
+            with patch("rlm.clients.openai.openai.AsyncOpenAI"):
+                client = get_client(
+                    backend="minimax",
+                    backend_kwargs={
+                        "api_key": "test-key",
+                        "model_name": "MiniMax-M2.7",
+                    },
+                )
+                result = client.completion("What is 2+2?")
 
-    def test_init_env_api_key(self):
-        """Test client picks up MINIMAX_API_KEY from environment."""
-        with patch.dict(os.environ, {"MINIMAX_API_KEY": "env-test-key"}):
-            with patch("rlm.clients.minimax.DEFAULT_MINIMAX_API_KEY", "env-test-key"):
-                client = MinimaxClient()
-                assert client.model_name == "MiniMax-M2.5"
-
-    def test_usage_tracking_initialization(self):
-        """Test that usage tracking is properly initialized."""
-        client = MinimaxClient(api_key="test-key")
-        assert dict(client.model_call_counts) == {}
-        assert dict(client.model_input_tokens) == {}
-        assert dict(client.model_output_tokens) == {}
-
-    def test_get_usage_summary_empty(self):
-        """Test usage summary when no calls have been made."""
-        client = MinimaxClient(api_key="test-key")
-        summary = client.get_usage_summary()
-        assert isinstance(summary, UsageSummary)
-        assert summary.model_usage_summaries == {}
-
-    def test_get_last_usage(self):
-        """Test last usage returns correct format."""
-        client = MinimaxClient(api_key="test-key")
-        client.last_prompt_tokens = 100
-        client.last_completion_tokens = 50
-        usage = client.get_last_usage()
-        assert isinstance(usage, ModelUsageSummary)
-        assert usage.total_calls == 1
-        assert usage.total_input_tokens == 100
-        assert usage.total_output_tokens == 50
-
-    def test_completion_with_string_prompt(self):
-        """Test completion with string input sends correct temperature."""
-        mock_response = _make_mock_response("Hello from MiniMax!", 10, 5)
-
-        client = MinimaxClient(api_key="test-key", model_name="MiniMax-M2.5")
-        client.client.chat.completions.create = MagicMock(return_value=mock_response)
-
-        result = client.completion("Hello")
-        assert result == "Hello from MiniMax!"
-
-        # Verify temperature=1.0 is passed
-        call_kwargs = client.client.chat.completions.create.call_args
-        assert call_kwargs.kwargs.get("temperature") == 1.0
+                assert result == "Hello from MiniMax!"
+                assert client.model_call_counts["MiniMax-M2.7"] == 1
+                assert client.model_input_tokens["MiniMax-M2.7"] == 15
+                assert client.model_output_tokens["MiniMax-M2.7"] == 8
 
     def test_completion_with_message_list(self):
-        """Test completion with message list format."""
-        mock_response = _make_mock_response("Hi there!", 20, 10)
+        """Test completion with a list of messages."""
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "4"
+        mock_response.usage.prompt_tokens = 20
+        mock_response.usage.completion_tokens = 1
+        mock_response.usage.total_tokens = 21
+        mock_response.usage.cost = None
+        mock_response.usage.model_extra = {}
 
-        client = MinimaxClient(api_key="test-key", model_name="MiniMax-M2.5")
-        client.client.chat.completions.create = MagicMock(return_value=mock_response)
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_response
 
-        messages = [
-            {"role": "system", "content": "You are helpful."},
-            {"role": "user", "content": "Hello"},
+        with patch("rlm.clients.openai.openai.OpenAI", return_value=mock_client):
+            with patch("rlm.clients.openai.openai.AsyncOpenAI"):
+                client = get_client(
+                    backend="minimax",
+                    backend_kwargs={
+                        "api_key": "test-key",
+                        "model_name": "MiniMax-M2.7",
+                    },
+                )
+                messages = [
+                    {"role": "system", "content": "You are a math tutor."},
+                    {"role": "user", "content": "What is 2+2?"},
+                ]
+                result = client.completion(messages)
+                assert result == "4"
+
+    def test_usage_summary(self):
+        """Test usage tracking across multiple calls."""
+        mock_response_1 = MagicMock()
+        mock_response_1.choices = [MagicMock()]
+        mock_response_1.choices[0].message.content = "Response 1"
+        mock_response_1.usage.prompt_tokens = 10
+        mock_response_1.usage.completion_tokens = 5
+        mock_response_1.usage.total_tokens = 15
+        mock_response_1.usage.cost = None
+        mock_response_1.usage.model_extra = {}
+
+        mock_response_2 = MagicMock()
+        mock_response_2.choices = [MagicMock()]
+        mock_response_2.choices[0].message.content = "Response 2"
+        mock_response_2.usage.prompt_tokens = 20
+        mock_response_2.usage.completion_tokens = 10
+        mock_response_2.usage.total_tokens = 30
+        mock_response_2.usage.cost = None
+        mock_response_2.usage.model_extra = {}
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = [
+            mock_response_1,
+            mock_response_2,
         ]
-        result = client.completion(messages)
-        assert result == "Hi there!"
 
-        # Verify messages are passed through correctly
-        call_kwargs = client.client.chat.completions.create.call_args
-        assert call_kwargs.kwargs["messages"] == messages
+        with patch("rlm.clients.openai.openai.OpenAI", return_value=mock_client):
+            with patch("rlm.clients.openai.openai.AsyncOpenAI"):
+                client = get_client(
+                    backend="minimax",
+                    backend_kwargs={
+                        "api_key": "test-key",
+                        "model_name": "MiniMax-M2.7",
+                    },
+                )
+                client.completion("Hello")
+                client.completion("World")
 
-    def test_completion_invalid_prompt(self):
-        """Test completion raises on invalid prompt type."""
-        client = MinimaxClient(api_key="test-key")
-        with pytest.raises(ValueError, match="Invalid prompt type"):
-            client.completion(12345)
+                summary = client.get_usage_summary()
+                assert isinstance(summary, UsageSummary)
+                assert "MiniMax-M2.7" in summary.model_usage_summaries
+                model_summary = summary.model_usage_summaries["MiniMax-M2.7"]
+                assert model_summary.total_calls == 2
+                assert model_summary.total_input_tokens == 30
+                assert model_summary.total_output_tokens == 15
 
-    def test_completion_requires_model(self):
-        """Test completion raises when no model specified."""
-        client = MinimaxClient(api_key="test-key", model_name=None)
-        client.model_name = None  # Override the default
-        with pytest.raises(ValueError, match="Model name is required"):
-            client.completion("Hello")
+    def test_last_usage(self):
+        """Test get_last_usage returns the most recent call's usage."""
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "Test"
+        mock_response.usage.prompt_tokens = 12
+        mock_response.usage.completion_tokens = 7
+        mock_response.usage.total_tokens = 19
+        mock_response.usage.cost = None
+        mock_response.usage.model_extra = {}
 
-    def test_completion_tracks_usage(self):
-        """Test that completion tracks usage correctly."""
-        mock_response = _make_mock_response("Response", 15, 8)
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_response
 
-        client = MinimaxClient(api_key="test-key", model_name="MiniMax-M2.5")
-        client.client.chat.completions.create = MagicMock(return_value=mock_response)
+        with patch("rlm.clients.openai.openai.OpenAI", return_value=mock_client):
+            with patch("rlm.clients.openai.openai.AsyncOpenAI"):
+                client = get_client(
+                    backend="minimax",
+                    backend_kwargs={
+                        "api_key": "test-key",
+                        "model_name": "MiniMax-M2.7",
+                    },
+                )
+                client.completion("Test prompt")
 
-        client.completion("Test prompt")
-        assert client.model_call_counts["MiniMax-M2.5"] == 1
-        assert client.model_input_tokens["MiniMax-M2.5"] == 15
-        assert client.model_output_tokens["MiniMax-M2.5"] == 8
+                last = client.get_last_usage()
+                assert isinstance(last, ModelUsageSummary)
+                assert last.total_calls == 1
+                assert last.total_input_tokens == 12
+                assert last.total_output_tokens == 7
 
-    @pytest.mark.asyncio
-    async def test_acompletion_with_string_prompt(self):
-        """Test async completion with string input."""
-        mock_response = _make_mock_response("Async response", 10, 5)
+    def test_timeout_passed_to_client(self):
+        """Custom timeout should be forwarded to the underlying OpenAI client."""
+        with patch("rlm.clients.openai.openai.OpenAI") as mock_openai:
+            with patch("rlm.clients.openai.openai.AsyncOpenAI") as mock_async:
+                get_client(
+                    backend="minimax",
+                    backend_kwargs={
+                        "api_key": "test-key",
+                        "model_name": "MiniMax-M2.7",
+                        "timeout": 60.0,
+                    },
+                )
+                call_kwargs = mock_openai.call_args[1]
+                assert call_kwargs["timeout"] == 60.0
 
-        client = MinimaxClient(api_key="test-key", model_name="MiniMax-M2.5")
+                async_call_kwargs = mock_async.call_args[1]
+                assert async_call_kwargs["timeout"] == 60.0
 
-        async def mock_create(**kwargs):
-            return mock_response
+    def test_minimax_base_url_constant(self):
+        """DEFAULT_MINIMAX_BASE_URL should be set correctly."""
+        assert DEFAULT_MINIMAX_BASE_URL == "https://api.minimax.io/v1"
 
-        client.async_client.chat.completions.create = mock_create
+    def test_client_backend_includes_minimax(self):
+        """ClientBackend type should include 'minimax'."""
+        from rlm.core.types import ClientBackend
 
-        result = await client.acompletion("Hello async")
-        assert result == "Async response"
+        # Literal types expose __args__
+        assert "minimax" in ClientBackend.__args__
 
-    @pytest.mark.asyncio
-    async def test_acompletion_invalid_prompt(self):
-        """Test async completion raises on invalid prompt type."""
-        client = MinimaxClient(api_key="test-key")
-        with pytest.raises(ValueError, match="Invalid prompt type"):
-            await client.acompletion(12345)
+    def test_legacy_m25_model_still_works(self):
+        """Older MiniMax-M2.5 model should still be usable."""
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "Legacy response"
+        mock_response.usage.prompt_tokens = 10
+        mock_response.usage.completion_tokens = 5
+        mock_response.usage.total_tokens = 15
+        mock_response.usage.cost = None
+        mock_response.usage.model_extra = {}
 
-    def test_completion_with_model_override(self):
-        """Test completion with explicit model override."""
-        mock_response = _make_mock_response("Highspeed response", 10, 5)
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_response
 
-        client = MinimaxClient(api_key="test-key", model_name="MiniMax-M2.5")
-        client.client.chat.completions.create = MagicMock(return_value=mock_response)
+        with patch("rlm.clients.openai.openai.OpenAI", return_value=mock_client):
+            with patch("rlm.clients.openai.openai.AsyncOpenAI"):
+                client = get_client(
+                    backend="minimax",
+                    backend_kwargs={
+                        "api_key": "test-key",
+                        "model_name": "MiniMax-M2.5",
+                    },
+                )
+                result = client.completion("Test legacy model")
+                assert result == "Legacy response"
+                assert client.model_name == "MiniMax-M2.5"
 
-        result = client.completion("Hello", model="MiniMax-M2.5-highspeed")
-        assert result == "Highspeed response"
+    def test_m27_highspeed_model(self):
+        """MiniMax-M2.7-highspeed should work correctly."""
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "Highspeed response"
+        mock_response.usage.prompt_tokens = 8
+        mock_response.usage.completion_tokens = 4
+        mock_response.usage.total_tokens = 12
+        mock_response.usage.cost = None
+        mock_response.usage.model_extra = {}
 
-        call_kwargs = client.client.chat.completions.create.call_args
-        assert call_kwargs.kwargs["model"] == "MiniMax-M2.5-highspeed"
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_response
+
+        with patch("rlm.clients.openai.openai.OpenAI", return_value=mock_client):
+            with patch("rlm.clients.openai.openai.AsyncOpenAI"):
+                client = get_client(
+                    backend="minimax",
+                    backend_kwargs={
+                        "api_key": "test-key",
+                        "model_name": "MiniMax-M2.7-highspeed",
+                    },
+                )
+                result = client.completion("Test highspeed")
+                assert result == "Highspeed response"
+                assert client.model_name == "MiniMax-M2.7-highspeed"
+                assert client.model_call_counts["MiniMax-M2.7-highspeed"] == 1
 
 
-class TestMinimaxClientIntegration:
-    """Integration tests that require a real API key."""
+class TestMiniMaxClientIntegration:
+    """Integration tests that require a real MINIMAX_API_KEY."""
 
     @pytest.mark.skipif(
         not os.environ.get("MINIMAX_API_KEY"),
         reason="MINIMAX_API_KEY not set",
     )
     def test_simple_completion(self):
-        """Test a simple completion with real API."""
-        client = MinimaxClient(model_name="MiniMax-M2.5")
+        """Test a simple completion with the real MiniMax API."""
+        client = get_client(
+            backend="minimax",
+            backend_kwargs={"model_name": "MiniMax-M2.7"},
+        )
         result = client.completion("What is 2+2? Reply with just the number.")
         assert "4" in result
 
-        # Verify usage was tracked
         usage = client.get_usage_summary()
-        assert "MiniMax-M2.5" in usage.model_usage_summaries
-        assert usage.model_usage_summaries["MiniMax-M2.5"].total_calls == 1
+        assert "MiniMax-M2.7" in usage.model_usage_summaries
+        assert usage.model_usage_summaries["MiniMax-M2.7"].total_calls == 1
 
     @pytest.mark.skipif(
         not os.environ.get("MINIMAX_API_KEY"),
@@ -207,7 +354,10 @@ class TestMinimaxClientIntegration:
     )
     def test_message_list_completion(self):
         """Test completion with message list format."""
-        client = MinimaxClient(model_name="MiniMax-M2.5")
+        client = get_client(
+            backend="minimax",
+            backend_kwargs={"model_name": "MiniMax-M2.7"},
+        )
         messages = [
             {"role": "system", "content": "You are a helpful math tutor."},
             {"role": "user", "content": "What is 5 * 5? Reply with just the number."},
@@ -219,20 +369,12 @@ class TestMinimaxClientIntegration:
         not os.environ.get("MINIMAX_API_KEY"),
         reason="MINIMAX_API_KEY not set",
     )
-    def test_highspeed_model(self):
-        """Test completion with MiniMax-M2.5-highspeed model."""
-        client = MinimaxClient(model_name="MiniMax-M2.5-highspeed")
-        result = client.completion("What is 3+3? Reply with just the number.")
+    @pytest.mark.asyncio
+    async def test_async_completion(self):
+        """Test async completion with MiniMax."""
+        client = get_client(
+            backend="minimax",
+            backend_kwargs={"model_name": "MiniMax-M2.7"},
+        )
+        result = await client.acompletion("What is 3+3? Reply with just the number.")
         assert "6" in result
-
-
-if __name__ == "__main__":
-    # Run integration tests directly
-    test = TestMinimaxClientIntegration()
-    print("Testing simple completion...")
-    test.test_simple_completion()
-    print("Testing message list completion...")
-    test.test_message_list_completion()
-    print("Testing highspeed model...")
-    test.test_highspeed_model()
-    print("All integration tests passed!")
