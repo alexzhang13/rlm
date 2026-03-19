@@ -242,8 +242,7 @@ class RLM:
                 env_kwargs["custom_sub_tools"] = self.custom_sub_tools
             if self.compaction and self.environment_type == "local":
                 env_kwargs["compaction"] = True
-            if self.environment_type == "local":
-                env_kwargs["max_concurrent_subcalls"] = self.max_concurrent_subcalls
+            env_kwargs["max_concurrent_subcalls"] = self.max_concurrent_subcalls
             environment: BaseEnv = get_environment(self.environment_type, env_kwargs)
 
             if self.persistent:

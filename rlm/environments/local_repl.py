@@ -139,11 +139,15 @@ class LocalREPL(NonIsolatedEnv):
         max_concurrent_subcalls: int = 4,
         **kwargs,
     ):
-        super().__init__(persistent=persistent, depth=depth, **kwargs)
+        super().__init__(
+            persistent=persistent,
+            depth=depth,
+            max_concurrent_subcalls=max_concurrent_subcalls,
+            **kwargs,
+        )
 
         self.lm_handler_address = lm_handler_address
         self.subcall_fn = subcall_fn  # Callback for recursive RLM calls (depth > 1 support)
-        self.max_concurrent_subcalls = max_concurrent_subcalls
         self.original_cwd = os.getcwd()
         self.temp_dir = tempfile.mkdtemp(prefix=f"repl_env_{uuid.uuid4()}_")
         self._lock = threading.Lock()
@@ -366,8 +370,7 @@ class LocalREPL(NonIsolatedEnv):
 
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = [
-                    executor.submit(_run_subcall, i, prompt)
-                    for i, prompt in enumerate(prompts)
+                    executor.submit(_run_subcall, i, prompt) for i, prompt in enumerate(prompts)
                 ]
                 # Wait for all futures to complete; exceptions are captured inside _run_subcall
                 for future in as_completed(futures):
