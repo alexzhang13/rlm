@@ -70,6 +70,7 @@ class RLM:
         custom_sub_tools: dict[str, Any] | None = None,
         compaction: bool = False,
         compaction_threshold_pct: float = 0.85,
+        max_concurrent_subcalls: int = 4,
         on_subcall_start: Callable[[int, str, str], None] | None = None,
         on_subcall_complete: Callable[[int, str, float, str | None], None] | None = None,
         on_iteration_start: Callable[[int, int], None] | None = None,
@@ -102,6 +103,8 @@ class RLM:
                 when root context reaches compaction_threshold_pct of the model's context limit.
             compaction_threshold_pct: When compaction is on, trigger summarization when root
                 message token count reaches this fraction of the model context limit (default 0.85).
+            max_concurrent_subcalls: Maximum number of parallel threads for rlm_query_batched subcalls.
+                Each child RLM runs in its own thread. Default 4.
             on_subcall_start: Callback fired when a child RLM starts. Args: (depth, model, prompt_preview).
             on_subcall_complete: Callback fired when a child RLM completes. Args: (depth, model, duration, error_or_none).
             on_iteration_start: Callback fired when an iteration starts. Args: (depth, iteration_num).
@@ -132,6 +135,7 @@ class RLM:
 
         self.compaction = compaction
         self.compaction_threshold_pct = compaction_threshold_pct
+        self.max_concurrent_subcalls = max_concurrent_subcalls
 
         self.depth = depth
         self.max_depth = max_depth
@@ -238,6 +242,8 @@ class RLM:
                 env_kwargs["custom_sub_tools"] = self.custom_sub_tools
             if self.compaction and self.environment_type == "local":
                 env_kwargs["compaction"] = True
+            if self.environment_type == "local":
+                env_kwargs["max_concurrent_subcalls"] = self.max_concurrent_subcalls
             environment: BaseEnv = get_environment(self.environment_type, env_kwargs)
 
             if self.persistent:
@@ -765,6 +771,8 @@ class RLM:
             # Propagate custom tools to children (sub_tools become the child's tools)
             custom_tools=self.custom_sub_tools,
             custom_sub_tools=self.custom_sub_tools,
+            # Propagate concurrency settings to children
+            max_concurrent_subcalls=self.max_concurrent_subcalls,
             # Propagate callbacks to children for nested tracking
             on_subcall_start=self.on_subcall_start,
             on_subcall_complete=self.on_subcall_complete,

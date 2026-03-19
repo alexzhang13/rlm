@@ -9,6 +9,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from typing import Any
 
@@ -135,12 +136,14 @@ class LocalREPL(NonIsolatedEnv):
         custom_tools: dict[str, Any] | None = None,
         custom_sub_tools: dict[str, Any] | None = None,
         compaction: bool = False,
+        max_concurrent_subcalls: int = 4,
         **kwargs,
     ):
         super().__init__(persistent=persistent, depth=depth, **kwargs)
 
         self.lm_handler_address = lm_handler_address
         self.subcall_fn = subcall_fn  # Callback for recursive RLM calls (depth > 1 support)
+        self.max_concurrent_subcalls = max_concurrent_subcalls
         self.original_cwd = os.getcwd()
         self.temp_dir = tempfile.mkdtemp(prefix=f"repl_env_{uuid.uuid4()}_")
         self._lock = threading.Lock()
@@ -316,9 +319,13 @@ class LocalREPL(NonIsolatedEnv):
         return self._llm_query(prompt, model)
 
     def _rlm_query_batched(self, prompts: list[str], model: str | None = None) -> list[str]:
-        """Spawn recursive RLM sub-calls for multiple prompts.
+        """Spawn recursive RLM sub-calls for multiple prompts in parallel.
 
-        Each prompt gets its own child RLM for deeper thinking.
+        Each prompt gets its own child RLM for deeper thinking. When multiple
+        prompts are provided, subcalls run concurrently using a thread pool
+        (bounded by max_concurrent_subcalls) since they are independent and
+        I/O-bound. Results are returned in the same order as input prompts.
+
         Falls back to llm_query_batched if no recursive capability is configured.
 
         Args:
@@ -329,14 +336,48 @@ class LocalREPL(NonIsolatedEnv):
             List of responses in the same order as input prompts.
         """
         if self.subcall_fn is not None:
-            results = []
-            for prompt in prompts:
+            # For 0 or 1 prompts, no need for thread pool overhead
+            if len(prompts) <= 1:
+                results = []
+                for prompt in prompts:
+                    try:
+                        completion = self.subcall_fn(prompt, model)
+                        self._pending_llm_calls.append(completion)
+                        results.append(completion.response)
+                    except Exception as e:
+                        results.append(f"Error: RLM query failed - {e}")
+                return results
+
+            # Parallel execution for multiple prompts
+            max_workers = min(self.max_concurrent_subcalls, len(prompts))
+            # Pre-allocate result slots to preserve ordering
+            results: list[str] = [""] * len(prompts)
+            completions: list[tuple[int, RLMChatCompletion]] = []
+            lock = threading.Lock()
+
+            def _run_subcall(index: int, prompt: str) -> None:
                 try:
                     completion = self.subcall_fn(prompt, model)
-                    self._pending_llm_calls.append(completion)
-                    results.append(completion.response)
+                    with lock:
+                        completions.append((index, completion))
+                    results[index] = completion.response
                 except Exception as e:
-                    results.append(f"Error: RLM query failed - {e}")
+                    results[index] = f"Error: RLM query failed - {e}"
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [
+                    executor.submit(_run_subcall, i, prompt)
+                    for i, prompt in enumerate(prompts)
+                ]
+                # Wait for all futures to complete; exceptions are captured inside _run_subcall
+                for future in as_completed(futures):
+                    future.result()  # Re-raises unexpected executor errors
+
+            # Append completions in original prompt order for deterministic metadata
+            completions.sort(key=lambda x: x[0])
+            for _, completion in completions:
+                self._pending_llm_calls.append(completion)
+
             return results
 
         # Fall back to plain batched LM call if no recursive capability
