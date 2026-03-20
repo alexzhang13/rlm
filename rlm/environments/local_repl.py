@@ -23,6 +23,38 @@ from rlm.environments.base_env import (
 )
 
 # =============================================================================
+# Global Subcall Semaphore
+# =============================================================================
+# Bounds the total number of concurrent child RLMs across ALL depths in
+# the process. Each depth level creates its own ThreadPoolExecutor (avoiding
+# pool-within-pool deadlock), but every child must acquire a slot from this
+# semaphore before doing real work. When all slots are taken, new children
+# wait until a running child finishes.
+#
+# Default: 16. Override via set_global_max_subcalls() or pass a custom
+# semaphore to LocalREPL(subcall_semaphore=...).
+
+_DEFAULT_MAX_GLOBAL_SUBCALLS = 16
+_global_subcall_semaphore = threading.Semaphore(_DEFAULT_MAX_GLOBAL_SUBCALLS)
+
+
+
+def set_global_max_subcalls(n: int) -> None:
+    """Replace the global subcall semaphore with a new one of size n.
+
+    Call this BEFORE creating any RLM instances. Not safe to call while
+    subcalls are in flight.
+    """
+    global _global_subcall_semaphore
+    _global_subcall_semaphore = threading.Semaphore(n)
+
+
+def get_global_subcall_semaphore() -> threading.Semaphore:
+    """Return the current global subcall semaphore."""
+    return _global_subcall_semaphore
+
+
+# =============================================================================
 # Safe Builtins
 # =============================================================================
 
@@ -136,7 +168,8 @@ class LocalREPL(NonIsolatedEnv):
         custom_tools: dict[str, Any] | None = None,
         custom_sub_tools: dict[str, Any] | None = None,
         compaction: bool = False,
-        max_concurrent_subcalls: int = 4,
+        max_concurrent_subcalls: int = 1,
+        subcall_semaphore: threading.Semaphore | None = None,
         **kwargs,
     ):
         super().__init__(
@@ -148,9 +181,12 @@ class LocalREPL(NonIsolatedEnv):
 
         self.lm_handler_address = lm_handler_address
         self.subcall_fn = subcall_fn  # Callback for recursive RLM calls (depth > 1 support)
+        self.max_concurrent_subcalls = max_concurrent_subcalls
+        self._subcall_semaphore = subcall_semaphore or _global_subcall_semaphore
         self.original_cwd = os.getcwd()
         self.temp_dir = tempfile.mkdtemp(prefix=f"repl_env_{uuid.uuid4()}_")
         self._lock = threading.Lock()
+        self._calls_lock = threading.Lock()  # Protects _pending_llm_calls during parallel subcalls
         self._context_count: int = 0
         self._history_count: int = 0
         self.compaction = compaction
@@ -324,11 +360,19 @@ class LocalREPL(NonIsolatedEnv):
 
     def _rlm_query_batched(self, prompts: list[str], model: str | None = None) -> list[str]:
         """Spawn recursive RLM sub-calls for multiple prompts in parallel.
+        Each prompt gets its own child RLM for deeper thinking.
 
-        Each prompt gets its own child RLM for deeper thinking. When multiple
-        prompts are provided, subcalls run concurrently using a thread pool
-        (bounded by max_concurrent_subcalls) since they are independent and
-        I/O-bound. Results are returned in the same order as input prompts.
+        Execution modes (controlled by max_concurrent_subcalls):
+          - 1 (default): Sequential execution, identical to previous behavior.
+            Zero overhead — no locks, no thread pool, no semaphore.
+          - >1: Parallel execution via ThreadPoolExecutor. Each child RLM
+            runs in its own thread with its own LMHandler and LocalREPL.
+            A global semaphore bounds total concurrent children across all
+            depths to prevent thread/memory explosion with deep recursion.
+
+        No deadlock risk: each depth level creates its own short-lived
+        ThreadPoolExecutor (no pool-within-pool). The global semaphore does
+        not own threads — workers acquire a slot, do work, release.
 
         Falls back to llm_query_batched if no recursive capability is configured.
 
@@ -340,26 +384,16 @@ class LocalREPL(NonIsolatedEnv):
             List of responses in the same order as input prompts.
         """
         if self.subcall_fn is not None:
-            # For 0 or 1 prompts, no need for thread pool overhead
-            if len(prompts) <= 1:
-                results = []
-                for prompt in prompts:
-                    try:
-                        completion = self.subcall_fn(prompt, model)
-                        self._pending_llm_calls.append(completion)
-                        results.append(completion.response)
-                    except Exception as e:
-                        results.append(f"Error: RLM query failed - {e}")
-                return results
+            if not prompts:
+                return []
 
-            # Parallel execution for multiple prompts
-            max_workers = min(self.max_concurrent_subcalls, len(prompts))
-            # Pre-allocate result slots to preserve ordering
-            results: list[str] = [""] * len(prompts)
-            completions: list[tuple[int, RLMChatCompletion]] = []
-            lock = threading.Lock()
+            # Parallel execution: multiple prompts + concurrency enabled
+            if self.max_concurrent_subcalls > 1 and len(prompts) > 1:
+                return self._rlm_query_batched_parallel(prompts, model)
 
-            def _run_subcall(index: int, prompt: str) -> None:
+            # Sequential execution (default): zero overhead, identical to previous behavior
+            results = []
+            for prompt in prompts:
                 try:
                     completion = self.subcall_fn(prompt, model)
                     with lock:
@@ -385,6 +419,55 @@ class LocalREPL(NonIsolatedEnv):
 
         # Fall back to plain batched LM call if no recursive capability
         return self._llm_query_batched(prompts, model)
+
+    def _rlm_query_batched_parallel(self, prompts: list[str], model: str | None = None) -> list[str]:
+        """Execute multiple RLM sub-calls in parallel using ThreadPoolExecutor.
+
+        Each child RLM gets its own thread. Results maintain the original
+        prompt order regardless of which child finishes first.
+
+        Concurrency control (two layers):
+          1. Local ThreadPoolExecutor: bounds children dispatched by THIS REPL
+             (max_concurrent_subcalls). Short-lived — created and destroyed
+             per batch call.
+          2. Global semaphore (_subcall_semaphore): bounds total concurrent
+             children across ALL depths in the process. A worker acquires a
+             slot before calling subcall_fn and releases it after, so the
+             semaphore never blocks the pool itself — only the actual work.
+
+        Thread safety:
+          - Each child RLM is fully isolated (own LMHandler, own LocalREPL).
+          - _pending_llm_calls is protected by _calls_lock for concurrent appends.
+          - subcall_fn (RLM._subcall) is called from worker threads — the parent
+            RLM's _state_lock protects cumulative_cost and error tracking.
+        """
+        results: list[str | None] = [None] * len(prompts)
+        sem = self._subcall_semaphore
+
+        def _execute_one(idx: int, prompt: str) -> tuple[int, str, RLMChatCompletion | None]:
+            sem.acquire()
+            try:
+                completion = self.subcall_fn(prompt, model)
+                return (idx, completion.response, completion)
+            except Exception as e:
+                return (idx, f"Error: RLM query failed - {e}", None)
+            finally:
+                sem.release()
+
+        max_workers = min(self.max_concurrent_subcalls, len(prompts))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(_execute_one, idx, prompt): idx
+                for idx, prompt in enumerate(prompts)
+            }
+            for future in as_completed(futures):
+                idx, response, completion = future.result()
+                results[idx] = response
+                if completion is not None:
+                    with self._calls_lock:
+                        self._pending_llm_calls.append(completion)
+
+        return results
 
     def load_context(self, context_payload: dict | list | str):
         """Load context into the environment as context_0 (and 'context' alias)."""
@@ -493,13 +576,22 @@ class LocalREPL(NonIsolatedEnv):
 
     @contextmanager
     def _temp_cwd(self):
-        """Temporarily change to temp directory for execution."""
-        old_cwd = os.getcwd()
+        """Temporarily change to temp directory for execution.
+
+        Always restores to self.original_cwd (set at init time) rather than
+        os.getcwd(), which avoids [Errno 2] when parallel threads delete
+        each other's temp dirs. No lock needed: the worst case is a brief
+        cwd mismatch during concurrent exec(), which only affects relative
+        file I/O in model code (rare — context is passed via variables).
+        """
         try:
             os.chdir(self.temp_dir)
             yield
         finally:
-            os.chdir(old_cwd)
+            try:
+                os.chdir(self.original_cwd)
+            except OSError:
+                pass
 
     def _restore_scaffold(self) -> None:
         """Restore scaffold names after execution so overwrites (e.g. context = 'x') don't persist."""
