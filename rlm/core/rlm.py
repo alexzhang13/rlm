@@ -358,7 +358,13 @@ class RLM:
                         if getattr(block.result, "final_answer", None):
                             final_answer = block.result.final_answer
                             break
-                    if final_answer is None:
+                    if final_answer is None and not iteration.code_blocks:
+                        # Only check for text-based FINAL() when there are no code
+                        # blocks. When code blocks are present, the model may have
+                        # hallucinated the execution output and provided a premature
+                        # FINAL() based on that hallucination (observed with Sonnet 4.6).
+                        # By skipping the check, we feed back real execution results
+                        # and let the model answer correctly in the next turn.
                         final_answer = find_final_answer(
                             iteration.response, environment=environment
                         )
