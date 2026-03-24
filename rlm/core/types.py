@@ -8,7 +8,6 @@ ClientBackend = Literal[
     "openrouter",
     "vercel",
     "vllm",
-    "litellm",
     "anthropic",
     "azure_openai",
     "gemini",

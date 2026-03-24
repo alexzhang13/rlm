@@ -71,7 +71,7 @@ RLM(
 #### `backend`
 {: .no_toc }
 
-**Type:** `Literal["openai", "portkey", "openrouter", "vllm", "litellm", "anthropic"]`
+**Type:** `Literal["openai", "portkey", "openrouter", "vllm", "anthropic"]`
 **Default:** `"openai"`
 
 The LM provider backend to use for the root model.
@@ -104,7 +104,7 @@ Configuration passed to the LM client. Required fields vary by backend:
 | `portkey` | `model_name`, `api_key` | `base_url` |
 | `openrouter` | `model_name` | `api_key` |
 | `vllm` | `model_name`, `base_url` | — |
-| `litellm` | `model_name` | varies by provider |
+
 
 ```python
 backend_kwargs = {

@@ -67,13 +67,6 @@ class TestClientImports:
 
         assert PortkeyClient is not None
 
-    def test_litellm_client_import(self):
-        """Test LiteLLMClient import."""
-        pytest.importorskip("litellm")
-        from rlm.clients.litellm import LiteLLMClient
-
-        assert LiteLLMClient is not None
-
     def test_get_client_function(self):
         """Test get_client function import."""
         from rlm.clients import get_client
@@ -322,7 +315,6 @@ class TestImportConflicts:
             ("rlm.clients.openai", "openai"),
             ("rlm.clients.anthropic", "anthropic"),
             ("rlm.clients.portkey", "portkey_ai"),
-            ("rlm.clients.litellm", "litellm"),
             ("rlm.environments.modal_repl", "modal"),
             ("rlm.environments.prime_repl", "prime_sandboxes"),
         ]
@@ -460,14 +452,6 @@ class TestImportCompleteness:
             from rlm.clients.portkey import PortkeyClient
 
             assert isinstance(PortkeyClient, type)
-        except Exception:
-            pass
-
-        try:
-            pytest.importorskip("litellm")
-            from rlm.clients.litellm import LiteLLMClient
-
-            assert isinstance(LiteLLMClient, type)
         except Exception:
             pass
 

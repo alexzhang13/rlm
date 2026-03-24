@@ -140,32 +140,6 @@ class TestPortkeyClientTimeout:
                 assert async_call_kwargs["timeout"] == 120.0
 
 
-class TestLiteLLMClientTimeout:
-    """Tests for LiteLLM client timeout."""
-
-    def test_timeout_passed_to_completion(self):
-        """Timeout should be passed to litellm.completion call."""
-        pytest.importorskip("litellm")
-        from rlm.clients.litellm import LiteLLMClient
-
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "Hello"
-        mock_response.usage.prompt_tokens = 10
-        mock_response.usage.completion_tokens = 5
-        mock_response.usage.total_tokens = 15
-
-        with patch(
-            "rlm.clients.litellm.litellm.completion", return_value=mock_response
-        ) as mock_completion:
-            client = LiteLLMClient(model_name="gpt-4o", timeout=120.0)
-            client.completion("Hello")
-
-            mock_completion.assert_called_once()
-            call_kwargs = mock_completion.call_args[1]
-            assert call_kwargs["timeout"] == 120.0
-
-
 class TestGeminiClientTimeout:
     """Tests for Gemini client timeout."""
 

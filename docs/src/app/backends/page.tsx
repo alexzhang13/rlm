@@ -7,7 +7,7 @@ export default function BackendsPage() {
       
       <p className="text-muted-foreground mb-6">
         <p>
-          RLMs natively support a wide range of language model providers, including <code>OpenAI</code>, <code>Anthropic</code>, <code>Portkey</code>, <code>OpenRouter</code>, and <code>LiteLLM</code>. Additional providers can be supported with minimal effort. The <code>backend_kwargs</code> are named arguments passed directly to the backend client.
+          RLMs natively support a wide range of language model providers, including <code>OpenAI</code>, <code>Anthropic</code>, <code>Portkey</code>, and <code>OpenRouter</code>. Additional providers can be supported with minimal effort. The <code>backend_kwargs</code> are named arguments passed directly to the backend client.
         </p>
       </p>
 
@@ -61,20 +61,6 @@ export default function BackendsPage() {
         "model_name": "openai/gpt-5-mini",  # Format: provider/model
     },
 )`} />
-
-      <hr className="my-8 border-border" />
-
-      <h2 className="text-2xl font-semibold mb-4">LiteLLM</h2>
-      <p className="text-muted-foreground mb-4">
-        <a href="https://docs.litellm.ai/docs/" className="text-primary underline font-medium" target="_blank" rel="noopener noreferrer">LiteLLM</a> is a universal interface for 100+ model providers, with support for local models and custom endpoints.
-      </p>
-      <CodeBlock code={`rlm = RLM(
-    backend="litellm",
-    backend_kwargs={
-        "model_name": "gpt-5-mini",
-    },
-)
-# Set provider API keys in environment`} />
 
       <hr className="my-8 border-border" />
 
