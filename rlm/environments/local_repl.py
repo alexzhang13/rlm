@@ -14,12 +14,16 @@ from contextlib import contextmanager
 from typing import Any
 
 from rlm.core.comms_utils import LMRequest, send_lm_request, send_lm_request_batched
-from rlm.core.types import REPLResult, RLMChatCompletion
+from rlm.core.types import ContextPayload, REPLResult, RLMChatCompletion
 from rlm.environments.base_env import (
     RESERVED_TOOL_NAMES,
     NonIsolatedEnv,
     extract_tool_value,
     validate_custom_tools,
+)
+from rlm.utils.dataframe_utils import (
+    dataframe_to_parquet_bytes,
+    get_dataframe_type,
 )
 
 # =============================================================================
@@ -128,7 +132,7 @@ class LocalREPL(NonIsolatedEnv):
     def __init__(
         self,
         lm_handler_address: tuple[str, int] | None = None,
-        context_payload: dict | list | str | None = None,
+        context_payload: ContextPayload | None = None,
         setup_code: str | None = None,
         persistent: bool = False,
         depth: int = 1,
@@ -386,13 +390,11 @@ class LocalREPL(NonIsolatedEnv):
         # Fall back to plain batched LM call if no recursive capability
         return self._llm_query_batched(prompts, model)
 
-    def load_context(self, context_payload: dict | list | str):
+    def load_context(self, context_payload: ContextPayload):
         """Load context into the environment as context_0 (and 'context' alias)."""
         self.add_context(context_payload, 0)
 
-    def add_context(
-        self, context_payload: dict | list | str, context_index: int | None = None
-    ) -> int:
+    def add_context(self, context_payload: ContextPayload, context_index: int | None = None) -> int:
         """
         Add a context with versioned variable name.
 
@@ -408,7 +410,16 @@ class LocalREPL(NonIsolatedEnv):
 
         var_name = f"context_{context_index}"
 
-        if isinstance(context_payload, str):
+        df_type = get_dataframe_type(context_payload)
+        if df_type is not None:
+            context_path = os.path.join(self.temp_dir, f"context_{context_index}.parquet")
+            parquet_bytes, df_type = dataframe_to_parquet_bytes(context_payload)
+            with open(context_path, "wb") as f:
+                f.write(parquet_bytes)
+            self.execute_code(
+                f"import pandas as pd\n{var_name} = pd.read_parquet(r'{context_path}')"
+            )
+        elif isinstance(context_payload, str):
             context_path = os.path.join(self.temp_dir, f"context_{context_index}.txt")
             with open(context_path, "w") as f:
                 f.write(context_payload)

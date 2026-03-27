@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
-from rlm.core.types import REPLResult
+from rlm.core.types import ContextPayload, REPLResult
 
 # =============================================================================
 # Custom Tools Support
@@ -225,7 +225,7 @@ class BaseEnv(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def load_context(self, context_payload: dict | list | str):
+    def load_context(self, context_payload: ContextPayload):
         raise NotImplementedError
 
     @abstractmethod
@@ -247,7 +247,7 @@ class IsolatedEnv(BaseEnv, ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def load_context(self, context_payload: dict | list | str):
+    def load_context(self, context_payload: ContextPayload):
         raise NotImplementedError
 
     @abstractmethod
@@ -270,7 +270,7 @@ class NonIsolatedEnv(BaseEnv, ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def load_context(self, context_payload: dict | list | str):
+    def load_context(self, context_payload: ContextPayload):
         raise NotImplementedError
 
     @abstractmethod
@@ -322,9 +322,7 @@ class SupportsPersistence(Protocol):
         """
         ...
 
-    def add_context(
-        self, context_payload: dict | list | str, context_index: int | None = None
-    ) -> int:
+    def add_context(self, context_payload: ContextPayload, context_index: int | None = None) -> int:
         """Add a context payload, making it available as context_N in code.
 
         Versioning:
@@ -337,7 +335,7 @@ class SupportsPersistence(Protocol):
             - context (alias to context_0)
 
         Args:
-            context_payload: The context data (string, dict, or list).
+            context_payload: The context data.
             context_index: Optional specific index, or None to auto-increment.
 
         Returns:

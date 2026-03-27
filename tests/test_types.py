@@ -1,5 +1,7 @@
 """Tests for core types."""
 
+import pytest
+
 from rlm.core.types import (
     CodeBlock,
     ModelUsageSummary,
@@ -198,6 +200,62 @@ class TestQueryMetadata:
         assert meta.context_type == "str"
         assert meta.context_total_length == 13
         assert meta.context_lengths == [13]
+
+    def test_pandas_dataframe_prompt(self):
+        pd = pytest.importorskip("pandas")
+        df = pd.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+        meta = QueryMetadata(df)
+        assert meta.context_type == "pandas_dataframe"
+        assert meta.context_total_length == 6
+        assert meta.context_lengths == [3]
+        assert meta.context_summary is not None
+
+    def test_dataframe_with_nulls(self):
+        pd = pytest.importorskip("pandas")
+        df = pd.DataFrame({"a": [1, None, 3], "b": [None, None, "x"]})
+        meta = QueryMetadata(df)
+        assert meta.context_type == "pandas_dataframe"
+        assert "Null counts" in meta.context_summary
+
+    def test_dataframe_many_columns(self):
+        pd = pytest.importorskip("pandas")
+        df = pd.DataFrame({f"col_{i}": [i] for i in range(25)})
+        meta = QueryMetadata(df)
+        assert meta.context_type == "pandas_dataframe"
+        assert "5 more columns" in meta.context_summary
+
+    def test_dataframe_single_row(self):
+        pd = pytest.importorskip("pandas")
+        df = pd.DataFrame({"x": [42]})
+        meta = QueryMetadata(df)
+        assert meta.context_lengths == [1]
+        assert meta.context_total_length == 1
+
+    def test_dataframe_empty(self):
+        pd = pytest.importorskip("pandas")
+        df = pd.DataFrame({"a": [], "b": []})
+        meta = QueryMetadata(df)
+        assert meta.context_lengths == [0]
+        assert meta.context_total_length == 0
+
+    def test_dict_prompt(self):
+        meta = QueryMetadata({"key": "value", "num": "42"})
+        assert meta.context_type == "dict"
+        assert meta.context_total_length > 0
+
+    def test_list_of_strings(self):
+        meta = QueryMetadata(["hello", "world"])
+        assert meta.context_type == "list"
+        assert meta.context_lengths == [5, 5]
+
+    def test_empty_list(self):
+        meta = QueryMetadata([])
+        assert meta.context_type == "list"
+        assert meta.context_lengths == [0]
+
+    def test_invalid_type_raises(self):
+        with pytest.raises(ValueError, match="Invalid prompt type"):
+            QueryMetadata(12345)
 
 
 class TestRLMMetadata:
