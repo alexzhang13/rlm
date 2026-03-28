@@ -371,7 +371,7 @@ rlm = RLM(
 
 The descriptions are automatically added to the system prompt:
 ```
-6. Custom tools and data available in the REPL:
+**Custom tools and data available in the REPL:**
 - `fetch_weather`: Fetch current weather data for a city name
 - `calculate_shipping`: Calculate shipping cost given weight (kg) and distance (km)
 - `API_KEY`: API key for the weather service
