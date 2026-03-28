@@ -53,6 +53,10 @@ def get_client(
         from rlm.clients.azure_openai import AzureOpenAIClient
 
         return AzureOpenAIClient(**backend_kwargs)
+    elif backend == "cohere":
+        from rlm.clients.cohere import CohereClient
+
+        return CohereClient(**backend_kwargs)
     else:
         raise ValueError(
             f"Unknown backend: {backend}. Supported backends: ['openai', 'vllm', 'portkey', 'openrouter', 'anthropic', 'azure_openai', 'gemini', 'vercel']"
