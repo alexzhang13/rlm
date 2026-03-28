@@ -156,6 +156,7 @@ class RLM:
 
         # Tracking (cumulative across all calls including children)
         self._cumulative_cost: float = 0.0
+        self._last_handler_cost: float = 0.0  # Last known handler cost, for computing deltas
         self._consecutive_errors: int = 0
         self._last_error: str | None = None
         self._best_partial_answer: str | None = None
@@ -492,11 +493,8 @@ class RLM:
                 ),
             )
 
-        # Check budget
+        # Check budget (handler cost already synced in _completion_turn)
         if self.max_budget is not None:
-            current_usage = lm_handler.get_usage_summary()
-            current_cost = current_usage.total_cost or 0.0
-            self._cumulative_cost = current_cost
             if self._cumulative_cost > self.max_budget:
                 self.verbose.print_budget_exceeded(self._cumulative_cost, self.max_budget)
                 raise BudgetExceededError(
@@ -587,6 +585,16 @@ class RLM:
         ]
         return new_history
 
+    def _update_handler_cost(self, lm_handler: LMHandler) -> None:
+        """Update _cumulative_cost with the handler's cost delta since last check."""
+        if self.max_budget is None:
+            return
+        current_usage = lm_handler.get_usage_summary()
+        handler_cost = current_usage.total_cost or 0.0
+        delta = handler_cost - self._last_handler_cost
+        self._cumulative_cost += delta
+        self._last_handler_cost = handler_cost
+
     def _completion_turn(
         self,
         prompt: str | dict[str, Any],
@@ -599,6 +607,11 @@ class RLM:
         """
         iter_start = time.perf_counter()
         response = lm_handler.completion(prompt)
+
+        # Update cumulative cost with the handler's LLM call BEFORE code
+        # execution so that subcalls see accurate remaining budget.
+        self._update_handler_cost(lm_handler)
+
         code_block_strs = find_code_blocks(response)
         code_blocks = []
 
@@ -688,6 +701,9 @@ class RLM:
                 end_time = time.perf_counter()
                 model_usage = client.get_last_usage()
                 usage_summary = UsageSummary(model_usage_summaries={root_model: model_usage})
+                # Track fallback LM cost in parent's cumulative total
+                if usage_summary.total_cost:
+                    self._cumulative_cost += usage_summary.total_cost
                 return RLMChatCompletion(
                     root_model=root_model,
                     prompt=prompt,
@@ -778,12 +794,13 @@ class RLM:
         )
         try:
             result = child.completion(prompt, root_prompt=None)
-            # Track child's cost in parent's cumulative cost
+            # Add child's cost to cumulative total immediately so subsequent
+            # subcalls in the same code block see accurate remaining budget.
             if result.usage_summary and result.usage_summary.total_cost:
                 self._cumulative_cost += result.usage_summary.total_cost
             return result
         except BudgetExceededError as e:
-            # Propagate child's spending to parent
+            # Record whatever the child actually spent
             self._cumulative_cost += e.spent
             error_msg = f"Budget exceeded - {e}"
             return RLMChatCompletion(
