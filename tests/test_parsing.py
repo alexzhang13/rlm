@@ -278,6 +278,47 @@ multiline answer)"""
         result = find_final_answer("FINAL_VAR(missing)", environment=mock_env)
         assert result is None
 
+    def test_final_inside_repl_code_block_not_parsed_as_terminal(self):
+        """FINAL() written inside a ```repl``` block must NOT be treated as the final answer.
+
+        This was the root-cause bug: models often write FINAL(x) or FINAL_VAR(x) inside a
+        repl block as code. The parser must ignore those and only look at prose text.
+        """
+        text = "I will now finalise.\n```repl\nFINAL(final_answer)\n```"
+        result = find_final_answer(text)
+        assert result is None, (
+            "FINAL() inside a repl block should not trigger termination"
+        )
+
+    def test_final_var_inside_repl_code_block_not_parsed_as_terminal(self):
+        """FINAL_VAR() inside a repl block must NOT be treated as the final answer."""
+        text = "Computing now.\n```repl\nFINAL_VAR(result)\n```"
+        mock_env = Mock()
+        mock_env.execute_code.return_value = REPLResult(stdout="55", stderr="", locals={})
+        result = find_final_answer(text, environment=mock_env)
+        assert result is None, (
+            "FINAL_VAR() inside a repl block should not trigger termination"
+        )
+        mock_env.execute_code.assert_not_called()
+
+    def test_final_in_prose_still_works_alongside_repl_block(self):
+        """FINAL() in prose (outside code fences) must still be picked up correctly."""
+        text = "```repl\nx = 1\n```\nFINAL(55)"
+        result = find_final_answer(text)
+        assert result == "55"
+
+    def test_final_callable_in_repl_environment(self):
+        """FINAL() should be callable inside the REPL and store the answer in _last_final_answer."""
+        env = LocalREPL()
+        try:
+            env.execute_code("answer = 55")
+            result = env.execute_code("FINAL(answer)")
+            assert result.final_answer == "55", (
+                f"Expected final_answer='55', got '{result.final_answer}'"
+            )
+        finally:
+            env.cleanup()
+
 
 class TestFormatExecutionResult:
     """Tests for format_execution_result function."""

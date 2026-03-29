@@ -40,9 +40,13 @@ def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | 
     Returns:
         The final answer string, or None if no final answer pattern is found
     """
+    # Remove fenced code blocks first so FINAL()/FINAL_VAR() inside ```repl``` code
+    # does not get parsed as a terminal answer.
+    text_no_code = re.sub(r"```[\s\S]*?```", "", text)
+
     # Check for FINAL_VAR pattern first - must be at start of line
     final_var_pattern = r"^\s*FINAL_VAR\((.*?)\)"
-    match = re.search(final_var_pattern, text, re.MULTILINE | re.DOTALL)
+    match = re.search(final_var_pattern, text_no_code, re.MULTILINE | re.DOTALL)
     if match:
         variable_name = match.group(1).strip().strip('"').strip("'")
         if environment is not None:
@@ -63,7 +67,7 @@ def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | 
     # Check for FINAL pattern - must be at start of line
     # Use greedy matching to capture content with nested parentheses
     final_pattern = r"^\s*FINAL\((.*)\)\s*$"
-    match = re.search(final_pattern, text, re.MULTILINE | re.DOTALL)
+    match = re.search(final_pattern, text_no_code, re.MULTILINE | re.DOTALL)
     if match:
         return match.group(1).strip()
 
