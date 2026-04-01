@@ -13,6 +13,7 @@ from unittest.mock import Mock, patch
 import rlm.core.rlm as rlm_module
 from rlm import RLM
 from rlm.core.types import ModelUsageSummary, UsageSummary
+from rlm.utils.exceptions import ContextWindowExceededError
 
 
 def create_mock_lm(responses: list[str], model_name: str = "mock-model") -> Mock:
@@ -247,6 +248,35 @@ class TestSubcallErrorsPropagation:
                 parent._subcall("test prompt")
 
             assert captured_child_params.get("max_errors") is None
+
+            parent.close()
+
+
+class TestSubcallLeafFallbackErrors:
+    """Tests for plain LM fallback behavior at max depth."""
+
+    def test_max_depth_plain_lm_error_is_returned_in_completion(self):
+        """Context-window failures in the leaf LM call should be surfaced cleanly."""
+        with patch.object(rlm_module, "get_client") as mock_get_client:
+            mock_lm = create_mock_lm([])
+            mock_lm.completion.side_effect = ContextWindowExceededError(
+                model_name="gpt-4",
+                estimated_input_tokens=9_000,
+                context_limit=8_192,
+                prompt_kind="string",
+                estimation_method="character estimate (4 chars/token)",
+            )
+            mock_get_client.return_value = mock_lm
+
+            parent = RLM(
+                backend="openai",
+                backend_kwargs={"model_name": "parent-model"},
+                max_depth=1,
+            )
+
+            result = parent._subcall("too big")
+
+            assert "Context window exceeded" in result.response
 
             parent.close()
 
