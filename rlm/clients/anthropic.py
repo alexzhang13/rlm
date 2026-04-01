@@ -37,6 +37,7 @@ class AnthropicClient(BaseLM):
         model = model or self.model_name
         if not model:
             raise ValueError("Model name is required for Anthropic client.")
+        self.validate_prompt_context_window(prompt, model)
 
         kwargs = {"model": model, "max_tokens": self.max_tokens, "messages": messages}
         if system:
@@ -54,6 +55,7 @@ class AnthropicClient(BaseLM):
         model = model or self.model_name
         if not model:
             raise ValueError("Model name is required for Anthropic client.")
+        self.validate_prompt_context_window(prompt, model)
 
         kwargs = {"model": model, "max_tokens": self.max_tokens, "messages": messages}
         if system:

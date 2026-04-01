@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from rlm.core.types import ModelUsageSummary, UsageSummary
+from rlm.utils.token_utils import validate_prompt_fits_context_window
 
 # Default timeout for LM API calls (in seconds)
 DEFAULT_TIMEOUT: float = 300.0
@@ -18,12 +19,18 @@ class BaseLM(ABC):
         self.timeout = timeout
         self.kwargs = kwargs
 
+    def validate_prompt_context_window(
+        self, prompt: str | list[dict[str, Any]], model_name: str
+    ) -> None:
+        """Fail fast when a prompt is too large for the target model."""
+        validate_prompt_fits_context_window(prompt, model_name)
+
     @abstractmethod
-    def completion(self, prompt: str | dict[str, Any]) -> str:
+    def completion(self, prompt: str | list[dict[str, Any]]) -> str:
         raise NotImplementedError
 
     @abstractmethod
-    async def acompletion(self, prompt: str | dict[str, Any]) -> str:
+    async def acompletion(self, prompt: str | list[dict[str, Any]]) -> str:
         raise NotImplementedError
 
     @abstractmethod
