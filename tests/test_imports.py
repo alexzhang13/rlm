@@ -162,6 +162,13 @@ class TestEnvironmentImports:
 
         assert ModalREPL is not None
 
+    def test_vercel_repl_import(self):
+        """Test VercelREPL import."""
+        pytest.importorskip("vercel")
+        from rlm.environments.vercel_repl import VercelREPL
+
+        assert VercelREPL is not None
+
     def test_docker_repl_import(self):
         """Test DockerREPL import."""
         from rlm.environments.docker_repl import DockerREPL
@@ -317,6 +324,7 @@ class TestImportConflicts:
             ("rlm.clients.portkey", "portkey_ai"),
             ("rlm.environments.modal_repl", "modal"),
             ("rlm.environments.prime_repl", "prime_sandboxes"),
+            ("rlm.environments.vercel_repl", "vercel"),
         ]
 
         # Test core modules
@@ -483,5 +491,14 @@ class TestImportCompleteness:
             from rlm.environments.prime_repl import PrimeREPL
 
             assert isinstance(PrimeREPL, type)
+        except Exception:
+            pass
+
+        # Test optional VercelREPL
+        try:
+            pytest.importorskip("vercel")
+            from rlm.environments.vercel_repl import VercelREPL
+
+            assert isinstance(VercelREPL, type)
         except Exception:
             pass
