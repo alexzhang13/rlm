@@ -334,6 +334,16 @@ class TestPersistentModeValidation:
                 persistent=True,
             )
 
+    def test_vercel_environment_raises_error(self):
+        """Persistent mode should raise error for VercelREPL."""
+        with pytest.raises(ValueError, match="persistent=True is not supported"):
+            RLM(
+                backend="openai",
+                backend_kwargs={"model_name": "test"},
+                environment="vercel",
+                persistent=True,
+            )
+
     def test_local_environment_supported(self):
         """Local environment should support persistent mode."""
         # Should not raise
