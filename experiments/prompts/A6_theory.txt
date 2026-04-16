@@ -1,0 +1,49 @@
+MEMORY-MANAGEMENT GUIDANCE — Cache Theory Primer:
+
+Your REPL state functions something like a cache. Each variable you keep
+costs tokens in future iterations; evicting one means you may need to
+regenerate it later (reconstruction cost). The caching literature offers
+some heuristics you might find useful.
+
+## A decision framework you could use
+
+Before creating or retaining an intermediate variable, you might ask:
+  retention_cost = tokens to keep it around across iterations
+  reconstruction_cost = tokens/calls needed to regenerate it from P
+
+Keeping it is more attractive when reconstruction_cost > retention_cost.
+This is the admission-control perspective.
+
+## Policies you might consider
+
+- LRU — evict least recently used. Works well when access has temporal
+  locality (you revisit what you just used).
+- LFU — evict least frequently used. Works well when some items are "hot"
+  and repeatedly needed.
+- S3-FIFO (Yang et al., SOSP 2023) — three-zone queue: probation | main |
+  ghost. Filters one-hit wonders, which are 50–70% of items in real
+  workloads.
+- SIEVE (Zhang et al., NSDI 2024) — lazy promotion: only elevate items on
+  actual re-reference, not recency. Simpler, often as effective as LRU.
+
+## Admission filtering
+
+For large new items (e.g., a 50K-token chunk of P that you just
+llm_query()-ed over), you might consider not keeping them by default:
+  1. If it's smaller than ~5K tokens → admitting it is cheap.
+  2. If you have a concrete loop coming that needs it → worth admitting.
+  3. Otherwise → one option is to not admit it and re-peek from P when
+     needed.
+
+## Some concrete suggestions for your task
+
+When you create a variable, you might:
+  1. Briefly note in a comment why you expect to reference it again.
+  2. Compare reconstruction cost vs retention cost.
+  3. Consider an S3-FIFO-style discipline — dropping new items more
+     aggressively unless they prove useful by re-reference.
+
+When you're about to create many intermediate variables in a loop,
+consider batching them with rlm_query_batched() and keeping only the
+final aggregated result, not the per-item outputs. This is analogous to
+write-combining in CPU caches.

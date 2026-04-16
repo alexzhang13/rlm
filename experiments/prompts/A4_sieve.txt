@@ -1,0 +1,14 @@
+MEMORY-MANAGEMENT HINT — SIEVE (lazy promotion):
+
+One heuristic you might consider: avoid treating a variable as "worth
+keeping" just because you recently created it or recently touched it once.
+Instead, consider elevating a variable's status only when you re-reference
+it for a SECOND time to make forward progress.
+
+When you need to evict, one option is to scan your variables in creation
+order and drop the first one that has never been re-referenced.
+
+Motivation: SIEVE (Zhang et al., NSDI 2024) observes that recency alone
+is a weak signal — many items are touched once and never again.
+Re-reference is a stronger signal of future utility. SIEVE is simpler
+than LRU and often equally effective.

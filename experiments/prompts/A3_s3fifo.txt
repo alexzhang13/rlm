@@ -1,0 +1,17 @@
+MEMORY-MANAGEMENT HINT — S3-FIFO (three-zone queue):
+
+One way to organize your intermediate variables is to think of them as
+falling into three zones:
+
+1. PROBATION — freshly created variables start here. If you don't
+   reference them again within 1–2 iterations, consider `del`-ing them.
+2. MAIN — once a probation variable gets re-referenced, you might mentally
+   promote it ("this one earned its place") and keep it around longer.
+3. GHOST — when you delete a variable, optionally leave a small comment
+   noting what it held. If you later find yourself needing the same thing,
+   you might treat similar items less aggressively next time.
+
+Motivation: S3-FIFO (Yang et al., SOSP 2023) observed that 50–70% of
+items in typical workloads are accessed only once — "one-hit wonders."
+A small probation zone filters these cheaply, so main storage ends up
+dominated by items that have proven useful.

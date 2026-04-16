@@ -1,0 +1,121 @@
+"""The 8 methods in our experiment matrix.
+
+Each method exposes a `run(query) -> RunResult` interface matching
+baselines.base.Baseline. The RLM arms all use the same RLM scaffold with
+a different system prompt suffix appended to RLM_SYSTEM_PROMPT.
+"""
+from __future__ import annotations
+
+import pathlib
+import time
+
+from rlm import RLM
+from rlm.utils.prompts import RLM_SYSTEM_PROMPT
+
+from experiments.baselines.base import Baseline, RunResult
+from experiments.baselines.codeact_bm25 import CodeActBM25Baseline
+from experiments.baselines.direct import DirectBaseline
+from experiments.baselines.summary_agent import SummaryAgentBaseline
+from experiments.benchmarks.base import Query
+
+
+PROMPT_DIR = pathlib.Path(__file__).resolve().parent.parent / "prompts"
+
+
+def _load_arm_suffix(arm: str) -> str:
+    """arm in {'A0','A1','A3','A4','A6'}. Maps to prompts/<arm>_*.txt."""
+    name_map = {
+        "A0": "A0_vanilla.txt",
+        "A1": "A1_lru.txt",
+        "A3": "A3_s3fifo.txt",
+        "A4": "A4_sieve.txt",
+        "A6": "A6_theory.txt",
+    }
+    return (PROMPT_DIR / name_map[arm]).read_text(encoding="utf-8")
+
+
+class RLMArm(Baseline):
+    """One of the RLM arms — wraps RLM(custom_system_prompt=...).
+
+    RLM's completion() returns an RLMChatCompletion-like object; we extract
+    the response + usage and flatten into RunResult.
+    """
+
+    def __init__(self, arm: str, max_iterations: int = 10):
+        self.arm = arm
+        self.name = f"rlm_{arm.lower()}"
+        self.max_iterations = max_iterations
+        suffix = _load_arm_suffix(arm).strip()
+        if suffix:
+            self.system_prompt = RLM_SYSTEM_PROMPT + "\n\n---\n\n" + suffix
+        else:
+            self.system_prompt = RLM_SYSTEM_PROMPT
+
+    def run(self, query: Query) -> RunResult:
+        t0 = time.perf_counter()
+        try:
+            rlm = RLM(
+                backend="agent_sdk",
+                backend_kwargs={"model_name": "claude-sonnet-4-6"},
+                environment="local",
+                max_iterations=self.max_iterations,
+                custom_system_prompt=self.system_prompt,
+                verbose=False,
+            )
+            result = rlm.completion(query.prompt)
+            prediction = str(result.response or "")
+
+            # Pull token/cost aggregates
+            usage_by_model = result.usage_summary.model_usage_summaries or {}
+            in_tok = sum(u.total_input_tokens for u in usage_by_model.values())
+            out_tok = sum(u.total_output_tokens for u in usage_by_model.values())
+            cost = sum((u.total_cost or 0.0) for u in usage_by_model.values())
+
+            return RunResult(
+                benchmark=query.metadata.get("benchmark", "unknown"),
+                method=self.name,
+                query_id=query.id,
+                prediction=prediction,
+                duration_sec=time.perf_counter() - t0,
+                input_tokens=in_tok,
+                output_tokens=out_tok,
+                cache_read_tokens=0,  # RLM's UsageSummary rolls cache into input
+                cache_creation_tokens=0,
+                cost_usd=cost,
+                num_iterations=getattr(result, "num_iterations", 0) or 0,
+                num_subcalls=getattr(result, "num_subcalls", 0) or 0,
+                extras={"arm": self.arm},
+            )
+        except Exception as e:
+            return RunResult(
+                benchmark=query.metadata.get("benchmark", "unknown"),
+                method=self.name,
+                query_id=query.id,
+                prediction="",
+                duration_sec=time.perf_counter() - t0,
+                error=f"{type(e).__name__}: {e}",
+                extras={"arm": self.arm},
+            )
+
+
+def all_methods() -> list[Baseline]:
+    """Return the 8 methods in Table 1 order."""
+    return [
+        DirectBaseline(),
+        SummaryAgentBaseline(),
+        CodeActBM25Baseline(),
+        RLMArm("A0"),
+        RLMArm("A1"),
+        RLMArm("A3"),
+        RLMArm("A4"),
+        RLMArm("A6"),
+    ]
+
+
+def method_by_name(name: str) -> Baseline:
+    """Look up by method name — "direct", "summary_agent", "codeact_bm25",
+    "rlm_a0" / "rlm_a1" / "rlm_a3" / "rlm_a4" / "rlm_a6"."""
+    for m in all_methods():
+        if m.name == name:
+            return m
+    raise ValueError(f"Unknown method: {name}")

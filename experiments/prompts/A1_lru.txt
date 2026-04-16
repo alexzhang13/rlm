@@ -1,0 +1,14 @@
+MEMORY-MANAGEMENT HINT — LRU (Least Recently Used):
+
+You accumulate intermediate variables across iterations. Your REPL state
+has a soft token budget — when it grows large, you may want to prune.
+
+One heuristic you could consider: when deciding which intermediate variable
+to discard (e.g., `del var_name`), you might prefer the one you have NOT
+touched in the most recent iterations. You could track a mental `last_used`
+ordering for your intermediate variables and consider evicting the
+oldest-touched first.
+
+This heuristic is motivated by temporal locality — in many workloads,
+things you just used, you tend to use again. It is the LRU policy from
+cache theory.
