@@ -26,8 +26,6 @@ from experiments.baselines.base import RunResult
 from experiments.benchmarks.base import Benchmark, Query
 from experiments.benchmarks.browsecomp_plus import BrowseCompPlus1K
 from experiments.benchmarks.codeqa import LongBenchCodeQA
-from experiments.benchmarks.oolong import OOLONGAGNews
-from experiments.benchmarks.oolong_pairs import OOLONGPairs
 from experiments.benchmarks.sniah import SNIAH
 from experiments.runners.methods import all_methods, method_by_name
 
@@ -35,23 +33,21 @@ from experiments.runners.methods import all_methods, method_by_name
 RESULTS_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "results"
 
 
+# 2026-04-16 scope change: OOLONG {agnews, pairs} dropped; BrowseComp+
+# reduced from 1K to 100 docs per query.
 BENCHMARK_REGISTRY: dict[str, tuple[type[Benchmark], dict]] = {
     "sniah": (SNIAH, {}),
-    "oolong_agnews": (OOLONGAGNews, {}),
-    "oolong_pairs": (OOLONGPairs, {}),
     "longbench_codeqa": (LongBenchCodeQA, {}),
-    "browsecomp_plus_1k": (BrowseCompPlus1K, {}),
+    "browsecomp_plus_100": (BrowseCompPlus1K, {"n_docs_per_query": 100}),
 }
 
 
-# Locked sample sizes per the plan (pilot = 3 per, full = see table below)
+# Locked sample sizes per the plan
 PILOT_N = {b: 3 for b in BENCHMARK_REGISTRY}
 FULL_N = {
     "sniah": 10,
-    "oolong_agnews": 10,
-    "oolong_pairs": 4,
     "longbench_codeqa": 10,
-    "browsecomp_plus_1k": 8,
+    "browsecomp_plus_100": 8,
 }
 
 

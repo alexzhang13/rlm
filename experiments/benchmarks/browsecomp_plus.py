@@ -11,9 +11,11 @@ evidence + negative docs; if total < 1000, top up with random samples
 from the full corpus (deterministic w.r.t. query_id + seed). Concatenate
 all docs as context.
 
-Cost caveat: 1K docs × ~7K-word avg = 6-11M tokens per query. The plan
-samples only 8/150 queries (~5%); even so, this is the most expensive
-benchmark by far. Expect ≈$30-$50 per query when running.
+Cost caveat (plan-updated): original 1K-doc setting = 6-11M tokens =
+≈$30-50/query and was over budget. Warren picked option (b) on 2026-04-16:
+shrink to 100 docs/query = 600K-1.1M tokens ≈ $3-$5/query. The 100-doc
+variant is not exactly RLM paper setup but lets us still contrast
+"big-retrieval-corpus" vs "short-context" in the arm comparison.
 
 Scoring: exact-match semantic (model answer == gold string after light
 normalization). The RLM paper uses LLM-as-judge for the official number;
@@ -55,9 +57,11 @@ def _decrypt(value: str) -> str:
 
 
 class BrowseCompPlus1K(Benchmark):
-    name = "browsecomp_plus_1k"
+    # Kept the class name "1K" for historical clarity, but the actual doc
+    # count is parameterized (100 by default per 2026-04-16 scope change).
+    name = "browsecomp_plus_100"
 
-    def __init__(self, n_docs_per_query: int = 1000):
+    def __init__(self, n_docs_per_query: int = 100):
         self.n_docs_per_query = n_docs_per_query
         self._queries: list[dict] | None = None
         self._corpus: dict[str, str] | None = None
@@ -146,7 +150,7 @@ class BrowseCompPlus1K(Benchmark):
             )
             queries.append(
                 Query(
-                    id=f"browsecomp_plus_1k::{row['query_id']}",
+                    id=f"browsecomp_plus_100::{row['query_id']}",
                     prompt=prompt,
                     gold=gold,
                     context_tokens=n_tokens,
