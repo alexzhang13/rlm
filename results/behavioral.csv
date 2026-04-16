@@ -6,7 +6,7 @@ rlm_a6,longbench_codeqa::66ec56dd821e116aacb1cd0e,n_repl_blocks,0.0
 rlm_a6,longbench_codeqa::66ec56dd821e116aacb1cd0e,n_llm_query_calls,0.0
 rlm_a6,longbench_codeqa::66ec56dd821e116aacb1cd0e,n_rlm_query_calls,0.0
 rlm_a6,longbench_codeqa::66ec56dd821e116aacb1cd0e,n_batched_calls,0.0
-rlm_a6,longbench_codeqa::66ec56dd821e116aacb1cd0e,trace_len_chars,0.0
+rlm_a6,longbench_codeqa::66ec56dd821e116aacb1cd0e,trace_len_chars,1.0
 rlm_a6,longbench_codeqa::66fa69a4bb02136c067c6b75,uses_any_arm_term,0.0
 rlm_a6,longbench_codeqa::66fa69a4bb02136c067c6b75,n_arm_term_hits,0.0
 rlm_a6,longbench_codeqa::66fa69a4bb02136c067c6b75,n_del_statements,0.0
@@ -102,7 +102,7 @@ rlm_a3,longbench_codeqa::66ec56dd821e116aacb1cd0e,n_repl_blocks,0.0
 rlm_a3,longbench_codeqa::66ec56dd821e116aacb1cd0e,n_llm_query_calls,0.0
 rlm_a3,longbench_codeqa::66ec56dd821e116aacb1cd0e,n_rlm_query_calls,0.0
 rlm_a3,longbench_codeqa::66ec56dd821e116aacb1cd0e,n_batched_calls,0.0
-rlm_a3,longbench_codeqa::66ec56dd821e116aacb1cd0e,trace_len_chars,0.0
+rlm_a3,longbench_codeqa::66ec56dd821e116aacb1cd0e,trace_len_chars,1.0
 rlm_a3,longbench_codeqa::66fa69a4bb02136c067c6b75,uses_any_arm_term,0.0
 rlm_a3,longbench_codeqa::66fa69a4bb02136c067c6b75,n_arm_term_hits,0.0
 rlm_a3,longbench_codeqa::66fa69a4bb02136c067c6b75,n_del_statements,0.0
@@ -118,7 +118,7 @@ rlm_a3,longbench_codeqa::66ed3e90821e116aacb1f82f,n_repl_blocks,0.0
 rlm_a3,longbench_codeqa::66ed3e90821e116aacb1f82f,n_llm_query_calls,0.0
 rlm_a3,longbench_codeqa::66ed3e90821e116aacb1f82f,n_rlm_query_calls,0.0
 rlm_a3,longbench_codeqa::66ed3e90821e116aacb1f82f,n_batched_calls,0.0
-rlm_a3,longbench_codeqa::66ed3e90821e116aacb1f82f,trace_len_chars,0.0
+rlm_a3,longbench_codeqa::66ed3e90821e116aacb1f82f,trace_len_chars,1.0
 rlm_a6,sniah::tier2000::i0,uses_any_arm_term,0.0
 rlm_a6,sniah::tier2000::i0,n_arm_term_hits,0.0
 rlm_a6,sniah::tier2000::i0,n_del_statements,0.0

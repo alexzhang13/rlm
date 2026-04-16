@@ -1,17 +1,16 @@
 benchmark,method,query_id,score,cost_usd,duration_sec,input_tokens,output_tokens,error
-longbench_codeqa,rlm_a6,longbench_codeqa::66ec56dd821e116aacb1cd0e,,0.0,2.005266958003631,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+longbench_codeqa,rlm_a6,longbench_codeqa::66ec56dd821e116aacb1cd0e,1.0,0.44522079999999997,227.10151329101063,692622,14597,
+longbench_codeqa,rlm_a6,longbench_codeqa::66fa69a4bb02136c067c6b75,,0.0,1.506995707983151,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
 Error output: Check stderr output for details"
-longbench_codeqa,rlm_a6,longbench_codeqa::66fa69a4bb02136c067c6b75,,0.0,1.5038223750016186,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
-Error output: Check stderr output for details"
-longbench_codeqa,rlm_a6,longbench_codeqa::66ed3e90821e116aacb1f82f,,0.0,2.0039410419994965,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+longbench_codeqa,rlm_a6,longbench_codeqa::66ed3e90821e116aacb1f82f,,0.0,2.008254082989879,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
 Error output: Check stderr output for details"
 longbench_codeqa,rlm_a1,longbench_codeqa::66ec56dd821e116aacb1cd0e,0.0,9.0009864,269.7851918330125,3941955,23165,
 longbench_codeqa,rlm_a1,longbench_codeqa::66fa69a4bb02136c067c6b75,0.0,0.5385504500000001,155.30601274999208,1042290,7318,
-longbench_codeqa,rlm_a1,longbench_codeqa::66ed3e90821e116aacb1f82f,,0.0,2.0045651659893338,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+longbench_codeqa,rlm_a1,longbench_codeqa::66ed3e90821e116aacb1f82f,,0.0,2.0107699999934994,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
 Error output: Check stderr output for details"
 longbench_codeqa,rlm_a0,longbench_codeqa::66ec56dd821e116aacb1cd0e,0.0,0.32562095,129.92043804199784,154098,6916,
 longbench_codeqa,rlm_a0,longbench_codeqa::66fa69a4bb02136c067c6b75,1.0,0.64089845,167.4168622920115,913849,8372,
-longbench_codeqa,rlm_a0,longbench_codeqa::66ed3e90821e116aacb1f82f,,0.0,2.506020583998179,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+longbench_codeqa,rlm_a0,longbench_codeqa::66ed3e90821e116aacb1f82f,,0.0,2.511530165997101,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
 Error output: Check stderr output for details"
 longbench_codeqa,direct,longbench_codeqa::66ec56dd821e116aacb1cd0e,1.0,0.7051624500000001,5.669290958991041,3,4,
 longbench_codeqa,direct,longbench_codeqa::66fa69a4bb02136c067c6b75,1.0,0.8559421500000001,28.478349958983017,404035,1444,
@@ -22,17 +21,15 @@ longbench_codeqa,codeact_bm25,longbench_codeqa::66ed3e90821e116aacb1f82f,0.0,0.2
 longbench_codeqa,summary_agent,longbench_codeqa::66ec56dd821e116aacb1cd0e,0.0,6.74348495,245.83705237502,1241485,8571,
 longbench_codeqa,summary_agent,longbench_codeqa::66fa69a4bb02136c067c6b75,0.0,6.7052805000000015,97.6068087919848,1052165,1290,
 longbench_codeqa,summary_agent,longbench_codeqa::66ed3e90821e116aacb1f82f,1.0,0.4157387,3.8922452499973588,83783,22,
-longbench_codeqa,rlm_a4,longbench_codeqa::66ec56dd821e116aacb1cd0e,,0.0,1.5040554580045864,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+longbench_codeqa,rlm_a4,longbench_codeqa::66ec56dd821e116aacb1cd0e,,0.0,1.5057595839898568,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
 Error output: Check stderr output for details"
-longbench_codeqa,rlm_a4,longbench_codeqa::66fa69a4bb02136c067c6b75,,0.0,1.504513040999882,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+longbench_codeqa,rlm_a4,longbench_codeqa::66fa69a4bb02136c067c6b75,,0.0,2.0102930830034893,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
 Error output: Check stderr output for details"
-longbench_codeqa,rlm_a4,longbench_codeqa::66ed3e90821e116aacb1f82f,,0.0,1.5038107500004116,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+longbench_codeqa,rlm_a4,longbench_codeqa::66ed3e90821e116aacb1f82f,,0.0,1.5050019579939544,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
 Error output: Check stderr output for details"
-longbench_codeqa,rlm_a3,longbench_codeqa::66ec56dd821e116aacb1cd0e,,0.0,2.005970874975901,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
-Error output: Check stderr output for details"
+longbench_codeqa,rlm_a3,longbench_codeqa::66ec56dd821e116aacb1cd0e,0.0,0.46873224999999996,265.8436856250046,318376,17071,
 longbench_codeqa,rlm_a3,longbench_codeqa::66fa69a4bb02136c067c6b75,1.0,0.8694696500000001,692.0136509589793,295540,23444,
-longbench_codeqa,rlm_a3,longbench_codeqa::66ed3e90821e116aacb1f82f,,0.0,2.006270832993323,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
-Error output: Check stderr output for details"
+longbench_codeqa,rlm_a3,longbench_codeqa::66ed3e90821e116aacb1f82f,1.0,0.4790274000000001,139.92766379201203,295866,7473,
 sniah,rlm_a6,sniah::tier2000::i0,1.0,0.09699725,23.07558837500983,63258,959,
 sniah,rlm_a6,sniah::tier8000::i2,1.0,0.2203505,97.56525279200287,77424,6308,
 sniah,rlm_a6,sniah::tier4000::i1,1.0,0.1718132,84.75994729201193,116507,3405,
