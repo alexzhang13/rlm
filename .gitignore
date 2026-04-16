@@ -213,3 +213,10 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+# Results + logs live under these and are gitignored aside from CSV summaries.
+results/*
+!results/.gitkeep
+logs/
+slides/*.pptx
+report/*.pdf
+.env
