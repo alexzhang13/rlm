@@ -1,0 +1,1 @@
+{"benchmark": "sniah", "method": "codeact_bm25", "query_id": "sniah::tier2000::i0", "prediction": "32018355", "duration_sec": 44.5870584580116, "input_tokens": 3463, "output_tokens": 1635, "cache_read_tokens": 82028, "cache_creation_tokens": 16848, "cost_usd": 0.1155124, "num_iterations": 2, "num_subcalls": 2, "score": 1.0, "error": null, "extras": {"num_chunks_indexed": 6}}

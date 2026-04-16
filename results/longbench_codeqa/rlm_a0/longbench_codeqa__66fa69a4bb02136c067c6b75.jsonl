@@ -1,0 +1,1 @@
+{"benchmark": "longbench_codeqa", "method": "rlm_a0", "query_id": "longbench_codeqa::66fa69a4bb02136c067c6b75", "prediction": "D", "duration_sec": 167.4168622920115, "input_tokens": 913849, "output_tokens": 8372, "cache_read_tokens": 0, "cache_creation_tokens": 0, "cost_usd": 0.64089845, "num_iterations": 0, "num_subcalls": 0, "score": 1.0, "error": null, "extras": {"arm": "A0"}}

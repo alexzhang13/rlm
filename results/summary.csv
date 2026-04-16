@@ -1,0 +1,60 @@
+benchmark,method,query_id,score,cost_usd,duration_sec,input_tokens,output_tokens,error
+longbench_codeqa,rlm_a6,longbench_codeqa::66ec56dd821e116aacb1cd0e,,0.0,2.0100162499875296,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+longbench_codeqa,rlm_a6,longbench_codeqa::66fa69a4bb02136c067c6b75,,0.0,2.010809750005137,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+longbench_codeqa,rlm_a6,longbench_codeqa::66ed3e90821e116aacb1f82f,,0.0,2.0093131249886937,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+longbench_codeqa,rlm_a1,longbench_codeqa::66ec56dd821e116aacb1cd0e,0.0,9.0009864,269.7851918330125,3941955,23165,
+longbench_codeqa,rlm_a1,longbench_codeqa::66fa69a4bb02136c067c6b75,0.0,0.5385504500000001,155.30601274999208,1042290,7318,
+longbench_codeqa,rlm_a1,longbench_codeqa::66ed3e90821e116aacb1f82f,,0.0,2.0067946250201203,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+longbench_codeqa,rlm_a0,longbench_codeqa::66ec56dd821e116aacb1cd0e,0.0,0.32562095,129.92043804199784,154098,6916,
+longbench_codeqa,rlm_a0,longbench_codeqa::66fa69a4bb02136c067c6b75,1.0,0.64089845,167.4168622920115,913849,8372,
+longbench_codeqa,rlm_a0,longbench_codeqa::66ed3e90821e116aacb1f82f,,0.0,2.0098402079893276,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+longbench_codeqa,direct,longbench_codeqa::66ec56dd821e116aacb1cd0e,1.0,0.7051624500000001,5.669290958991041,3,4,
+longbench_codeqa,direct,longbench_codeqa::66fa69a4bb02136c067c6b75,1.0,0.8559421500000001,28.478349958983017,404035,1444,
+longbench_codeqa,direct,longbench_codeqa::66ed3e90821e116aacb1f82f,1.0,0.4157487,3.8178411250119098,83783,24,
+longbench_codeqa,codeact_bm25,longbench_codeqa::66ec56dd821e116aacb1cd0e,0.0,0.1712998,47.19685199999367,7836,1589,
+longbench_codeqa,codeact_bm25,longbench_codeqa::66fa69a4bb02136c067c6b75,1.0,0.16626620000000003,48.38423875000444,12503,3624,
+longbench_codeqa,codeact_bm25,longbench_codeqa::66ed3e90821e116aacb1f82f,0.0,0.21417095000000003,88.40802299999632,5289,5790,
+longbench_codeqa,summary_agent,longbench_codeqa::66ec56dd821e116aacb1cd0e,0.0,6.74348495,245.83705237502,1241485,8571,
+longbench_codeqa,summary_agent,longbench_codeqa::66fa69a4bb02136c067c6b75,0.0,6.7052805000000015,97.6068087919848,1052165,1290,
+longbench_codeqa,summary_agent,longbench_codeqa::66ed3e90821e116aacb1f82f,1.0,0.4157387,3.8922452499973588,83783,22,
+longbench_codeqa,rlm_a4,longbench_codeqa::66ec56dd821e116aacb1cd0e,,0.0,2.0062817500147503,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+longbench_codeqa,rlm_a4,longbench_codeqa::66fa69a4bb02136c067c6b75,,0.0,2.5133919999934733,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+longbench_codeqa,rlm_a4,longbench_codeqa::66ed3e90821e116aacb1f82f,,0.0,2.008805458986899,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+longbench_codeqa,rlm_a3,longbench_codeqa::66ec56dd821e116aacb1cd0e,,0.0,2.0071074579900596,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+longbench_codeqa,rlm_a3,longbench_codeqa::66fa69a4bb02136c067c6b75,1.0,0.8694696500000001,692.0136509589793,295540,23444,
+longbench_codeqa,rlm_a3,longbench_codeqa::66ed3e90821e116aacb1f82f,,0.0,2.008166750019882,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a6,sniah::tier2000::i0,1.0,0.09699725,23.07558837500983,63258,959,
+sniah,rlm_a6,sniah::tier8000::i2,1.0,0.2203505,97.56525279200287,77424,6308,
+sniah,rlm_a6,sniah::tier4000::i1,1.0,0.1718132,84.75994729201193,116507,3405,
+sniah,rlm_a1,sniah::tier2000::i0,1.0,0.10811654999999999,37.92976737502613,82678,1325,
+sniah,rlm_a1,sniah::tier8000::i2,0.0,0.1946136,81.76059600000735,200829,3685,
+sniah,rlm_a1,sniah::tier4000::i1,1.0,0.3220382,97.63356183297583,186063,4218,
+sniah,rlm_a0,sniah::tier2000::i0,1.0,0.2782759,96.6920841250103,170979,4356,
+sniah,rlm_a0,sniah::tier8000::i2,1.0,0.1294043,68.66973495899583,85764,3136,
+sniah,rlm_a0,sniah::tier4000::i1,1.0,0.17443085,58.277847332996316,87790,2984,
+sniah,direct,sniah::tier2000::i0,1.0,0.06573175,5.179006249993108,2762,20,
+sniah,direct,sniah::tier8000::i2,1.0,0.0642482,4.484092458995292,9725,39,
+sniah,direct,sniah::tier4000::i1,1.0,0.04214295,4.03962291701464,5126,21,
+sniah,codeact_bm25,sniah::tier2000::i0,1.0,0.1155124,44.5870584580116,3463,1635,
+sniah,codeact_bm25,sniah::tier8000::i2,,0.0,0.0,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,codeact_bm25,sniah::tier4000::i1,1.0,0.16864325,73.20109716602019,3470,2989,
+sniah,summary_agent,sniah::tier2000::i0,1.0,0.0307712,4.054874542023754,2733,20,
+sniah,summary_agent,sniah::tier8000::i2,1.0,0.0642382,4.3145232090028,9725,37,
+sniah,summary_agent,sniah::tier4000::i1,1.0,0.03694995,3.5451645419816487,3,7,
+sniah,rlm_a4,sniah::tier2000::i0,1.0,0.13853149999999997,56.17578404198866,105028,2592,
+sniah,rlm_a4,sniah::tier8000::i2,0.0,0.5681279000000004,223.7160172080039,1067689,8004,
+sniah,rlm_a4,sniah::tier4000::i1,0.0,0.057244050000000005,41.135347584000556,17487,2438,
+sniah,rlm_a3,sniah::tier2000::i0,1.0,0.13540029999999997,43.13343341698055,63964,2332,
+sniah,rlm_a3,sniah::tier8000::i2,0.0,0.19636910000000002,51.5149371669977,119538,2218,
+sniah,rlm_a3,sniah::tier4000::i1,0.0,0.1909451,113.85345937497914,123733,6375,
