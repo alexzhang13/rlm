@@ -36,7 +36,9 @@ class LongBenchCodeQA(Benchmark):
             return self._cache
         from datasets import load_dataset
         ds = load_dataset("zai-org/LongBench-v2", split="train")
-        filtered = ds.filter(lambda x: x["domain"] == "Code")
+        # Actual domain value is "Code Repository Understanding"
+        # (research agent's original guess "Code" was wrong).
+        filtered = ds.filter(lambda x: x["domain"] == "Code Repository Understanding")
         self._cache = list(filtered)
         return self._cache
 
