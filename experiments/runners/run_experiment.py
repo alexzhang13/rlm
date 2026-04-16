@@ -33,12 +33,17 @@ from experiments.runners.methods import all_methods, method_by_name
 RESULTS_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "results"
 
 
-# 2026-04-16 scope change: OOLONG {agnews, pairs} dropped; BrowseComp+
-# reduced from 1K to 100 docs per query.
+# 2026-04-16 scope change #2: BrowseComp+ dropped from the pilot matrix.
+# Agent SDK CLI has an undocumented stdin-line-length cap that kills the
+# subprocess (exit 1, no stderr) on any single-call prompt > ~40K tokens,
+# even with max_buffer_size=16MB. BrowseComp+ 100-doc = 400K tokens, way
+# over. Revisit by either (a) routing BrowseComp+ via anthropic.Anthropic
+# fallback with a real API key, or (b) forcing RLM's own chunking so the
+# large prompt never goes in one single LM call. Leaving the adapter in
+# the repo for the report/appendix.
 BENCHMARK_REGISTRY: dict[str, tuple[type[Benchmark], dict]] = {
     "sniah": (SNIAH, {}),
     "longbench_codeqa": (LongBenchCodeQA, {}),
-    "browsecomp_plus_100": (BrowseCompPlus1K, {"n_docs_per_query": 100}),
 }
 
 
@@ -47,7 +52,6 @@ PILOT_N = {b: 3 for b in BENCHMARK_REGISTRY}
 FULL_N = {
     "sniah": 10,
     "longbench_codeqa": 10,
-    "browsecomp_plus_100": 8,
 }
 
 

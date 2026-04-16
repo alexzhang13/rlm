@@ -38,7 +38,6 @@ METHOD_ORDER = [
 BENCHMARK_ORDER = [
     "sniah",
     "longbench_codeqa",
-    "browsecomp_plus_100",
 ]
 
 

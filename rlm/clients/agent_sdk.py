@@ -140,6 +140,10 @@ class AgentSDKClient(BaseLM):
             "allowed_tools": [],
             "max_turns": self.max_turns,
             "model": model,
+            # CLI defaults max_buffer_size to 1MB; long prompts blow past
+            # that silently (subprocess exits with code 1, no stderr). Raise
+            # to 16MB so ~150K-token user payloads go through.
+            "max_buffer_size": 16 * 1024 * 1024,
         }
         if system is not None:
             opts_kwargs["system_prompt"] = system

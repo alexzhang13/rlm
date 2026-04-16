@@ -40,13 +40,10 @@ _DECRYPT_PASSWORD = (
 
 
 def _derive_key(password: str, length: int) -> bytes:
-    """Repeat SHA256(password) to at least `length` bytes."""
-    out = b""
-    counter = 0
-    while len(out) < length:
-        out += hashlib.sha256((password + str(counter)).encode()).digest()
-        counter += 1
-    return out[:length]
+    """OpenAI canonical BrowseComp key derivation: SHA256(password), then
+    repeat the 32-byte digest out to `length` bytes."""
+    digest = hashlib.sha256(password.encode()).digest()  # 32 bytes
+    return digest * (length // len(digest)) + digest[: length % len(digest)]
 
 
 def _decrypt(value: str) -> str:

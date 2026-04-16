@@ -17,7 +17,10 @@ from experiments.baselines._llm import sonnet_call
 from experiments.baselines.base import Baseline, RunResult
 from experiments.benchmarks.base import Query
 
-_MAX_INPUT_TOKENS = 180_000  # leave headroom under 200K for system/output
+# Agent SDK's Claude Code preamble adds ~16K tokens on top of our user msg,
+# so we keep the user prompt well under 200K−16K−output. Empirically 150K
+# is the largest value that reliably doesn't hit a context-overflow error.
+_MAX_INPUT_TOKENS = 150_000
 _TOK = tiktoken.get_encoding("cl100k_base")
 
 
@@ -26,7 +29,7 @@ def _truncate_if_needed(prompt: str) -> tuple[str, int]:
     if len(toks) <= _MAX_INPUT_TOKENS:
         return prompt, 0
     # Keep last 20K tokens + first (MAX - 20K - 20) tokens, marker in between
-    tail_len = 20_000
+    tail_len = 15_000
     head_len = _MAX_INPUT_TOKENS - tail_len - 20
     head = _TOK.decode(toks[:head_len])
     tail = _TOK.decode(toks[-tail_len:])

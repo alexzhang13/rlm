@@ -32,13 +32,20 @@ class LLMCall:
 
 
 async def _acall(user: str, system: str | None, model: str, max_turns: int) -> LLMCall:
+    import os, sys
     opts_kwargs: dict[str, Any] = {
         "allowed_tools": [],
         "max_turns": max_turns,
         "model": model,
+        # CLI defaults max_buffer_size to 1MB; long prompts (BrowseComp+,
+        # long S-NIAH tiers) blow past that. 16MB is enough for 150K
+        # token user payloads.
+        "max_buffer_size": 16 * 1024 * 1024,
     }
     if system is not None:
         opts_kwargs["system_prompt"] = system
+    if os.environ.get("RLM_AGENT_SDK_DEBUG"):
+        opts_kwargs["stderr"] = lambda line: print(f"[cli-stderr] {line}", file=sys.stderr)
     opts = ClaudeAgentOptions(**opts_kwargs)
 
     text = ""
