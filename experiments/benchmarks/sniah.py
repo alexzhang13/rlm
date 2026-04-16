@@ -80,13 +80,10 @@ class SNIAH(Benchmark):
             haystack = _haystack_at_token_length(q_rng, tier, self.enc)
             haystack = _inject(haystack, needle, q_rng)
             prompt = (
-                "A secret key has been hidden in the text below. Your task is "
-                "to find and report it. The secret appears on a line matching "
-                "the pattern SECRET_KEY_IS_<digits>. Return ONLY the numeric "
-                "value of the key.\n\n"
-                "===== TEXT =====\n"
-                f"{haystack}\n"
-                "===== END TEXT ====="
+                "The context contains lines of random text with exactly one "
+                "line matching the pattern SECRET_KEY_IS_<digits>. Find and "
+                "return ONLY the numeric value.\n\n"
+                f"{haystack}"
             )
             queries.append(
                 Query(
