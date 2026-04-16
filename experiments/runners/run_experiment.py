@@ -70,18 +70,59 @@ def _write_result(path: pathlib.Path, result: RunResult) -> None:
         f.write(result.to_jsonl() + "\n")
 
 
-def _run_one(method, benchmark, q: Query, overwrite: bool) -> tuple[str, float | None]:
+def _run_with_timeout(method, q: Query, timeout_s: float) -> RunResult:
+    """Run method.run(q) on a background thread with a hard deadline.
+
+    If it doesn't return in `timeout_s`, we stop waiting and record a
+    timeout error. The underlying worker may keep running (can't cleanly
+    kill a blocking Agent SDK subprocess from here), but future cells
+    continue on a new call path.
+    """
+    import threading
+    slot: dict = {}
+
+    def worker():
+        try:
+            slot["result"] = method.run(q)
+        except Exception as e:  # noqa: BLE001
+            slot["error"] = f"{type(e).__name__}: {e}"
+
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+    t.join(timeout_s)
+    if t.is_alive():
+        return RunResult(
+            benchmark=q.metadata.get("benchmark", "unknown"),
+            method=method.name,
+            query_id=q.id,
+            prediction="",
+            duration_sec=timeout_s,
+            error=f"TIMEOUT after {timeout_s:.0f}s",
+        )
+    if "error" in slot:
+        return RunResult(
+            benchmark=q.metadata.get("benchmark", "unknown"),
+            method=method.name,
+            query_id=q.id,
+            prediction="",
+            duration_sec=0.0,
+            error=slot["error"],
+        )
+    return slot["result"]
+
+
+def _run_one(method, benchmark, q: Query, overwrite: bool, timeout_s: float) -> tuple[str, float | None]:
     out = _results_path(benchmark.name, method.name, q.id)
     if _already_done(out) and not overwrite:
-        # Read back the score for status print
         try:
             rec = json.loads(out.read_text().splitlines()[-1])
             return "skip", rec.get("score")
         except Exception:
             return "skip", None
     try:
-        result = method.run(q)
-        result.score = benchmark.score(result.prediction, q)
+        result = _run_with_timeout(method, q, timeout_s=timeout_s)
+        if result.error is None:
+            result.score = benchmark.score(result.prediction, q)
     except Exception as e:
         traceback.print_exc()
         result = RunResult(
@@ -105,6 +146,10 @@ def main():
     parser.add_argument("--n", type=int, default=None, help="override sample count")
     parser.add_argument("--seed", type=int, default=2640)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--cell-timeout", type=float, default=480.0,
+        help="max seconds for one (method, query) cell (default 480)",
+    )
     args = parser.parse_args()
 
     if args.pilot:
@@ -151,7 +196,10 @@ def main():
         for method in methods:
             for q in qs:
                 t0 = time.perf_counter()
-                status, score = _run_one(method, bench, q, overwrite=args.overwrite)
+                status, score = _run_one(
+                    method, bench, q,
+                    overwrite=args.overwrite, timeout_s=args.cell_timeout,
+                )
                 done += 1
                 elapsed = time.perf_counter() - t0
                 print(
