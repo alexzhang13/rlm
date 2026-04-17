@@ -1,0 +1,60 @@
+COMMIT-TIMING HINT — Write-back vs Write-through:
+
+When an RLM iteration updates an intermediate variable, when does the
+"update" actually become durable? In a write-through cache, every
+mutation immediately propagates to the backing store; the cache is
+always in sync. In a write-back cache, mutations stay local and only
+propagate to memory when the cache line is about to be evicted — a
+"dirty bit" tracks which lines need flushing. Write-back is faster
+because it avoids redundant writes for data that gets modified many
+times before ever being flushed; write-through is simpler and keeps
+the cache always coherent with memory at the cost of more traffic.
+
+## The key insight
+
+This axis isn't about what to keep or what to fetch — it's about
+*when the decision becomes final*. Write-through commits eagerly;
+write-back batches up and commits lazily, often combining many
+intermediate states into one final write.
+
+## For your current task
+
+In your REPL setting, the analog is: when you produce an intermediate
+finding — say, "the pattern 'SECRET_KEY_IS_' appears somewhere around
+offset 40,000" — do you eagerly commit that as your working hypothesis
+in a stable variable, or do you batch it with several more observations
+and only consolidate at the end?
+
+One framing you might try:
+
+- **Write-through style** — After each REPL block that yields a new
+  fact, immediately update a `findings` dict with the fact. The dict
+  is always current; you never need to recompute.
+- **Write-back style** — Gather findings as loose local state in the
+  current iteration. Only at natural checkpoints (end of a scan, after
+  a loop, before final answer) consolidate them into a `findings`
+  summary. Fewer writes, but each write represents a more complete
+  chunk of progress.
+
+Neither is "correct" — the trade-off depends on how often you re-read
+your findings. Frequent re-reads → write-through is cheaper overall.
+Rare re-reads → write-back saves unnecessary updates.
+
+## Where this lands in the taxonomy
+
+This arm does talk about state (a `findings` variable), but the
+verbiage is about *commit timing* rather than *eviction*. Whether the
+model breaks frame on this framing is the interesting test. If it
+passes, the state-management hypothesis from A15/A16 needs refinement
+— maybe only *eviction-vocabulary* is the issue, not all state talk.
+If it fails, the hypothesis holds: any prompt that asks the model to
+maintain explicit policy over its own variables causes cognitive
+overhead.
+
+## Motivation
+
+Write-back is the overwhelming default in modern CPU caches because
+of write combining: many writes to the same cache line collapse into
+one memory transaction. For an LLM doing iterative refinement, lazy
+consolidation of findings is a plausibly-valuable discipline even
+independent of the cache metaphor.
