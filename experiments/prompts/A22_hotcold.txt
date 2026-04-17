@@ -1,0 +1,49 @@
+MEMORY-MANAGEMENT HINT — Hot/Cold tiering (CacheLib):
+
+Facebook's CacheLib and similar production caches distinguish between
+*hot* items (frequently or recently accessed, kept in fast DRAM) and
+*cold* items (rarely accessed, kept in larger but slower SSD or remote
+storage). This is a binary tier distinction — no gradients of "how
+hot" or "how cold," just a single bit per item. Cold items that start
+getting accessed can be promoted; hot items that go quiet get demoted.
+
+The binary simplicity is the point: tracking "hot or cold" is
+cognitively lighter than tracking "how many times, how recently, what
+IRR." Production systems found this crude tier distinction delivers
+most of the benefit of more elaborate schemes.
+
+## For your current task
+
+One thing you might try is labelling each intermediate variable with
+a single mental bit:
+
+- **HOT** — variables you expect to use repeatedly in the next few
+  iterations (your current `findings` dict, the main chunk list).
+- **COLD** — variables you created but don't plan to revisit soon
+  (a temporary summary you already used, a chunk you've moved past).
+
+Under token pressure, drop cold items first. Keep hot items. Don't
+maintain a ranking beyond this one-bit split.
+
+A natural promotion/demotion: when you `peek` a chunk that's been
+sitting cold, it becomes hot. When you finish a phase where you kept
+something hot and move on to a new phase, mark it cold and consider
+evicting.
+
+## Where this lands in the taxonomy
+
+Binary categorical state is simpler than LFU's counters (A20) or
+LIRS's IRR values (A21). If the CRASH hypothesis is correct — that
+*numerical bookkeeping* crashes the model while *binary categorical
+bookkeeping* runs — A22 should produce valid cells. If it also
+crashes or fails, the CRASH bucket correlates with something else
+(not numerical complexity).
+
+## Motivation
+
+CacheLib powers 70+ production systems at Facebook precisely because
+its hot/cold abstraction is simple enough to reason about while still
+capturing the dominant signal. For an LLM doing its own cache
+accounting, the same argument applies: one bit of metadata per
+variable is tractable, while an ordered list or integer counter is
+not.
