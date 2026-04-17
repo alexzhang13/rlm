@@ -31,6 +31,7 @@ def _load_arm_suffix(arm: str) -> str:
         "A4": "A4_sieve.txt",
         "A6": "A6_theory.txt",
         "A7": "A7_arc.txt",
+        "A8": "A8_tinylfu.txt",
     }
     return (PROMPT_DIR / name_map[arm]).read_text(encoding="utf-8")
 
@@ -111,6 +112,7 @@ def all_methods() -> list[Baseline]:
         RLMArm("A4"),
         RLMArm("A6"),
         RLMArm("A7"),
+        RLMArm("A8"),
     ]
 
 

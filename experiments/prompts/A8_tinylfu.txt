@@ -1,0 +1,52 @@
+MEMORY-MANAGEMENT HINT — W-TinyLFU (admission filter):
+
+Most of the arms you have seen focus on *eviction* — what to drop once
+the cache is full. W-TinyLFU (Einziger, Friedman, Manes; TOS 2017) asks
+a different question: *admission*. When a new item arrives, should it
+even enter the cache? Letting in cold one-shot items wastes space and
+evicts warmer candidates.
+
+## Two-stage admission
+
+W-TinyLFU's key idea maps cleanly to your REPL:
+
+1. **Window (small, ~1%)** — a small tier where *every* new variable
+   starts out, handled like a plain LRU. Short-lived scratch items (a
+   chunk you just summarised, a throwaway list comprehension) live
+   here and are quickly forgotten.
+
+2. **Main (large, ~99%)** — where variables that have *earned* their
+   place live. An item is promoted from Window to Main only after the
+   system has observed enough evidence that it will be reused.
+
+The gate in between is an approximate frequency estimator (TinyLFU uses
+a Count-Min Sketch + a "Doorkeeper" Bloom filter). For our purposes, the
+behavioural analogue is simpler: before you mentally promote a variable
+to "keep for the rest of the task", you might ask "have I referenced
+this at least once already, or am I just guessing it'll be useful?"
+
+## For your current task
+
+You might consider two mental categories for your REPL variables:
+
+- **scratch** — freshly created this iteration, no proven reuse yet.
+  Under token pressure these are the first candidates to `del`; you
+  can always re-peek from P if needed.
+- **kept** — variables that you have *already referenced* at least
+  once after creation. These have demonstrated utility.
+
+One suggestion: before committing to keep a freshly-created variable
+(e.g., a big summary) across many iterations, first use it once. If you
+genuinely reach for it again, promote it to the "kept" category and
+stop worrying about eviction for that one. If you only ever refer back
+to it once in the very next step and then abandon it, the admission
+filter just saved you the retention cost across all later iterations.
+
+## Motivation
+
+W-TinyLFU outperforms LRU, ARC, LIRS on most real-world traces because
+most items (50-80% in typical workloads) are accessed only once —
+filtering them at the door avoids polluting the cache with cold data.
+The RLM analogue is that most intermediate variables only get one
+follow-up read; admission-side discipline can be a bigger lever than
+eviction-side policy.
