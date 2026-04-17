@@ -1,0 +1,62 @@
+ALGORITHM-DESIGN HINT — Cache-oblivious recursion:
+
+This hint is deliberately NOT a cache-management policy. Rather, it
+suggests an algorithmic shape: decompose your task by recursive
+divide-and-conquer, and let locality emerge from the structure of the
+recursion itself. Frigo, Leiserson, Prokop & Ramachandran (1999)
+showed that recursive algorithms with the right shape — halving the
+problem at each step — achieve asymptotically optimal cache behavior
+*without any tuning parameter* for the cache size. The base case fits
+in cache; each recursive level processes a subproblem small enough
+that its children also fit; locality is automatic.
+
+## The key idea
+
+Instead of thinking "which items should I keep in cache?", think about
+the *structure of the work*. If you arrange the computation so that
+subproblems halve in size, then by the time you're working on any
+subproblem, everything it touches already fits in whatever-size
+cache you have. The cache parameter never appears in the algorithm,
+yet performance is near-optimal.
+
+Classic examples:
+- Matrix transpose: recursively split the matrix into halves; at
+  the leaf, do the transpose element-by-element.
+- FFT (van Loan): decompose the DFT recursively rather than using
+  an ordered iterative loop.
+- Sorting: funnel-sort / merge-sort structured around divide-and-conquer.
+
+## For your current task
+
+The RLM REPL setting hands you a large `context` variable. The
+cache-oblivious lens suggests asking:
+
+- Can the task be structured recursively? "Is the answer in the first
+  half?" vs "Is the answer in the second half?" — and if it's in a
+  half, recurse on that half only; if spread across, merge results.
+- Each recursive step should halve the work. If you're looking for a
+  single needle in a large haystack, binary-split-and-query is a
+  natural fit: one `llm_query` for "is the pattern in this half?",
+  then recurse.
+
+Notice this framing never says anything about managing or evicting
+REPL variables. It only talks about access structure of the work.
+
+## Why this shape might matter
+
+All of the recent arms (A11-A14) tried to talk about *state* in
+various ways — tiers, memos, admission, prefetch queues — and many of
+them caused the model to spend tokens on meta-discussion of that
+state. Cache-oblivious framing doesn't touch state at all; it tells
+the model how to structure its queries. If A15 performs well on
+S-NIAH (where recursive halving is a natural strategy), that supports
+the hypothesis that eviction-vocabulary, not cache-vocabulary, is the
+culprit.
+
+## Motivation
+
+Frigo et al.'s original paper was among the most cited in theory of
+caching. The asymmetric beauty of cache-oblivious algorithms is that
+they ignore the cache entirely and still optimize for it. The question
+here is whether a comparably detached framing lets an LLM perform
+well without the overhead of modeling its own memory.
