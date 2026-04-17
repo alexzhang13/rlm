@@ -45,6 +45,12 @@ METHOD_ORDER = [
     "rlm_a16",
     "rlm_a17",
     "rlm_a18",
+    "rlm_a19",
+    "rlm_a20",
+    "rlm_a21",
+    "rlm_a22",
+    "rlm_a23",
+    "rlm_a24",
 ]
 
 BENCHMARK_ORDER = [

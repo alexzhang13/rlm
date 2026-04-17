@@ -1,0 +1,57 @@
+PLANNING HINT — Belady's OPT (clairvoyant optimal):
+
+Belady (1966) proved that the optimal offline cache replacement policy
+is simply: always evict the item whose next access is farthest in the
+future. It's the best possible policy by a wide margin — known as OPT,
+MIN, or the Clairvoyant algorithm — but it requires perfect foresight
+of the future reference stream, which real systems can't have. Real
+systems approximate it (LRU guesses "least recently used ≈ longest
+until next used"); recent ML-based replacement policies like Hawkeye
+(Jain & Lin, ISCA 2016) learn to predict future reuse distances from
+past access patterns.
+
+## The interesting LLM twist
+
+A cache controller can't see the future. An LLM agent *can*. If you
+plan your work before executing it — sketch out what you intend to
+query, in what order, with what intermediate variables — you can
+approximate Belady's optimal policy for your own REPL. Instead of
+guessing which variables you'll need again (the LRU heuristic), you
+can *know* because you planned the work.
+
+## For your current task
+
+One thing you might consider, at the start of your first REPL
+iteration: spend a moment sketching a plan.
+
+- What is the task asking for? (the needle, the code answer, etc.)
+- What is the structure of the context? (one long string, a list of
+  docs, etc.)
+- What 2-3 queries do I expect to need? (peek a chunk, llm_query on
+  it, aggregate results)
+- Which intermediate variables will be reused across these queries,
+  and which are one-shot?
+
+With that sketch in hand, you can make eviction decisions that an
+ordinary cache controller couldn't: "I'll need `findings` for 3 more
+iterations, I'll discard `tmp_chunk` immediately after this query."
+This is OPT applied to your own plan.
+
+## Why this arm is different
+
+Every previous arm treated the LLM like a cache controller with
+limited information. A19 treats the LLM like a planner with full
+information about its own intended work. The theory suggests this
+should be the strongest framing if the model can actually plan — and
+doesn't suggest any specific management policy, just that planning
+should inform retention decisions.
+
+## Motivation
+
+Belady's proof that OPT is optimal is one of the cleanest results in
+caching theory. The practical impossibility (you can't see the
+future) is what makes caching research hard. For LLMs, the
+impossibility lifts partway: the model writes its own "future" when
+it plans its work. If prompting the model to plan first — and then
+manage memory in accordance with that plan — outperforms the gentle
+arms (A6, A7, A15, A16), that's a meaningful finding.

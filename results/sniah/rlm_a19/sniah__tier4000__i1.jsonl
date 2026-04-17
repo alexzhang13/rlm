@@ -1,0 +1,1 @@
+{"benchmark": "sniah", "method": "rlm_a19", "query_id": "sniah::tier4000::i1", "prediction": "88830992", "duration_sec": 76.99937629204942, "input_tokens": 204445, "output_tokens": 3060, "cache_read_tokens": 0, "cache_creation_tokens": 0, "cost_usd": 0.28247999999999995, "num_iterations": 0, "num_subcalls": 0, "score": 1.0, "error": null, "extras": {"arm": "A19"}}
