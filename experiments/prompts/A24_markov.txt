@@ -1,0 +1,52 @@
+PREFETCHING HINT — Markov predictor (Joseph & Grunwald, ISCA 1997):
+
+Stride prefetchers (A14) assume regular address arithmetic — access
+A+k, A+2k, …  Markov prefetchers drop that assumption and instead
+learn a transition table: "after accessing address X, what address
+do I typically access next?" The table is populated online; on a
+miss for X the prefetcher issues one or more predicted next-addresses.
+
+The key observation: real programs often have *irregular* access
+patterns that are nonetheless predictable — pointer chasing through a
+linked list, hash-table probes, tree traversals. Stride prefetching
+misses these entirely because there's no constant offset between
+successive accesses. A correlation table captures the actual graph
+structure.
+
+## For your current task
+
+The RLM analog: instead of trying to anticipate *where* in P you'll
+read next (impossible without seeing P first), anticipate *what kind
+of thing* you'll look for next. One suggestion:
+
+- After each REPL query that finds a useful chunk, consider: "given
+  that this chunk contained X, where's the complementary piece I'll
+  need?" For a needle-in-haystack task, once you find a candidate
+  match, the likely next-query is to verify by re-reading the
+  immediate neighborhood in P. For CodeQA, once you find the function
+  signature the answer asks about, the likely next-query is its
+  docstring or callers.
+
+Think of it as keeping a tiny mental "after X, probably Y" table and
+using it to pre-schedule the follow-up query before running the
+current one.
+
+## Where this lands
+
+Like A14 (stride prefetching), this is an access-anticipation framing.
+A14 failed (code-draft stall). Markov might fail the same way — it's
+even more speculative, requiring the model to guess both X→Y
+transitions AND to carry them across iterations. Per the refined
+hypothesis (state-management vocabulary fails), A24 should FAIL.
+
+If it CRASH's, that's evidence "speculation + transition-table
+tracking" hits the expensive-bookkeeping-timeout pattern (A12, A18,
+A21, A23).
+
+## Motivation
+
+Markov prefetchers were a landmark 1997 result showing that
+*irregular* access can still be highly predictable. For an LLM
+doing iterative refinement, the same insight may apply: after a
+useful find, the follow-up query is often structurally predictable
+even if syntactically novel.
