@@ -48,6 +48,7 @@ def _load_arm_suffix(arm: str) -> str:
         "A22": "A22_hotcold.txt",
         "A23": "A23_clockpro.txt",
         "A24": "A24_markov.txt",
+        "A25": "A25_lruk.txt",
     }
     return (PROMPT_DIR / name_map[arm]).read_text(encoding="utf-8")
 
@@ -145,6 +146,7 @@ def all_methods() -> list[Baseline]:
         RLMArm("A22"),
         RLMArm("A23"),
         RLMArm("A24"),
+        RLMArm("A25"),
     ]
 
 

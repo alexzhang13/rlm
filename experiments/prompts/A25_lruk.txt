@@ -1,0 +1,48 @@
+MEMORY-MANAGEMENT HINT — LRU-K (O'Neil, O'Neil & Weikum 1993):
+
+Ordinary LRU (A1) makes an eviction decision based on the *single*
+last-access time per item. LRU-K generalizes this by tracking the
+*K most recent* access times per item, then evicting the one whose
+backward-K-distance (the age of its Kth most recent access) is
+largest. Intuition: a single recent touch can be noise — a scan, a
+one-shot reference. Seeing K recent touches is strong evidence of
+ongoing relevance. For K=2, LRU-2 dramatically outperforms LRU on
+database buffer workloads because it filters scan-pollution without
+needing the frequency-counting bookkeeping of LFU.
+
+The paper also proved an optimality result: LRU-K is optimal among
+policies that use only the last-K access timestamps.
+
+## For your current task
+
+Consider tracking, per intermediate variable, *two* mental timestamps
+rather than one: "when did I last touch it" and "when did I touch
+it before that." A variable touched just once (its second-last
+access is undefined) is a weaker keep candidate than one touched
+twice in close succession.
+
+Concretely, with K=2:
+- A variable you created and never re-referenced: weakest. Evict
+  first under pressure.
+- A variable you referenced twice recently: strongest. Keep even
+  under pressure.
+- A variable you created, then referenced once, then forgot for many
+  iterations: medium. Maybe evict if quota is tight.
+
+## Where this lands
+
+This is A1 LRU (recency) + numerical K-history bookkeeping. The
+refined hypothesis predicts it should be at least as bad as A1
+(0.67) and probably worse — more metadata to track.
+
+If A25 CRASHes, add it to the "expensive-bookkeeping times out"
+bucket (A12, A18, A21, A23, A24).
+
+## Motivation
+
+LRU-K became a standard in database buffer pool management after its
+SIGMOD93 publication. It's the classical mid-point between LRU and
+LFU, and its optimality proof makes it a theoretically clean test
+case — any failure to translate to the LLM setting is interesting
+precisely because the algorithm is provably good under natural
+assumptions.
