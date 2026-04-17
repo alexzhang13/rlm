@@ -1,0 +1,48 @@
+MEMORY-MANAGEMENT HINT — Victim Cache (Jouppi, ISCA 1990):
+
+Most of our arms so far have focused on changing the *primary* cache's
+policy — when to evict, what to promote, how to score frequency. Jouppi
+proposed a different lever in 1990: add a small *victim cache* that
+catches items the main cache just evicted. The victim cache is tiny
+(4-8 entries, fully associative) and its only job is to hold recently-
+evicted blocks so that a conflict miss in the main cache can still be
+satisfied from the victim cache instead of going to DRAM.
+
+The beautiful thing about victim caches: they **do not change the
+primary cache's behavior at all.** The primary still uses whatever
+policy it wants (LRU, FIFO, direct-mapped). The victim cache is pure
+augmentation — it stores what would otherwise be discarded, and
+answers the request when the primary misses.
+
+## For your current task
+
+You might consider maintaining a tiny "just-evicted" memo bank in your
+notes. When you `del` an intermediate variable, instead of forgetting
+it entirely, jot a one-line summary to yourself: what the variable
+held, how it was derived, where it came from in P. Keep maybe 3-4
+such summaries around at any time (rolling, oldest falls off).
+
+If, a few iterations later, you find yourself reconstructing what
+sounds like one of those summaries — stop. The reconstruction is
+essentially a redundant recomputation of a victim-cache entry. Either
+pull the approximate content from your memo bank, or `peek` the
+original source location in P (which your memo recorded).
+
+## Why this shape might be different
+
+Unlike A3/A4 (directive eviction), A9 (active sweep), or A11 (multi-tier
+restructuring), the victim cache adds state *alongside* the normal
+behavior rather than restructuring it. The model doesn't need to change
+how it manages the main REPL — only to keep a small secondary scratchpad
+of recently-discarded summaries. Low cognitive overhead; high recall
+benefit when a discard turns out to be premature.
+
+## Motivation
+
+Jouppi's original paper showed that a 4-entry victim cache removed
+20-95% of conflict misses in a direct-mapped L1. The key insight was
+that the "just-evicted" set is a high-value candidate for re-use — it
+was there recently for a reason. In our RLM setting, variables you
+just deleted are exactly the ones most likely to be re-derived by
+accident in the very next iteration; a tiny memo of what they held
+is cheap insurance.
