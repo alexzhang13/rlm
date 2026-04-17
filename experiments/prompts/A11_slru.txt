@@ -1,0 +1,53 @@
+MEMORY-MANAGEMENT HINT — Segmented LRU (SLRU):
+
+SLRU takes the two-tier idea from 2Q (A10) but runs LRU within each
+segment instead of treating A1 as a plain FIFO. The cache splits into:
+
+- **Probationary** — newcomers land here. A hit still serves the
+  request, but doesn't earn residency in the protected tier.
+- **Protected** — items that have been hit at least once from the
+  probationary tier get promoted here, in LRU order.
+
+Two things differentiate SLRU from its siblings: (a) within each
+segment, the eviction order is LRU rather than FIFO, and (b) when the
+protected segment is full and a new item needs to enter, the LRU of
+the protected segment is *demoted* back to the MRU end of the
+probationary segment — a "second chance" before real eviction.
+
+## For your current task
+
+A gentle two-tier mental scheme you might try:
+
+- **Probationary variables** — everything you've just created. If you
+  reference one again, promote it mentally to "protected."
+- **Protected variables** — things you've referenced at least once
+  after creation. Within this group, order them by last use. The
+  oldest protected thing, if pressured, demotes back to probationary
+  (not deleted yet) — this gives it one more chance to prove utility
+  before real eviction.
+
+You don't need to track any of this explicitly; just notice when
+something moves from "I made this" to "I just used this again" and
+adjust your confidence about its reuse.
+
+## Why this shape might be relevant here
+
+SLRU shares the passive-promotion mechanism we saw in 2Q (A10) that
+matched vanilla A0, plus an explicit *demotion* path that 2Q lacks.
+Whether the extra structure helps or hurts in an LLM's mental
+bookkeeping is itself interesting: more rules mean more chances to
+over-think, but the demotion step adds forgiveness — a variable that
+misses a round still gets another shot rather than being immediately
+discarded. In the RLM setting, this could manifest as less eager
+`del`-ing and slightly more tolerance for keeping intermediate results
+one iteration longer than strictly necessary.
+
+## Motivation
+
+SLRU has been used in real systems since the 1990s (databases, disk
+buffers, some OS page caches) for a simple reason: the protected
+segment insulates genuinely-reused pages from transient scan pollution,
+and the demotion step prevents premature eviction of mildly-cold items
+that might still become useful. For a language model, that extra
+forgiveness may translate to fewer mistakes of the "I needed that
+variable I just dropped" kind.
