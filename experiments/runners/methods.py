@@ -23,13 +23,14 @@ PROMPT_DIR = pathlib.Path(__file__).resolve().parent.parent / "prompts"
 
 
 def _load_arm_suffix(arm: str) -> str:
-    """arm in {'A0','A1','A3','A4','A6'}. Maps to prompts/<arm>_*.txt."""
+    """arm in {'A0','A1','A3','A4','A6','A7',...}. Maps to prompts/<arm>_*.txt."""
     name_map = {
         "A0": "A0_vanilla.txt",
         "A1": "A1_lru.txt",
         "A3": "A3_s3fifo.txt",
         "A4": "A4_sieve.txt",
         "A6": "A6_theory.txt",
+        "A7": "A7_arc.txt",
     }
     return (PROMPT_DIR / name_map[arm]).read_text(encoding="utf-8")
 
@@ -109,6 +110,7 @@ def all_methods() -> list[Baseline]:
         RLMArm("A3"),
         RLMArm("A4"),
         RLMArm("A6"),
+        RLMArm("A7"),
     ]
 
 

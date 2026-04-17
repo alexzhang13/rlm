@@ -1,0 +1,44 @@
+MEMORY-MANAGEMENT HINT — ARC (Adaptive Replacement Cache):
+
+ARC (Megiddo & Modha, FAST 2003) proposes that *both* recency and
+frequency matter, and the optimal balance between them shifts with the
+workload. Rather than committing to one signal, you might maintain a
+mental split of your REPL variables into two groups:
+
+  RECENCY pool  — variables you've created or touched once, and haven't
+                 yet referenced a second time.
+  FREQUENCY pool — variables you've referenced *more than once*. The
+                 second reference "promotes" the variable out of the
+                 recency pool.
+
+When deciding what to `del` under token pressure, one option is to evict
+the least-recently-used item from the *RECENCY* pool first — these are
+one-hit candidates whose reuse value hasn't been demonstrated yet. Only
+when the recency pool is exhausted should you reach into the frequency
+pool.
+
+## The adaptive twist
+
+ARC's real innovation is the *ghost list*: when you delete a variable,
+keep a small comment noting what it held and where it came from (which
+chunk of P, which sub-call). If later in the task you find yourself
+reconstructing a variable that matches a ghost entry, that's a signal
+the recency/frequency balance is off for this workload — you should
+become slightly MORE generous about retaining similar new variables
+going forward. If ghost hits are rare, your current balance is fine.
+
+## For your current task
+
+Consider tagging each intermediate variable mentally with a "seen-count"
+as you reference it. On eviction, prefer items with count=1 over count≥2.
+After you `del` a variable, briefly note its identity in a comment. If
+the same reconstruction happens twice, bias toward retention next time.
+
+## Motivation
+
+ARC is a self-tuning policy: instead of assuming "recency wins" (LRU) or
+"frequency wins" (LFU), it adapts based on observed evictions that turned
+out to be premature. In your REPL setting, you don't get formal ghost
+lists, but the reflection loop — "did I just regenerate something I
+threw away?" — is the same signal. If you notice yourself doing that,
+retain more aggressively for the rest of the task.
