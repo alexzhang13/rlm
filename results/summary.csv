@@ -24,8 +24,6 @@ sniah,rlm_a1,sniah::tier8000::i2,0.0,0.1946136,81.76059600000735,200829,3685,
 sniah,rlm_a1,sniah::tier4000::i1,1.0,0.3220382,97.63356183297583,186063,4218,
 sniah,rlm_a8,sniah::tier4000::i1,1.0,0.4264852999999999,161.17021483302233,243364,6989,
 sniah,rlm_a9,sniah::tier2000::i0,0.0,0.18639745,76.83356958400691,93775,3880,
-sniah,rlm_a9,sniah::tier4000::i1,,0.0,129.9191221660003,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
-Error output: Check stderr output for details"
 sniah,rlm_a0,sniah::tier2000::i0,1.0,0.2782759,96.6920841250103,170979,4356,
 sniah,rlm_a0,sniah::tier8000::i2,1.0,0.1294043,68.66973495899583,85764,3136,
 sniah,rlm_a0,sniah::tier4000::i1,1.0,0.17443085,58.277847332996316,87790,2984,
@@ -33,6 +31,9 @@ sniah,rlm_a7,sniah::tier2000::i0,1.0,0.1813929,44.85048945900053,83668,2114,
 sniah,direct,sniah::tier2000::i0,1.0,0.06573175,5.179006249993108,2762,20,
 sniah,direct,sniah::tier8000::i2,1.0,0.0642482,4.484092458995292,9725,39,
 sniah,direct,sniah::tier4000::i1,1.0,0.04214295,4.03962291701464,5126,21,
+sniah,rlm_a10,sniah::tier2000::i0,1.0,0.24127785000000002,92.21229904101347,112517,4843,
+sniah,rlm_a10,sniah::tier4000::i1,,0.0,74.2681614169851,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,codeact_bm25,sniah::tier2000::i0,1.0,0.1155124,44.5870584580116,3463,1635,
 sniah,codeact_bm25,sniah::tier4000::i1,1.0,0.16864325,73.20109716602019,3470,2989,
 sniah,summary_agent,sniah::tier2000::i0,1.0,0.0307712,4.054874542023754,2733,20,

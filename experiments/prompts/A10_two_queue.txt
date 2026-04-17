@@ -1,0 +1,52 @@
+MEMORY-MANAGEMENT HINT — Two-Queue (2Q) (Johnson & Shasha, VLDB 1994):
+
+2Q, like S3-FIFO and ARC, separates variables into tiers based on how
+much evidence of reuse they've accumulated. It was first articulated in
+1994 as a simpler alternative to LRU-K; the key structural idea is two
+independent queues:
+
+1. **A1 (secondary buffer)** — where every newly-referenced variable
+   lands on first access. It's a fast-eviction FIFO: items that are
+   never re-referenced drift to the exit end and get discarded. A1 is
+   meant to be the filter — cold one-shot items never enter the warm
+   cache.
+
+2. **Am (main buffer, LRU-managed)** — once a variable in A1 gets
+   referenced a second time, it's promoted here. Am holds "proven hot"
+   variables and is managed as an ordinary LRU.
+
+The paper's insight was simple: don't let a single access earn cache
+residency. Require two. Johnson and Shasha showed 2Q approached the
+hit-rate of LRU-K while being much cheaper to implement.
+
+## Different from S3-FIFO (A3)
+
+2Q has no "ghost" zone — it never tracks evicted items' histories —
+and no reinsertion on A1-miss. It's strictly: A1 is a pre-filter, Am is
+the cache, promotion happens exactly once per item (on the first
+re-reference).
+
+## For your current task
+
+Consider this mental scheme for REPL variables:
+
+- **A1** — newly-created variables. Expect these to be one-hit wonders
+  unless evidence suggests otherwise. Under token pressure, look here
+  first to `del`.
+- **Am** — variables you've referenced for a second time. These have
+  earned a spot; treat them like LRU (evict the least-recently-touched
+  only when Am itself fills up).
+
+One suggestion you might try: after you create an intermediate variable
+(e.g., a summary string, a chunk list), note it mentally as "A1". The
+very next time you find yourself typing its name in a `repl` block,
+silently promote it to "Am". You don't need to do any bookkeeping
+beyond this single toggle.
+
+## Why this framing might work here
+
+The critical difference from A3/A4's directive phrasing is that 2Q
+makes the promotion event *passive* — it's just "the second time you
+use it" — rather than prescribing an active sweep or pre-emptive
+discard. The model doesn't have to decide when to run the policy; the
+policy triggers itself on natural reference events.
