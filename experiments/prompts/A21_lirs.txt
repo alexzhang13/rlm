@@ -1,0 +1,52 @@
+MEMORY-MANAGEMENT HINT — LIRS (reuse distance):
+
+LIRS (Jiang & Zhang, SIGMETRICS 2002) uses a different locality metric
+than LRU. Instead of tracking "how recently was this accessed," LIRS
+tracks each item's *Inter-Reference Recency* (IRR): the number of
+distinct other items accessed between the last two references to this
+one. A small IRR means the item is genuinely reused tightly; a large
+IRR means other things keep coming in between, so the item's true
+reuse distance is long.
+
+The cache splits into two partitions:
+
+- **LIR (Low Inter-Reference Recency)** — items with small IRR. These
+  get priority residency; LIRS keeps them all memory-resident.
+- **HIR (High Inter-Reference Recency)** — items with large or
+  unknown IRR. Most of these live as metadata only (not resident);
+  a small fraction are resident as "trial" candidates that can be
+  promoted to LIR on an IRR improvement.
+
+LIRS outperforms LRU especially for workloads with weak locality —
+scans, sequential access, loops — where LRU keeps the wrong items.
+
+## For your current task
+
+The LIRS mental model for your REPL: for each variable you keep,
+estimate not just "when did I last touch this" but "how many *other*
+things have I worked with in between." If a variable was referenced
+at iteration 3 and iteration 5 (one other thing in between), its IRR
+is 1 — tight reuse, worth keeping. If referenced at iteration 3 and
+iteration 8 (four things in between), IRR is 4 — less tight reuse,
+lower priority for retention.
+
+One concrete suggestion: when you notice yourself considering whether
+to `del` a variable, ask "since I last touched this, how many OTHER
+things have I used?" A small answer = it's in your LIR set. A large
+answer = it's in your HIR set and probably not worth keeping.
+
+## Where this lands in the taxonomy
+
+Like A1, A3, A4, A20, this is state-management vocabulary. It adds a
+numerical metric (IRR) on top of variable tracking. Per the refined
+hypothesis this should FAIL. If it surprisingly passes, the hypothesis
+needs refining — maybe IRR's cleaner definition avoids whatever made
+LRU (A1) drop to 0.67.
+
+## Motivation
+
+LIRS represents a meaningful theoretical advance — it introduced the
+reuse-distance framework that later influenced ARC, ClockPro, and many
+modern policies. Testing whether the mental model translates to an
+LLM context is an interesting falsification opportunity for the
+refined hypothesis.
