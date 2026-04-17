@@ -1,0 +1,50 @@
+MEMORY-MANAGEMENT HINT — Bloom-filter admission:
+
+A Bloom filter (Bloom, 1970) is a space-efficient probabilistic data
+structure for answering membership queries. It never says "definitely
+in set" — only "possibly in set" or "definitely not in set." Its cache
+application: to prevent *one-hit wonders* from wasting cache space, use
+a Bloom filter to remember which items have been accessed at least
+once. On the first access, the item is recorded in the filter but not
+admitted to the cache; only on the second access (when the filter
+already contains the item) does the item earn cache residency.
+
+The key property is space: ~10 bits per element for a 1% false-positive
+rate, regardless of element size. For a real cache that's trivial
+overhead. For an LLM mentally tracking membership, the analog is
+maintaining a much shorter *set* of identifiers — not the items
+themselves, just their names or fingerprints.
+
+## For your current task
+
+One thing you might try: before committing to retain a freshly-derived
+intermediate variable across iterations, ask yourself "have I seen
+something conceptually-similar before in this task?" If yes, keep it.
+If no, treat it as a tentative scratch item — reference it, use it,
+but don't invest in retaining it.
+
+In practice you might keep a rolling ~5-item mental list of short
+descriptors for the things you've done so far (e.g. "chunk-summary",
+"query-tokens", "haystack-offset"). When you derive something new,
+check that list. Hit = likely worth keeping. Miss = likely a one-hit
+wonder; let it die at iteration's end.
+
+## Why this shape is deliberately lightweight
+
+Unlike A11 (SLRU: probationary/protected/demoted) or A12 (victim
+cache: 3-4 memo slots of content), Bloom-filter admission needs almost
+no state — a list of short identifiers, not full content snapshots.
+The intention is to test whether *extremely low-overhead* admission
+framing pushes behavior more cleanly than heavier machinery. If A13
+matches A0 baseline while A11/A12 diverge, that's evidence that the
+cognitive weight of the policy matters as much as the policy itself.
+
+## Motivation
+
+Bloom filters became one of the most widely used probabilistic data
+structures in systems precisely because they trade a little accuracy
+(false positives) for dramatic savings in space and time. The bet
+here is that similar accuracy/overhead tradeoffs may apply when an
+LLM is doing bookkeeping in prose: a rough "have I seen this kind
+of thing?" check might be easier to maintain than a rigorous count
+or ordered list, and still add useful admission discipline.
