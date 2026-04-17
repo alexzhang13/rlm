@@ -1,0 +1,56 @@
+MEMORY-MANAGEMENT HINT — Stride prefetching:
+
+All previous arms have focused on what to *keep* or *evict*. Stride
+prefetching shifts the question entirely: what to *fetch in advance*,
+before you need it. Hardware prefetchers (Baer & Chen, and many
+successors) watch the access stream, detect repeating patterns — most
+commonly a constant *stride* between successive accesses (A, A+k,
+A+2k, …) — and speculatively load the next few blocks ahead of time.
+When done well, the data is already hot when the program asks for it.
+
+## The key observation
+
+Prefetching is *free* when you correctly anticipate access. It's
+wasted work when you don't. The profit comes from detecting a stride
+early enough that the prefetched item is ready before the explicit
+reference. Sequential access patterns (A, A+1, A+2, …) are the
+easiest to detect. Strided patterns (A, A+7, A+14, …) are harder but
+still regular.
+
+## For your current task
+
+The RLM REPL setting gives you a `peek(P, start, end)` style access
+to the corpus. Rather than peeking one chunk, computing something,
+and then realising you need the *next* chunk and peeking again, you
+might anticipate where you are going:
+
+- If you're iterating through P in order (one 10K chunk at a time),
+  you can batch your peeks. Two adjacent chunks in one `llm_query`
+  costs the same as one, and saves you the round-trip when you'd
+  otherwise have needed the second chunk immediately after.
+- If you're searching for a specific pattern and your chunks keep
+  failing to match, the prefetching lens suggests the pattern may
+  be "not this region" — maybe skip ahead by a larger stride on the
+  next attempt.
+
+One concrete suggestion: on each REPL iteration, ask yourself "what
+would the *next* iteration most likely need?" and fetch that in the
+same iteration if it's cheap.
+
+## Why this framing might be different
+
+All of our other arms A1-A13 focused on cache *state management* —
+what variables to keep, evict, or filter. Prefetching doesn't touch
+that at all; it's about read-ahead on the source data P. The bet is
+that framing the task as "anticipate your next read" is behaviorally
+different from "decide what to keep." If this arm works cleanly, it
+tells us the failure modes we've seen are specifically tied to
+*eviction-vocabulary*, not to all cache-theory framings.
+
+## Motivation
+
+Prefetching has been one of the most studied techniques in computer
+architecture since the 1970s precisely because it's a lever that
+*adds* a capability rather than restricting one. That asymmetry
+between additive and restrictive policies may matter for LLMs too:
+easier to ask a model to do more than to do less.
