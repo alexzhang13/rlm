@@ -1,0 +1,50 @@
+MEMORY-MANAGEMENT HINT — LFU with aging (LFUDA):
+
+LFU (Least Frequently Used) takes a different angle from recency-based
+policies: it tracks an access-count *per item* and evicts the one
+with the smallest count. The classical critique is "cache pollution":
+an item that was hot for a brief burst accumulates a high count and
+sticks around long after it stops being useful. LFUDA (LFU with
+Dynamic Aging) fixes this by adding a cache-age offset when an item
+is created or re-referenced, so old counts decay relative to new
+ones.
+
+## Translating to your REPL
+
+The analog is a mental access-count per intermediate variable. You
+might maintain something like: "I've referenced `findings` three
+times, `chunk_12` once." When token pressure forces an eviction
+choice, prefer dropping the low-count one. Add an aging twist to
+avoid stuck-popular entries — subtract 1 from every count at natural
+checkpoints (end of a scan, completion of a sub-task).
+
+## For your current task
+
+This is deliberately similar in tone to A1 (LRU) — recency-based —
+but the count is frequency-based. The test is whether frequency
+vocabulary breaks the model differently than recency vocabulary.
+
+Concretely, you might try: at the start of each REPL iteration,
+briefly ask yourself "which of my current variables have I used more
+than once?" Keep those. Discard single-use variables that you don't
+anticipate needing.
+
+## Why this arm is in the state-management group
+
+Like A1, A3, A4, this asks the model to track numerical metadata
+(access counts) for its variables. Per the refined hypothesis from
+A15/A16 (work-structure passes, state-management fails), A20 should
+FAIL — adding numerical bookkeeping to a state-management policy is
+if anything more cognitively expensive than the gentle-recency
+framing of A1.
+
+If A20 PASSES cleanly that would falsify the hypothesis. If it fails
+similarly to A1 (0.67) that's additional confirmation.
+
+## Motivation
+
+LFU is the other classical replacement policy alongside LRU — both
+taught as canonical cache systems in undergrad architecture courses.
+Together they cover "recency" and "frequency" as the two elementary
+access-pattern signals. Testing both in the LLM setting gives us a
+controlled comparison of these two axes.
