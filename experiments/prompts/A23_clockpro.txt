@@ -1,0 +1,57 @@
+MEMORY-MANAGEMENT HINT — CLOCK-Pro (Jiang, Chen, Zhang 2005):
+
+CLOCK-Pro (USENIX ATC 2005) is the LIRS-inspired upgrade of CLOCK:
+same constant-time constant-space properties, but with a three-way
+distinction between pages (HOT / COLD-resident / COLD-nonresident)
+and two hands that sweep at different speeds. Like CLOCK (A9), it
+avoids the ordered-list overhead of LRU; like LIRS (A21), it
+separates frequently-hit items from transient scans. Unlike either,
+it also remembers a small set of *non-resident* cold pages so it
+can recognize a returning item and re-admit it quickly.
+
+## The three-hand picture
+
+- **Hand-hot** sweeps looking for hot pages whose reference bit is 0
+  (they've gone cold) and demotes them to cold-resident.
+- **Hand-cold** sweeps looking for a cold-resident page with ref=0
+  to evict. If a cold-resident page has ref=1 (was accessed since
+  last sweep) it gets promoted to hot instead.
+- **Hand-test** runs ahead of hand-cold to purge stale entries in
+  the non-resident list so it doesn't grow unbounded.
+
+The paper shows this machinery produces LIRS-level hit rates with
+CLOCK's implementation simplicity — a practical sweet spot.
+
+## For your current task
+
+The CLOCK-Pro mental model is three-state per variable:
+
+- **hot** — actively in use, currently referenced.
+- **cold-resident** — in your REPL but not recently touched.
+- **cold-nonresident** — deleted but remembered by a short memo
+  so that if you re-derive something similar, you can recognize
+  it.
+
+This arm deliberately layers three abstractions: the sweep metaphor
+(from A9 CLOCK), the ghost-list idea (from A3 S3-FIFO), and the
+binary hot/cold split (from A22). All three previously failed in
+isolation. CLOCK-Pro combines them intelligently in production
+systems but puts heavy cognitive load on an LLM trying to maintain
+the mental bookkeeping.
+
+## Prediction
+
+Per the refined hypothesis (state-management fails, especially when
+expensive), A23 should either FAIL (runs but wrong) or CRASH (times
+out). It combines the failure modes of three predecessor arms:
+over-management (A9), multi-tier (A11 SLRU), and binary categorization
+(A22). If it nonetheless passes, that's a major falsification and
+suggests the sum of simple policies can be easier than any one.
+
+## Motivation
+
+CLOCK-Pro has been adopted in NetBSD, Apache Traffic Server, and
+various database buffer caches precisely because it delivers
+LIRS-quality hit rates without LIRS's implementation complexity.
+The question here is whether the LLM can hold this much structure
+in its head while actually doing the task.
