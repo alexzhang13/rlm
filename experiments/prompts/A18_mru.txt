@@ -1,0 +1,57 @@
+MEMORY-MANAGEMENT HINT — MRU (Most Recently Used):
+
+MRU is the opposite of LRU: instead of evicting the *least* recently
+used item, it evicts the *most* recently used. This sounds absurd —
+and for most workloads it is — but Chou and DeWitt (VLDB 1985) showed
+that MRU is actually optimal for *looping sequential scans* over a
+dataset larger than the cache. Intuition: if you just finished with
+chunk N in a full-scan, chunk N will be the *last* thing you revisit
+(you have to wrap around the entire dataset first), so it's the right
+candidate to drop. LRU, by contrast, keeps chunk N around — exactly
+the one you won't use again until after every other chunk.
+
+This is a deliberately odd arm. Most access patterns aren't looping
+sequential scans. For S-NIAH (single needle in a haystack) or
+CodeQA (structured question over a document) the pattern is closer
+to a one-shot targeted lookup, not a repeated scan. On that workload
+MRU would be actively harmful: evicting the item you just found the
+needle in, just as you're about to use it.
+
+## For your current task
+
+If your strategy involves repeated full scans over the corpus
+(unlikely here, but possible), MRU might make sense: after finishing
+a pass over chunk N, `del` it and move on, because you're about to
+read chunk N+1 and won't need N again until the next full cycle.
+
+For single-pass or needle-hunting patterns (which is S-NIAH), MRU
+is wrong. You should recognise this and NOT apply it.
+
+## Why this arm exists
+
+This is a **control arm for the research loop itself**. Most arms
+studied so far offer advice that is at least *plausible* for the
+task. A18 offers advice that is correct *in its original systems
+context* but wrong for the current workload. The interesting test
+is whether the model:
+
+1. Applies the advice literally (fails catastrophically — evicts the
+   haystack, same failure mode as A3 but for a different reason).
+2. Recognises the workload mismatch and ignores the advice (matches
+   A0 baseline).
+3. Over-thinks and produces a new failure mode tied to MRU
+   specifically.
+
+Any of these outcomes is informative. A literal application failure
+strengthens the "model obediently follows policy prompts regardless
+of their applicability" story; a successful ignore suggests the model
+does evaluate the advice critically; a new failure mode adds to our
+taxonomy.
+
+## Motivation
+
+Chou & DeWitt's insight was counterintuitive at the time — the
+"right" policy depends on the workload's access pattern, not just
+on which policy is "smartest." The hope of this arm is to test
+whether an LLM has the critical judgment to recognise an obvious
+workload mismatch.
