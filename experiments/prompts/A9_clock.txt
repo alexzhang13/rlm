@@ -1,0 +1,49 @@
+MEMORY-MANAGEMENT HINT — CLOCK / Second-Chance (Corbató, 1969):
+
+Instead of maintaining an ordered list (as LRU, ARC, SIEVE all do), the
+CLOCK algorithm treats the cache as a *circular buffer* with a single
+"hand" that sweeps around. Each item has a 1-bit tag called the
+*reference bit*: set to 1 on access, cleared to 0 by the hand as it
+passes. When the hand lands on an item with reference=0, that item is
+evicted. When it lands on reference=1, the bit gets cleared and the
+hand moves on — giving that item a "second chance."
+
+This has two notable properties: constant-space metadata per item (just
+one bit, no timestamps, no ordered lists), and no need to reorder
+anything when an access happens (just flip a bit). The cost of
+simplicity is slightly inferior hit rates vs LRU, but in practice the
+gap is small and the implementation is dramatically easier.
+
+## A different state representation
+
+All of our other arms carry an ordered notion of "recency" or
+"frequency" in the model's head. CLOCK suggests something lighter: just
+a flag per variable indicating "have I touched this since the last
+sweep?"
+
+## For your current task
+
+You might consider this mental model for your REPL variables:
+
+1. Every intermediate variable starts with an implicit tag "fresh"
+   (reference bit = 1).
+2. Periodically — say, when you notice the REPL feels crowded — do a
+   "sweep": go through your variables in creation order. For each one:
+   - If you touched it in the recent past, clear the "fresh" tag and
+     keep it for one more round (it earns a second chance).
+   - If it's already untagged (you swept past it before without
+     touching it), consider `del`-ing it.
+
+This is looser than LRU ("exactly when did I last touch this?") and
+more forgiving than SIEVE ("drop on first miss") — a single flag is
+easier to maintain than either.
+
+## Motivation
+
+CLOCK has stayed in production use for 50+ years across UNIX, Linux,
+and BSD memory managers precisely because the book-keeping is cheap.
+For a language model doing its own cache accounting in prose, cheap
+book-keeping might matter: LRU's "exact order" is hard to simulate
+mentally across many variables, but a binary "touched-since-sweep"
+flag is tractable. That could translate to fewer mistakes in what gets
+kept vs evicted.
