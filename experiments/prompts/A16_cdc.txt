@@ -1,0 +1,54 @@
+CHUNKING HINT — Content-defined chunking (Rabin fingerprints):
+
+Most RLM strategies (including the one shown in the RLM system prompt's
+examples) split a large context into *fixed-size* chunks — every 100K
+characters, say. Fixed-size chunks are simple but brittle: a small
+insertion at byte 0 shifts every subsequent chunk boundary, so an
+otherwise-repeated section becomes unrecognisable. Content-defined
+chunking (CDC) via Rabin fingerprints (1981, and later BSW 2000)
+solves this by placing chunk boundaries at *data-dependent* positions:
+wherever the rolling hash over a small sliding window hits a magic
+value. Boundaries move *with* the data, so an insertion at byte 0
+only affects the first chunk — every subsequent chunk boundary is
+preserved.
+
+## The key property
+
+CDC trades chunk-size uniformity for chunk-identity stability. Two
+documents that share a run of bytes will share chunk boundaries in
+that region (modulo the fingerprint window), which is why
+deduplication systems (LBFS, Git pack-files, restic, rsync) use CDC
+almost universally.
+
+## For your current task
+
+Your task is search-like: a single needle in a large haystack. If
+your first pass splits the corpus into arbitrary 10K chunks and the
+needle happens to straddle a boundary, you've effectively cut the
+needle in half. One thing you might consider:
+
+- Instead of splitting at fixed positions, split at *content-marker*
+  positions — blank lines, sentence terminators, repeated whitespace,
+  a specific keyword. This is the LLM-prose analog of a rolling hash:
+  let the data decide where the boundaries fall.
+- For the S-NIAH/CodeQA case specifically, splitting by newline is
+  a trivially-safe CDC: the needle's pattern (SECRET_KEY_IS_<digits>)
+  never crosses a newline, so a newline-based split guarantees the
+  needle lands inside exactly one chunk.
+
+## Why this framing is pure work-structure
+
+Like A15 (cache-oblivious), this arm only tells the model how to
+arrange its queries; it never mentions state management, evict,
+retain, or admit. The hypothesis from A15 was that state-management
+vocabulary drives the failure modes. CDC is another structural
+framing; if it performs well, that's a second confirmation.
+
+## Motivation
+
+Rabin's 1981 fingerprinting paper and BSW's 2000 variable-size-chunks
+work became foundational for deduplication. The beauty is that CDC
+gives you chunk boundaries that "make sense" to the data, cheaply, in
+one pass. For an RLM searching a haystack, letting natural structure
+(paragraphs, newlines, section markers) drive chunk boundaries is a
+free hedge against misalignment.
