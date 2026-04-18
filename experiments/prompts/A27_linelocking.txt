@@ -1,0 +1,50 @@
+CACHE-LOCKING HINT — Line pinning (real-time systems):
+
+Real-time embedded systems often use cache locking to achieve
+predictable timing. The idea: mark certain cache lines as LOCKED
+(pinned), so no replacement policy can evict them regardless of
+what's "colder" by LRU or similar metrics. The rest of the cache
+still evolves normally. This gives a small set of critical items
+guaranteed residency, making worst-case execution time (WCET)
+analyzable.
+
+Cache locking was prominent in ARM11, PowerPC, and various MIPS
+cores; modern Cortex-R and automotive SoCs still ship line-locking
+instructions. Two granularities exist: *way locking* (a whole way is
+reserved), *line locking* (individual lines). Both trade flexibility
+for predictability.
+
+## For your current task
+
+The analog: at the start of the task, identify the *one or two*
+variables you're absolutely certain you'll need throughout every
+iteration — most obviously the `context` variable itself and the
+current working `findings` dict. Mentally PIN those. For everything
+else, normal management: drop scratch when pressured.
+
+Unlike A11 (SLRU) or A23 (CLOCK-Pro), this arm doesn't ask you to
+track tiers, counts, or timestamps. It asks for a single binary
+decision at task start: for each variable, is it PINNED (must stay)
+or NORMAL (can be evicted). No dynamic promotion, no demotion, no
+mid-task reevaluation.
+
+## Where this lands
+
+This is a structural/allocation framing like A26 (partitioning) — a
+decision made once, at start, not tracked over time. Prediction: A27
+PASSES. The critical distinction from the FAIL arms is that PIN/NORMAL
+is a *labeling* (applied once), not a *policy* (applied continuously).
+
+If A27 fails, the PASS boundary shifts: even one-shot structural
+decisions about specific variables might count as state management.
+If it passes, we add another confirmation to the partitioning
+category.
+
+## Motivation
+
+Cache locking traded off flexibility for predictability — a classic
+systems design pattern. For an LLM, the analogous trade-off might be
+cognitive: mental bookkeeping for ALL variables is expensive, but
+marking 1-2 "never drop these" is cheap. The arm tests whether this
+minimal structural decision at task start is enough to avoid the
+cognitive overhead that makes A1-A25 FAIL/CRASH.
