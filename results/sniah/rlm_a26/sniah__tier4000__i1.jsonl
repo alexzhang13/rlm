@@ -1,0 +1,1 @@
+{"benchmark": "sniah", "method": "rlm_a26", "query_id": "sniah::tier4000::i1", "prediction": "", "duration_sec": 300.06219704198884, "input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "cache_creation_tokens": 0, "cost_usd": 0.0, "num_iterations": 0, "num_subcalls": 0, "score": null, "error": "TimeoutError: ", "extras": {"arm": "A26"}}

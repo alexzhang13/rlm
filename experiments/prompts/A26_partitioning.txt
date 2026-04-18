@@ -1,0 +1,53 @@
+CACHE-PARTITIONING HINT — UCP / way allocation (Qureshi, MICRO 2006):
+
+Shared last-level caches in multi-core systems have a fairness
+problem: the LRU policy implicitly gives more space to whichever
+process is most demanding, not whichever most benefits. Qureshi's
+Utility-Based Cache Partitioning (UCP, MICRO 2006) proposed explicitly
+*dividing* the cache ways among processes based on how much each
+process's miss rate drops per way given to it. Low-benefit
+processes get fewer ways; high-benefit processes get more. The
+technique generalizes to per-task partitioning within a single
+process too.
+
+## The key insight
+
+Partitioning is a structural decision: *before* workload runs, decide
+how much cache each logical stream gets. Then each stream manages its
+partition however it wants (usually LRU). This separates the
+allocation question ("how much space?") from the replacement question
+("what to evict?"). Partitioning prevents one heavy workload from
+evicting everything a light workload needs.
+
+## For your current task
+
+In RLM terms: at the start of your work, divide your mental "variable
+budget" among the logical sub-tasks you expect to perform:
+
+- one budget allocation for *holding the prompt / context* (needs to
+  persist)
+- one for *iteration-local scratch* (short-lived, can churn)
+- one for *running findings* (grows over time, needs retention)
+
+Don't let scratch variables crowd out findings just because you
+created scratch more recently; the two are in different partitions.
+Under token pressure, drop from the scratch partition first; touch
+findings and context only as a last resort.
+
+## Where this lands in the taxonomy
+
+This is structural framing (partition allocation) not state
+management (eviction decisions within a partition). Per the refined
+hypothesis, structural framings PASS. Prediction: A26 matches A0
+vanilla. If it fails, maybe the "three partitions" vocabulary is
+close enough to SLRU's multi-tier language (A11, which FAILED at 0.0)
+to trigger the same failure mode — that would refine the PASS/FAIL
+boundary further.
+
+## Motivation
+
+Cache partitioning is one of the cleanest examples of structural
+rather than dynamic cache optimization — the policy does nothing
+during the workload, only before. If LLMs handle structural prompts
+better than stateful ones (as A15, A16, A19 suggest), partitioning
+should land cleanly on the PASS side.
