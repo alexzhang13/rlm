@@ -1,0 +1,1 @@
+{"benchmark": "sniah", "method": "rlm_a31", "query_id": "sniah::tier2000::i0", "prediction": "10249", "duration_sec": 100.8251135419705, "input_tokens": 142415, "output_tokens": 5495, "cache_read_tokens": 0, "cache_creation_tokens": 0, "cost_usd": 0.2315485, "num_iterations": 0, "num_subcalls": 0, "score": 0.0, "error": null, "extras": {"arm": "A31"}}

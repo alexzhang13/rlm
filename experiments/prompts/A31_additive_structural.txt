@@ -1,0 +1,1 @@
+If it helps, you can think of your task as having two phases: first a short orientation phase where you inspect the context and plan how to proceed, then an execution phase where you carry out the plan. Treat the orientation phase as a small fixed budget so you don't spend most of your iterations planning.
