@@ -1,0 +1,1 @@
+If you create a large intermediate buffer that you don't expect to reuse, you can skip keeping it across iterations — just re-peek the source if you need it again.
