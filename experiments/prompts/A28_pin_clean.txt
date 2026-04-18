@@ -1,0 +1,18 @@
+CACHE-LOCKING HINT:
+
+In real-time embedded systems, cache lines that must not be evicted
+are marked "locked" or "pinned" at program start. The rest of the
+cache still evolves normally under LRU or whatever policy. Pinning
+a small number of critical lines gives predictable access time for
+those lines without requiring any runtime bookkeeping for the rest.
+
+At the start of your task, you might consider identifying the one
+or two variables you are absolutely certain you will need throughout
+every iteration — most obviously the `context` variable itself, and
+any main working buffer you are building up. Note them as pinned:
+do not evict them under any pressure. For all other variables, use
+normal judgment.
+
+The pin list is decided once at the start. You do not need to track
+access counts, timestamps, or tiers — just keep a short mental
+"protected" list of a couple of items.
