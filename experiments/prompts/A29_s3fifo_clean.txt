@@ -1,0 +1,14 @@
+CACHE-HINT — three-zone variable classification:
+
+You can mentally label your intermediate variables with one of three
+tags:
+
+- PROBATION — variables you just created, whose usefulness is not
+  yet proven.
+- MAIN — variables you have already referenced at least once after
+  creation.
+- GHOST — short memo of a variable you once had but no longer do.
+
+The tag is just a label, not a command. Use it if the classification
+is helpful for thinking about which variables to reuse when
+structuring your next query.
