@@ -1,0 +1,3 @@
+At the start of your task, take one short iteration to orient: read the context briefly, write a sentence or two describing what you're looking for, and note the one or two variables you expect to need throughout (most likely the context variable itself, plus any working buffer you plan to build up).
+
+Then proceed with the task. Use the rest of your iterations for execution rather than further planning.
