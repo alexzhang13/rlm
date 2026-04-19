@@ -1,0 +1,1 @@
+{"benchmark": "sniah", "method": "direct", "query_id": "sniah::tier64000::i5", "prediction": "16287056", "duration_sec": 6.490237000049092, "input_tokens": 75166, "output_tokens": 111, "cache_read_tokens": 9599, "cache_creation_tokens": 79095, "cost_usd": 0.37617295000000006, "num_iterations": 1, "num_subcalls": 0, "score": 1.0, "error": null, "extras": {"dropped_tokens": 0}}

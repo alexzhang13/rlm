@@ -16,49 +16,627 @@ longbench_codeqa,summary_agent,longbench_codeqa::66ed3e90821e116aacb1f82f,1.0,0.
 longbench_codeqa,rlm_a3,longbench_codeqa::66ec56dd821e116aacb1cd0e,0.0,0.46873224999999996,265.8436856250046,318376,17071,
 longbench_codeqa,rlm_a3,longbench_codeqa::66fa69a4bb02136c067c6b75,1.0,0.8694696500000001,692.0136509589793,295540,23444,
 longbench_codeqa,rlm_a3,longbench_codeqa::66ed3e90821e116aacb1f82f,1.0,0.4790274000000001,139.92766379201203,295866,7473,
+sniah,rlm_a6,sniah::tier32000::i4,,0.0,1.5060647500213236,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a6,sniah::tier2000::i0,1.0,0.09699725,23.07558837500983,63258,959,
 sniah,rlm_a6,sniah::tier8000::i2,1.0,0.2203505,97.56525279200287,77424,6308,
 sniah,rlm_a6,sniah::tier4000::i1,1.0,0.1718132,84.75994729201193,116507,3405,
+sniah,rlm_a6,sniah::tier16000::i3,,0.0,2.0090559580130503,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a6,sniah::tier4000::i9,,0.0,2.009591833979357,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a6,sniah::tier64000::i5,,0.0,1.506015542021487,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a6,sniah::tier262144::i7,,0.0,2.0070066250045784,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a6,sniah::tier131072::i6,,0.0,2.00819845800288,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a6,sniah::tier2000::i8,,0.0,2.0075200000428595,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a1,sniah::tier32000::i4,,0.0,2.0095679580117576,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a1,sniah::tier2000::i0,1.0,0.10811654999999999,37.92976737502613,82678,1325,
 sniah,rlm_a1,sniah::tier8000::i2,0.0,0.1946136,81.76059600000735,200829,3685,
 sniah,rlm_a1,sniah::tier4000::i1,1.0,0.3220382,97.63356183297583,186063,4218,
+sniah,rlm_a1,sniah::tier16000::i3,,0.0,2.0085609579691663,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a1,sniah::tier4000::i9,,0.0,2.511831499985419,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a1,sniah::tier64000::i5,,0.0,2.0099444999941625,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a1,sniah::tier262144::i7,,0.0,2.0110180840129033,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a1,sniah::tier131072::i6,,0.0,2.0092196249752305,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a1,sniah::tier2000::i8,,0.0,2.0088499580160715,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a8,sniah::tier32000::i4,,0.0,2.0079593749833293,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a8,sniah::tier2000::i0,,0.0,2.0108790840022266,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a8,sniah::tier8000::i2,,0.0,2.010988832975272,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a8,sniah::tier4000::i1,1.0,0.4264852999999999,161.17021483302233,243364,6989,
+sniah,rlm_a8,sniah::tier16000::i3,,0.0,2.0101795839727856,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a8,sniah::tier4000::i9,,0.0,2.0103957499959506,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a8,sniah::tier64000::i5,,0.0,2.007958124973811,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a8,sniah::tier262144::i7,,0.0,2.0062102079973556,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a8,sniah::tier131072::i6,,0.0,2.008139166980982,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a8,sniah::tier2000::i8,,0.0,2.5105970419826917,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a9,sniah::tier32000::i4,,0.0,2.0106605420005508,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a9,sniah::tier2000::i0,0.0,0.18639745,76.83356958400691,93775,3880,
+sniah,rlm_a9,sniah::tier8000::i2,,0.0,2.008254458021838,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a9,sniah::tier4000::i1,,0.0,1.5064782090485096,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a9,sniah::tier16000::i3,,0.0,2.0085463330033235,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a9,sniah::tier4000::i9,,0.0,2.0069195000105537,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a9,sniah::tier64000::i5,,0.0,2.00892233295599,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a9,sniah::tier262144::i7,,0.0,2.0102681249845773,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a9,sniah::tier131072::i6,,0.0,2.007057666021865,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a9,sniah::tier2000::i8,,0.0,2.007416500011459,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a0,sniah::tier32000::i4,,0.0,2.009827875008341,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a0,sniah::tier2000::i0,1.0,0.2782759,96.6920841250103,170979,4356,
 sniah,rlm_a0,sniah::tier8000::i2,1.0,0.1294043,68.66973495899583,85764,3136,
 sniah,rlm_a0,sniah::tier4000::i1,1.0,0.17443085,58.277847332996316,87790,2984,
+sniah,rlm_a0,sniah::tier16000::i3,,0.0,2.010088417038787,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a0,sniah::tier4000::i9,,0.0,1.5048930830089375,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a0,sniah::tier64000::i5,,0.0,2.0089297500089742,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a0,sniah::tier262144::i7,,0.0,2.0107622090145014,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a0,sniah::tier131072::i6,,0.0,1.5053296660189517,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a0,sniah::tier2000::i8,,0.0,2.007678834022954,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a7,sniah::tier32000::i4,,0.0,2.0092367089819163,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a7,sniah::tier2000::i0,1.0,0.1813929,44.85048945900053,83668,2114,
+sniah,rlm_a7,sniah::tier8000::i2,,0.0,2.0091001659748144,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a7,sniah::tier4000::i1,,0.0,2.0083431669627316,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a7,sniah::tier16000::i3,,0.0,2.0085526250186376,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a7,sniah::tier4000::i9,,0.0,2.0089082079939544,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a7,sniah::tier64000::i5,,0.0,2.0096115420456044,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a7,sniah::tier262144::i7,,0.0,2.0083216250059195,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a7,sniah::tier131072::i6,,0.0,2.5106505830190144,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a7,sniah::tier2000::i8,,0.0,2.0093087920104153,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,direct,sniah::tier32000::i4,1.0,0.19777670000000003,5.62986466701841,37671,90,
 sniah,direct,sniah::tier2000::i0,1.0,0.06573175,5.179006249993108,2762,20,
 sniah,direct,sniah::tier8000::i2,1.0,0.0642482,4.484092458995292,9725,39,
 sniah,direct,sniah::tier4000::i1,1.0,0.04214295,4.03962291701464,5126,21,
+sniah,direct,sniah::tier16000::i3,1.0,0.142713,5.889939292042982,19052,108,
+sniah,direct,sniah::tier4000::i9,1.0,0.0419482,3.406266374979168,5085,21,
+sniah,direct,sniah::tier64000::i5,1.0,0.37617295000000006,6.490237000049092,75166,111,
+sniah,direct,sniah::tier262144::i7,,0.0,0.0,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,direct,sniah::tier131072::i6,1.0,0.6675004,31.235226040997077,312150,1238,
+sniah,direct,sniah::tier2000::i8,1.0,0.030700699999999997,4.281166457978543,2715,21,
+sniah,rlm_a32,sniah::tier32000::i4,,0.0,2.0093641669955105,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a32,sniah::tier2000::i0,1.0,0.19280419999999998,106.84411987499334,119992,5516,
-sniah,rlm_a32,sniah::tier4000::i1,,0.0,87.80095816595713,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+sniah,rlm_a32,sniah::tier8000::i2,,0.0,2.009764041984454,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a32,sniah::tier4000::i1,,0.0,2.008628665993456,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a32,sniah::tier16000::i3,,0.0,2.0087920000078157,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a32,sniah::tier4000::i9,,0.0,2.009456915955525,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a32,sniah::tier64000::i5,,0.0,2.0092329169856384,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a32,sniah::tier262144::i7,,0.0,2.007412959006615,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a32,sniah::tier131072::i6,,0.0,2.0089224590337835,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a32,sniah::tier2000::i8,,0.0,2.0071509160334244,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a10,sniah::tier32000::i4,,0.0,2.0074544999515638,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
 Error output: Check stderr output for details"
 sniah,rlm_a10,sniah::tier2000::i0,1.0,0.24127785000000002,92.21229904101347,112517,4843,
+sniah,rlm_a10,sniah::tier8000::i2,,0.0,2.007855292002205,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a10,sniah::tier4000::i1,,0.0,2.009314417024143,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a10,sniah::tier16000::i3,,0.0,2.009788000024855,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a10,sniah::tier4000::i9,,0.0,2.010866291995626,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a10,sniah::tier64000::i5,,0.0,1.5041997090447694,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a10,sniah::tier262144::i7,,0.0,2.0165047910413705,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a10,sniah::tier131072::i6,,0.0,2.009978166955989,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a10,sniah::tier2000::i8,,0.0,2.009131041006185,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a17,sniah::tier32000::i4,,0.0,2.0091924169682898,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a17,sniah::tier2000::i0,0.0,0.3295284,170.06822762498632,156744,8071,
+sniah,rlm_a17,sniah::tier8000::i2,,0.0,2.0106783749652095,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a17,sniah::tier4000::i1,,0.0,3.513174792053178,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a17,sniah::tier16000::i3,,0.0,2.0107580419862643,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a17,sniah::tier4000::i9,,0.0,2.007885582977906,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a17,sniah::tier64000::i5,,0.0,2.0081388750113547,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a17,sniah::tier262144::i7,,0.0,2.010168207983952,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a17,sniah::tier131072::i6,,0.0,2.0086163749801926,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a17,sniah::tier2000::i8,,0.0,1.5033596669672988,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a28,sniah::tier32000::i4,,0.0,2.0071390839875676,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a28,sniah::tier2000::i0,1.0,0.37928399999999995,88.29844533302821,511264,4733,
+sniah,rlm_a28,sniah::tier8000::i2,,0.0,1.5069862499949522,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a28,sniah::tier4000::i1,1.0,0.34676450000000003,99.77537383401068,194169,5125,
+sniah,rlm_a28,sniah::tier16000::i3,,0.0,2.010758500022348,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a28,sniah::tier4000::i9,,0.0,2.0076718329801224,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a28,sniah::tier64000::i5,,0.0,2.009128750010859,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a28,sniah::tier262144::i7,,0.0,2.0090686249895953,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a28,sniah::tier131072::i6,,0.0,2.006651834002696,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a28,sniah::tier2000::i8,,0.0,2.007312292000279,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a21,sniah::tier32000::i4,,0.0,2.007620040967595,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a21,sniah::tier2000::i0,,0.0,2.009266791981645,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a21,sniah::tier8000::i2,,0.0,2.0071135420002975,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a21,sniah::tier4000::i1,,0.0,2.0098368329927325,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a21,sniah::tier16000::i3,,0.0,1.5033964999602176,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a21,sniah::tier4000::i9,,0.0,2.010391208983492,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a21,sniah::tier64000::i5,,0.0,2.0104554999852553,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a21,sniah::tier262144::i7,,0.0,2.0059289170312695,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a21,sniah::tier131072::i6,,0.0,2.0086420419975184,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a21,sniah::tier2000::i8,,0.0,1.506931749987416,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a26,sniah::tier32000::i4,,0.0,2.007878582982812,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a26,sniah::tier2000::i0,1.0,0.12860510000000003,55.14950362499803,65040,2790,
+sniah,rlm_a26,sniah::tier8000::i2,,0.0,2.008244708995335,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a26,sniah::tier4000::i1,,0.0,2.00751174998004,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a26,sniah::tier16000::i3,,0.0,2.00988300004974,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a26,sniah::tier4000::i9,,0.0,2.005369792052079,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a26,sniah::tier64000::i5,,0.0,2.0107786250300705,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a26,sniah::tier262144::i7,,0.0,2.0091634999844246,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a26,sniah::tier131072::i6,,0.0,2.0074132080189884,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a26,sniah::tier2000::i8,,0.0,2.0098292080219835,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a19,sniah::tier32000::i4,,0.0,2.007288791995961,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a19,sniah::tier2000::i0,,0.0,2.0077774579986,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a19,sniah::tier8000::i2,,0.0,2.009677541034762,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a19,sniah::tier4000::i1,1.0,0.28247999999999995,76.99937629204942,204445,3060,
+sniah,rlm_a19,sniah::tier16000::i3,,0.0,2.005239124991931,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a19,sniah::tier4000::i9,,0.0,2.0104283750406466,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a19,sniah::tier64000::i5,,0.0,2.010777749994304,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a19,sniah::tier262144::i7,,0.0,2.0081408750265837,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a19,sniah::tier131072::i6,,0.0,2.008358291001059,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a19,sniah::tier2000::i8,,0.0,2.008271667000372,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a27,sniah::tier32000::i4,,0.0,2.0105205419822596,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a27,sniah::tier2000::i0,0.0,0.25248645000000003,141.7601648750133,113546,7009,
+sniah,rlm_a27,sniah::tier8000::i2,,0.0,2.009538332989905,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a27,sniah::tier4000::i1,,0.0,1.5071054579457268,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a27,sniah::tier16000::i3,,0.0,2.008915291982703,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a27,sniah::tier4000::i9,,0.0,2.0104264999972656,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a27,sniah::tier64000::i5,,0.0,1.5043461250024848,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a27,sniah::tier262144::i7,,0.0,1.5069519170210697,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a27,sniah::tier131072::i6,,0.0,2.009014459035825,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a27,sniah::tier2000::i8,,0.0,1.5067838749964722,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a18,sniah::tier32000::i4,,0.0,2.0060254999552853,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a18,sniah::tier2000::i0,,0.0,2.009670124971308,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a18,sniah::tier8000::i2,,0.0,2.00848641700577,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a18,sniah::tier4000::i1,,0.0,2.009366583020892,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a18,sniah::tier16000::i3,,0.0,2.0100389160215855,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a18,sniah::tier4000::i9,,0.0,2.0090077920467593,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a18,sniah::tier64000::i5,,0.0,2.008534416963812,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a18,sniah::tier262144::i7,,0.0,2.5097993750241585,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a18,sniah::tier131072::i6,,0.0,2.007627249986399,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a18,sniah::tier2000::i8,,0.0,1.505453124991618,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a20,sniah::tier32000::i4,,0.0,2.0055359170073643,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a20,sniah::tier2000::i0,0.0,0.15425735000000002,79.76915562496288,67078,3860,
+sniah,rlm_a20,sniah::tier8000::i2,,0.0,2.010845332988538,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a20,sniah::tier4000::i1,,0.0,2.0083933339919895,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a20,sniah::tier16000::i3,,0.0,2.0090911670122296,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a20,sniah::tier4000::i9,,0.0,1.5049229160067625,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a20,sniah::tier64000::i5,,0.0,1.5055124160135165,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a20,sniah::tier262144::i7,,0.0,2.007679417030886,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a20,sniah::tier131072::i6,,0.0,1.5056248329929076,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a20,sniah::tier2000::i8,,0.0,1.5041306670173071,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a16,sniah::tier32000::i4,,0.0,2.009250167000573,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a16,sniah::tier2000::i0,1.0,0.10119664999999999,41.138345499988645,59408,1864,
+sniah,rlm_a16,sniah::tier8000::i2,,0.0,2.010734457988292,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a16,sniah::tier4000::i1,,0.0,2.0105211670161225,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a16,sniah::tier16000::i3,,0.0,2.009804791014176,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a16,sniah::tier4000::i9,,0.0,2.509157332999166,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a16,sniah::tier64000::i5,,0.0,2.0096287080086768,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a16,sniah::tier262144::i7,,0.0,2.0074986669933423,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a16,sniah::tier131072::i6,,0.0,2.0110720420489088,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a16,sniah::tier2000::i8,,0.0,2.0094051670166664,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a29,sniah::tier32000::i4,,0.0,2.008280834008474,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a29,sniah::tier2000::i0,0.0,0.2290877,104.99585979199037,116355,5215,
+sniah,rlm_a29,sniah::tier8000::i2,,0.0,2.0091182910255156,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a29,sniah::tier4000::i1,,0.0,1.5058138750027865,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a29,sniah::tier16000::i3,,0.0,2.0109199169673957,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a29,sniah::tier4000::i9,,0.0,1.5068375829723664,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a29,sniah::tier64000::i5,,0.0,2.0086005829507485,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a29,sniah::tier262144::i7,,0.0,2.0076620419858955,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a29,sniah::tier131072::i6,,0.0,2.0089095829753205,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a29,sniah::tier2000::i8,,0.0,1.5072759579634294,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a11,sniah::tier32000::i4,,0.0,2.006017250008881,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a11,sniah::tier2000::i0,,0.0,1.5040727920131758,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a11,sniah::tier8000::i2,,0.0,2.0088081670110114,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a11,sniah::tier4000::i1,0.0,0.5058207499999998,163.03697312501026,876465,7988,
+sniah,rlm_a11,sniah::tier16000::i3,,0.0,2.0089474170235917,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a11,sniah::tier4000::i9,,0.0,2.0096797500154935,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a11,sniah::tier64000::i5,,0.0,3.0111101669608615,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a11,sniah::tier262144::i7,,0.0,1.505968333047349,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a11,sniah::tier131072::i6,,0.0,2.0101780830300413,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a11,sniah::tier2000::i8,,0.0,2.00937966699712,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,codeact_bm25,sniah::tier32000::i4,,0.0,0.0,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,codeact_bm25,sniah::tier2000::i0,1.0,0.1155124,44.5870584580116,3463,1635,
+sniah,codeact_bm25,sniah::tier8000::i2,,0.0,0.0,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,codeact_bm25,sniah::tier4000::i1,1.0,0.16864325,73.20109716602019,3470,2989,
+sniah,codeact_bm25,sniah::tier16000::i3,,0.0,0.0,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,codeact_bm25,sniah::tier4000::i9,,0.0,0.0,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,codeact_bm25,sniah::tier64000::i5,,0.0,0.0,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,codeact_bm25,sniah::tier262144::i7,,0.0,0.0,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,codeact_bm25,sniah::tier131072::i6,,0.0,0.0,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,codeact_bm25,sniah::tier2000::i8,,0.0,0.0,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,summary_agent,sniah::tier32000::i4,1.0,0.1977817,6.907260041974951,37671,91,
 sniah,summary_agent,sniah::tier2000::i0,1.0,0.0307712,4.054874542023754,2733,20,
 sniah,summary_agent,sniah::tier8000::i2,1.0,0.0642382,4.3145232090028,9725,37,
 sniah,summary_agent,sniah::tier4000::i1,1.0,0.03694995,3.5451645419816487,3,7,
+sniah,summary_agent,sniah::tier16000::i3,1.0,0.10959645,5.261642916011624,19052,108,
+sniah,summary_agent,sniah::tier4000::i9,1.0,0.0419582,3.273298916989006,5085,21,
+sniah,summary_agent,sniah::tier64000::i5,1.0,0.37588295,6.831377791007981,75166,91,
+sniah,summary_agent,sniah::tier262144::i7,,0.0,0.0,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,summary_agent,sniah::tier131072::i6,1.0,1.2022581500000002,182.94967975001782,469928,5323,
+sniah,summary_agent,sniah::tier2000::i8,1.0,0.030700699999999997,3.8684543329873122,2715,21,
+sniah,rlm_a4,sniah::tier32000::i4,,0.0,2.0088802090031095,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a4,sniah::tier2000::i0,1.0,0.13853149999999997,56.17578404198866,105028,2592,
 sniah,rlm_a4,sniah::tier8000::i2,0.0,0.5681279000000004,223.7160172080039,1067689,8004,
 sniah,rlm_a4,sniah::tier4000::i1,0.0,0.057244050000000005,41.135347584000556,17487,2438,
+sniah,rlm_a4,sniah::tier16000::i3,,0.0,1.5071411250391975,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a4,sniah::tier4000::i9,,0.0,2.007805625034962,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a4,sniah::tier64000::i5,,0.0,2.511634916998446,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a4,sniah::tier262144::i7,,0.0,2.5115978340036236,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a4,sniah::tier131072::i6,,0.0,1.5054888330050744,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a4,sniah::tier2000::i8,,0.0,2.5114489999832585,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a3,sniah::tier32000::i4,,0.0,1.5071767920162529,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a3,sniah::tier2000::i0,1.0,0.13540029999999997,43.13343341698055,63964,2332,
 sniah,rlm_a3,sniah::tier8000::i2,0.0,0.19636910000000002,51.5149371669977,119538,2218,
 sniah,rlm_a3,sniah::tier4000::i1,0.0,0.1909451,113.85345937497914,123733,6375,
+sniah,rlm_a3,sniah::tier16000::i3,,0.0,2.0101662920205854,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a3,sniah::tier4000::i9,,0.0,2.010334499995224,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a3,sniah::tier64000::i5,,0.0,2.009562957973685,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a3,sniah::tier262144::i7,,0.0,2.010114250006154,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a3,sniah::tier131072::i6,,0.0,2.5105830000247806,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a3,sniah::tier2000::i8,,0.0,2.0098534999997355,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a30,sniah::tier32000::i4,,0.0,2.0090546249994077,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a30,sniah::tier2000::i0,,0.0,1.5068137500202283,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a30,sniah::tier8000::i2,,0.0,1.5068484999937937,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a30,sniah::tier4000::i1,,0.0,2.0079477499821223,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a30,sniah::tier16000::i3,,0.0,2.008063375018537,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a30,sniah::tier4000::i9,,0.0,1.5068250839831308,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a30,sniah::tier64000::i5,,0.0,1.5067738749785349,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a30,sniah::tier262144::i7,,0.0,2.0081372910062782,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a30,sniah::tier131072::i6,,0.0,2.0088177919969894,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a30,sniah::tier2000::i8,,0.0,2.007525041990448,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a31,sniah::tier32000::i4,,0.0,2.0102738339919597,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a31,sniah::tier2000::i0,0.0,0.2315485,100.8251135419705,142415,5495,
+sniah,rlm_a31,sniah::tier8000::i2,,0.0,2.0089307079906575,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a31,sniah::tier4000::i1,1.0,0.1916721,58.12556729099015,195867,2773,
+sniah,rlm_a31,sniah::tier16000::i3,,0.0,2.011079250019975,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a31,sniah::tier4000::i9,,0.0,2.007594709051773,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a31,sniah::tier64000::i5,,0.0,2.0096020000055432,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a31,sniah::tier262144::i7,,0.0,2.0093394580180757,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a31,sniah::tier131072::i6,,0.0,2.01062495802762,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a31,sniah::tier2000::i8,,0.0,2.009367500024382,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a14,sniah::tier32000::i4,,0.0,2.0098254589829594,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a14,sniah::tier2000::i0,,0.0,2.0089677079813555,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a14,sniah::tier8000::i2,,0.0,2.0078024999820627,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a14,sniah::tier4000::i1,0.0,0.7042565500000002,226.5399240409606,929015,9782,
+sniah,rlm_a14,sniah::tier16000::i3,,0.0,2.00879645900568,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a14,sniah::tier4000::i9,,0.0,2.009200915985275,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a14,sniah::tier64000::i5,,0.0,1.5066989170154557,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a14,sniah::tier262144::i7,,0.0,1.505355583038181,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a14,sniah::tier131072::i6,,0.0,1.504853499995079,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a14,sniah::tier2000::i8,,0.0,2.0099775830167346,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a13,sniah::tier32000::i4,,0.0,2.009899625030812,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a13,sniah::tier2000::i0,0.0,0.49675985,186.6893062920426,337798,8731,
+sniah,rlm_a13,sniah::tier8000::i2,,0.0,2.0087215839885175,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a13,sniah::tier4000::i1,,0.0,1.5048846250283532,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a13,sniah::tier16000::i3,,0.0,2.0095526659861207,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a13,sniah::tier4000::i9,,0.0,2.0086756250238977,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a13,sniah::tier64000::i5,,0.0,2.0109257500153035,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a13,sniah::tier262144::i7,,0.0,2.0087767080403864,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a13,sniah::tier131072::i6,,0.0,2.009031417022925,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a13,sniah::tier2000::i8,,0.0,2.0098534999997355,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a25,sniah::tier32000::i4,,0.0,1.506840459012892,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a25,sniah::tier2000::i0,,0.0,1.5049921669997275,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a25,sniah::tier8000::i2,,0.0,2.00728291698033,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a25,sniah::tier4000::i1,,0.0,1.5069082920090295,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a25,sniah::tier16000::i3,,0.0,1.506855582993012,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a25,sniah::tier4000::i9,,0.0,2.009822082996834,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a25,sniah::tier64000::i5,,0.0,2.0090325829805806,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a25,sniah::tier262144::i7,,0.0,2.0100307499524206,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a25,sniah::tier131072::i6,,0.0,2.010607541014906,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a25,sniah::tier2000::i8,,0.0,2.009046832972672,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a22,sniah::tier32000::i4,,0.0,2.0093268750351854,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a22,sniah::tier2000::i0,,0.0,1.5055829160264693,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a22,sniah::tier8000::i2,,0.0,1.5052936669671908,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a22,sniah::tier4000::i1,0.0,0.44939400000000007,242.38855433295248,251581,9725,
+sniah,rlm_a22,sniah::tier16000::i3,,0.0,2.0105847910162993,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a22,sniah::tier4000::i9,,0.0,2.00574587500887,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a22,sniah::tier64000::i5,,0.0,2.0110672080190852,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a22,sniah::tier262144::i7,,0.0,1.5063166660256684,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a22,sniah::tier131072::i6,,0.0,2.006963709020056,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a22,sniah::tier2000::i8,,0.0,2.0100214590202086,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a23,sniah::tier32000::i4,,0.0,1.5067868329933845,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a23,sniah::tier2000::i0,,0.0,1.5066656669951044,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a23,sniah::tier8000::i2,,0.0,2.008595791005064,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a23,sniah::tier4000::i1,,0.0,2.0090991249890067,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a23,sniah::tier16000::i3,,0.0,1.5229827919974923,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a23,sniah::tier4000::i9,,0.0,2.0099603330018,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a23,sniah::tier64000::i5,,0.0,2.01033462502528,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a23,sniah::tier262144::i7,,0.0,1.5047754580155015,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a23,sniah::tier131072::i6,,0.0,2.009437959000934,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a23,sniah::tier2000::i8,,0.0,1.5067479580175132,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a24,sniah::tier32000::i4,,0.0,2.009319166012574,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a24,sniah::tier2000::i0,,0.0,2.009183792048134,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a24,sniah::tier8000::i2,,0.0,2.008493040979374,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a24,sniah::tier4000::i1,,0.0,2.010230000014417,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a24,sniah::tier16000::i3,,0.0,2.0105497500044294,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a24,sniah::tier4000::i9,,0.0,2.0081909589935094,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a24,sniah::tier64000::i5,,0.0,1.5055597920436412,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a24,sniah::tier262144::i7,,0.0,2.010510249994695,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a24,sniah::tier131072::i6,,0.0,1.506845208001323,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a24,sniah::tier2000::i8,,0.0,1.5072822920046747,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a12,sniah::tier32000::i4,,0.0,1.5063163340091705,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a12,sniah::tier2000::i0,,0.0,1.5070638750330545,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a12,sniah::tier8000::i2,,0.0,1.5066789999837056,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a12,sniah::tier4000::i1,,0.0,2.009388750011567,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a12,sniah::tier16000::i3,,0.0,2.008674125012476,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a12,sniah::tier4000::i9,,0.0,1.506562665977981,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a12,sniah::tier64000::i5,,0.0,2.0067012909566984,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a12,sniah::tier262144::i7,,0.0,2.5104010839713737,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a12,sniah::tier131072::i6,,0.0,2.007883124984801,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a12,sniah::tier2000::i8,,0.0,2.509055915987119,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a15,sniah::tier32000::i4,,0.0,2.5112064169952646,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a15,sniah::tier2000::i0,,0.0,3.010972124990076,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a15,sniah::tier8000::i2,,0.0,1.5065419580205344,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
 sniah,rlm_a15,sniah::tier4000::i1,1.0,0.49896795000000005,164.79615954204928,413335,8532,
+sniah,rlm_a15,sniah::tier16000::i3,,0.0,2.010265083052218,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a15,sniah::tier4000::i9,,0.0,1.5066643329919316,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a15,sniah::tier64000::i5,,0.0,2.007027332962025,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a15,sniah::tier262144::i7,,0.0,2.00893366598757,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a15,sniah::tier131072::i6,,0.0,2.008691709022969,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
+sniah,rlm_a15,sniah::tier2000::i8,,0.0,2.0088566670310684,0,0,"Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details"
