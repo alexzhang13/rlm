@@ -1,0 +1,1633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RLM Execution Flow - Interactive Animation</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #111827;
+            --bg-tertiary: #1e293b;
+            --bg-code: #0f172a;
+            --border: #374151;
+            --text-primary: #e0e0e0;
+            --text-secondary: #9ca3af;
+            --blue: #3b82f6;
+            --purple: #7c3aed;
+            --green: #10b981;
+            --yellow: #f59e0b;
+            --red: #ef4444;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            padding: 24px 32px;
+            border-bottom: 2px solid var(--blue);
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            background: linear-gradient(90deg, var(--blue), #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header .subtitle {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-top: 4px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-top: 16px;
+        }
+
+        .btn {
+            background: var(--bg-tertiary);
+            border: 1px solid #475569;
+            color: var(--text-primary);
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn:hover:not(:disabled) {
+            background: var(--blue);
+            border-color: var(--blue);
+            transform: translateY(-1px);
+        }
+
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .btn.primary {
+            background: var(--blue);
+            border-color: var(--blue);
+        }
+
+        .speed-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-secondary);
+            margin-left: auto;
+        }
+
+        .speed-control input {
+            width: 120px;
+        }
+
+        .main-container {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            height: calc(100vh - 140px);
+        }
+
+        .sidebar {
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border);
+            padding: 24px;
+            overflow-y: auto;
+        }
+
+        .sidebar h2 {
+            font-size: 16px;
+            color: var(--blue);
+            margin-bottom: 16px;
+        }
+
+        .scenario-btn {
+            width: 100%;
+            background: var(--bg-tertiary);
+            border: 2px solid var(--border);
+            color: var(--text-primary);
+            padding: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            text-align: left;
+            transition: all 0.2s;
+            margin-bottom: 12px;
+        }
+
+        .scenario-btn:hover {
+            border-color: var(--blue);
+        }
+
+        .scenario-btn.active {
+            border-color: var(--blue);
+            background: #1e3a8a;
+        }
+
+        .scenario-btn h3 {
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .scenario-btn p {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .scenario-info {
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 24px;
+        }
+
+        .scenario-info h3 {
+            font-size: 14px;
+            color: var(--blue);
+            margin-bottom: 12px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-row .label {
+            color: var(--text-secondary);
+        }
+
+        .info-row .value {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        .legend {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 24px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+
+        .content {
+            padding: 32px;
+            overflow-y: auto;
+        }
+
+        .flow-container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .flow-step {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.6s ease;
+            margin-bottom: 32px;
+            pointer-events: none;
+        }
+
+        .flow-step.visible {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+
+        .flow-step-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .step-number {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: var(--blue);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+
+        .step-title {
+            font-size: 18px;
+            font-weight: 600;
+            flex: 1;
+        }
+
+        .step-badge {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-parent { background: var(--purple); color: white; }
+        .badge-code { background: var(--green); color: white; }
+        .badge-llm { background: var(--yellow); color: black; }
+        .badge-aggregate { background: var(--red); color: white; }
+        .badge-final { background: var(--green); color: white; }
+
+        .step-description {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-bottom: 16px;
+            padding-left: 48px;
+        }
+
+        .code-section {
+            margin-top: 16px;
+            margin-left: 48px;
+        }
+
+        .code-section-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .code-block {
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px 20px;
+            font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.7;
+            overflow-x: auto;
+        }
+
+        .code-line {
+            opacity: 0;
+            transform: translateX(-10px);
+            transition: all 0.4s ease;
+            padding: 1px 0;
+            white-space: pre;
+        }
+
+        .code-line.visible {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .code-line.highlight {
+            background: rgba(59, 130, 246, 0.15);
+            border-left: 3px solid var(--blue);
+            padding-left: 8px;
+            margin-left: -11px;
+        }
+
+        .repl-output {
+            background: #0a1a0a;
+            border: 1px solid var(--green);
+            border-left: 3px solid var(--green);
+            border-radius: 8px;
+            padding: 14px 18px;
+            margin-top: 12px;
+            font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            color: #6ee7b7;
+            opacity: 0;
+            transform: translateY(8px);
+            transition: all 0.5s ease;
+        }
+
+        .repl-output.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .repl-output-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--green);
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+
+        .code-keyword { color: #c678dd; }
+        .code-string { color: #98c379; }
+        .code-function { color: #61afef; }
+        .code-comment { color: #5c6370; font-style: italic; }
+        .code-variable { color: #e5c07b; }
+        .code-builtin { color: #e06c75; }
+
+        .sub-calls-container {
+            margin-top: 20px;
+            margin-left: 48px;
+            padding-left: 20px;
+            border-left: 3px solid var(--blue);
+        }
+
+        .sub-calls-header {
+            color: var(--blue);
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sub-call {
+            background: var(--bg-tertiary);
+            border: 1px solid #475569;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+            opacity: 0;
+            transform: scale(0.95) translateX(-20px);
+            transition: all 0.5s ease;
+        }
+
+        .sub-call.visible {
+            opacity: 1;
+            transform: scale(1) translateX(0);
+        }
+
+        .sub-call-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .sub-call-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            background: var(--yellow);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .sub-call-title {
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .sub-call-section {
+            margin-top: 8px;
+        }
+
+        .sub-call-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+            letter-spacing: 0.5px;
+        }
+
+        .sub-call-prompt {
+            background: var(--bg-code);
+            border-radius: 6px;
+            padding: 12px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .sub-call-response {
+            background: #064e3b;
+            border-radius: 6px;
+            padding: 12px;
+            font-size: 12px;
+            color: #6ee7b7;
+            border-left: 3px solid var(--green);
+        }
+
+        .aggregation-visual {
+            background: #1e1b4b;
+            border: 2px solid var(--purple);
+            border-radius: 12px;
+            padding: 24px;
+            margin-top: 16px;
+            margin-left: 48px;
+        }
+
+        .agg-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #a78bfa;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .agg-flow {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 16px 0;
+        }
+
+        .agg-chunk {
+            background: #374151;
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-size: 12px;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.4s ease;
+        }
+
+        .agg-chunk.visible {
+            opacity: 1;
+            transform: translateY(0);
+            background: var(--blue);
+        }
+
+        .agg-arrow {
+            font-size: 24px;
+            color: var(--blue);
+            opacity: 0;
+            transition: all 0.4s ease;
+        }
+
+        .agg-arrow.visible {
+            opacity: 1;
+        }
+
+        .agg-result {
+            background: var(--green);
+            padding: 14px 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            opacity: 0;
+            transform: scale(0.9);
+            transition: all 0.5s ease;
+        }
+
+        .agg-result.visible {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .final-answer-box {
+            background: linear-gradient(135deg, #064e3b, #065f46);
+            border: 2px solid var(--green);
+            border-radius: 12px;
+            padding: 24px;
+            text-align: center;
+            margin-top: 16px;
+            margin-left: 48px;
+            opacity: 0;
+            transform: scale(0.9);
+            transition: all 0.6s ease;
+        }
+
+        .final-answer-box.visible {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .final-answer-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #6ee7b7;
+            margin-bottom: 12px;
+        }
+
+        .final-answer-text {
+            font-size: 16px;
+            color: #a7f3d0;
+            line-height: 1.6;
+        }
+
+        .progress-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--blue), #8b5cf6);
+            transition: width 0.3s ease;
+            z-index: 1000;
+        }
+
+        .status-bar {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--bg-tertiary);
+            border: 1px solid #475569;
+            border-radius: 8px;
+            padding: 12px 20px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--green);
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.paused {
+            background: var(--yellow);
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        @keyframes spawn {
+            0% { transform: scale(1); }
+            30% { transform: scale(1.08); }
+            60% { transform: scale(0.98); }
+            100% { transform: scale(1); }
+        }
+
+        .spawning {
+            animation: spawn 0.6s ease;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+
+        .empty-state h2 {
+            font-size: 24px;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+
+        .empty-state p {
+            font-size: 14px;
+            max-width: 400px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>RLM Execution Flow Visualization</h1>
+        <div class="subtitle">Interactive animation showing how RLM processes long context with hierarchical sub-LLM calls</div>
+        <div class="controls">
+            <button class="btn primary" id="playBtn">
+                <span id="playIcon">▶</span> <span id="playText">Play</span>
+            </button>
+            <button class="btn" id="stepBtn">
+                <span>⏭</span> Step
+            </button>
+            <button class="btn" id="resetBtn">
+                <span>↺</span> Reset
+            </button>
+            <div class="speed-control">
+                <label>Speed:</label>
+                <input type="range" id="speedSlider" min="0.5" max="3" step="0.5" value="1">
+                <span id="speedValue">1x</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="sidebar">
+            <h2>Scenarios</h2>
+            <button class="scenario-btn active" id="scenario-needle">
+                <h3>🔍 Needle in a Haystack</h3>
+                <p>Find hidden info in 100 lines of text</p>
+            </button>
+            <button class="scenario-btn" id="scenario-qa">
+                <h3>📚 Multi-Document Q&A</h3>
+                <p>Answer question across 5 documents</p>
+            </button>
+            <button class="scenario-btn" id="scenario-analysis">
+                <h3>📈 Data Analysis</h3>
+                <p>Analyze dataset with RLM sub-calls</p>
+            </button>
+
+            <div class="scenario-info">
+                <h3>Scenario Details</h3>
+                <div class="info-row">
+                    <span class="label">Context Size:</span>
+                    <span class="value" id="contextSize">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Chunks:</span>
+                    <span class="value" id="chunkCount">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Iterations:</span>
+                    <span class="value" id="iterationCount">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Sub-LLM Calls:</span>
+                    <span class="value" id="subCallCount">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Strategy:</span>
+                    <span class="value" id="strategy">-</span>
+                </div>
+            </div>
+
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #7c3aed;"></div>
+                    <span>Parent RLM</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #10b981;"></div>
+                    <span>Code Execution (REPL)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #f59e0b;"></div>
+                    <span>LLM Sub-call</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ef4444;"></div>
+                    <span>Aggregation</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #22c55e;"></div>
+                    <span>Final Answer</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="content" id="contentArea">
+            <div class="flow-container" id="flowContainer">
+                <div class="empty-state">
+                    <div class="empty-state-icon">🎬</div>
+                    <h2>Ready to Start</h2>
+                    <p>Select a scenario and click Play to see how RLM hierarchically processes long context with sub-LLM calls.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+
+    <div class="status-bar">
+        <div class="status-indicator" id="statusIndicator"></div>
+        <span id="statusText">Ready</span>
+        <span>Step: <strong id="currentStep">0</strong> / <span id="totalSteps">0</span></span>
+    </div>
+
+    <script>
+    // ==========================================
+    // Scenario Definitions
+    // ==========================================
+    const scenarios = {
+        needle: {
+            name: "Needle in a Haystack",
+            contextSize: "5,000 chars",
+            chunkCount: "5 chunks",
+            iterationCount: "5",
+            subCallCount: "5 + 1",
+            strategy: "Chunk & Query",
+            steps: [
+                {
+                    type: "parent",
+                    badge: "parent",
+                    title: "Initialize RLM - Inspect Context",
+                    description: "RLM receives context (100 lines, 5000 chars) and examines its structure",
+                    codeSections: [
+                        {
+                            label: "REPL: Check context",
+                            code: `print(f"Context type: {type(context)}")
+print(f"Context length: {len(context)} chars")
+line_count = context.count('\\n') + 1
+print(f"Number of lines: {line_count}")`,
+                            output: `Context type: <class 'str'>
+Context length: 5000 chars
+Number of lines: 100`
+                        }
+                    ]
+                },
+                {
+                    type: "code",
+                    badge: "code",
+                    title: "Plan: Split Context into Chunks",
+                    description: "RLM decides to split the context into 5 manageable chunks for parallel processing",
+                    codeSections: [
+                        {
+                            label: "REPL: Split into 5 chunks",
+                            code: `chunk_size = len(context) // 5
+chunks = []
+for i in range(5):
+    start = i * chunk_size
+    end = (i + 1) * chunk_size if i < 4 else len(context)
+    chunks.append(context[start:end])
+    print(f"Chunk {i}: {len(chunks[-1])} chars")`,
+                            output: `Chunk 0: 1000 chars
+Chunk 1: 1000 chars
+Chunk 2: 1000 chars
+Chunk 3: 1000 chars
+Chunk 4: 1000 chars`
+                        }
+                    ]
+                },
+                {
+                    type: "llm-batch",
+                    badge: "llm",
+                    title: "Spawn 5 Parallel LLM Sub-calls",
+                    description: "RLM queries each chunk concurrently to find the hidden message",
+                    codeSections: [
+                        {
+                            label: "REPL: Prepare prompts",
+                            code: `prompts = [
+    f"Find any important message in:\\n{chunk}"
+    for chunk in chunks
+]`,
+                            output: null
+                        },
+                        {
+                            label: "REPL: Execute batched query",
+                            code: `answers = llm_query_batched(prompts)
+for i, answer in enumerate(answers):
+    print(f"Chunk {i}: {answer}")`,
+                            output: `Chunk 0: No important message found.
+Chunk 1: No important message found.
+Chunk 2: FOUND: 'The answer to life is 42'!
+Chunk 3: No important message found.
+Chunk 4: No important message found.`,
+                            highlightLines: [0, 1, 2]
+                        }
+                    ],
+                    subCalls: [
+                        { id: 0, prompt: "Find any important message in:\nLine 0-19: This is filler text...", response: "No important message found." },
+                        { id: 1, prompt: "Find any important message in:\nLine 20-39: This is filler text...", response: "No important message found." },
+                        { id: 2, prompt: "Find any important message in:\nLine 40-59: ...Line 47: IMPORTANT: The answer to life is 42....", response: "⚠️ FOUND: 'The answer to life is 42' at line 47!" },
+                        { id: 3, prompt: "Find any important message in:\nLine 60-79: This is filler text...", response: "No important message found." },
+                        { id: 4, prompt: "Find any important message in:\nLine 80-99: This is filler text...", response: "No important message found." }
+                    ]
+                },
+                {
+                    type: "aggregate",
+                    badge: "aggregate",
+                    title: "Aggregate Results from Sub-calls",
+                    description: "RLM combines answers and identifies the key finding from Chunk 2",
+                    codeSections: [
+                        {
+                            label: "REPL: Extract key finding",
+                            code: `important_findings = []
+for i, answer in enumerate(answers):
+    if "FOUND" in answer:
+        important_findings.append(answer)
+
+result = important_findings[0]
+print(f"Final answer: {result}")`,
+                            output: `Final answer: FOUND: 'The answer to life is 42'!`
+                        }
+                    ],
+                    aggregation: {
+                        chunks: ["Chunk 0: Nothing", "Chunk 1: Nothing", "Chunk 2: FOUND!", "Chunk 3: Nothing", "Chunk 4: Nothing"],
+                        result: "The answer to life is 42"
+                    }
+                },
+                {
+                    type: "final",
+                    badge: "final",
+                    title: "Return Final Answer",
+                    description: "RLM provides the extracted answer via FINAL_VAR",
+                    codeSections: [
+                        {
+                            label: "REPL: Return answer",
+                            code: `final_answer = result
+FINAL_VAR(final_answer)`,
+                            output: null
+                        }
+                    ],
+                    finalAnswer: "The answer to life is 42"
+                }
+            ]
+        },
+        qa: {
+            name: "Multi-Document Q&A",
+            contextSize: "10,000 chars",
+            chunkCount: "5 documents",
+            iterationCount: "6",
+            subCallCount: "5 + 1",
+            strategy: "Per-document Analysis + Synthesis",
+            steps: [
+                {
+                    type: "parent",
+                    badge: "parent",
+                    title: "Initialize RLM - Analyze Query",
+                    description: "Question: 'How many jobs did the author have throughout their career?'",
+                    codeSections: [
+                        {
+                            label: "REPL: Understand the query",
+                            code: `query = "How many jobs did the author have?"
+print(f"Query: {query}")
+print(f"Context contains {len(context)} documents")
+total_chars = sum(len(doc) for doc in context)
+print(f"Total context size: {total_chars} chars")`,
+                            output: `Query: How many jobs did the author have?
+Context contains 5 documents
+Total context size: 10000 chars`
+                        }
+                    ]
+                },
+                {
+                    type: "code",
+                    badge: "code",
+                    title: "Strategy: Query Each Document",
+                    description: "RLM plans to query each document separately for job information",
+                    codeSections: [
+                        {
+                            label: "REPL: Prepare per-document queries",
+                            code: `prompts = []
+for i, doc in enumerate(context):
+    prompt = f"Query: {query}\\nDoc {i}: {doc[:500]}...\\nExtract all jobs mentioned."
+    prompts.append(prompt)
+print(f"Prepared {len(prompts)} queries")`,
+                            output: `Prepared 5 queries`
+                        }
+                    ]
+                },
+                {
+                    type: "llm-batch",
+                    badge: "llm",
+                    title: "Parallel LLM Calls - Per-Document Analysis",
+                    description: "Each sub-LLM analyzes one document for job mentions",
+                    codeSections: [
+                        {
+                            label: "REPL: Execute parallel queries",
+                            code: `answers = llm_query_batched(prompts)
+for i, answer in enumerate(answers):
+    print(f"Document {i}: {answer}")`,
+                            output: `Document 0: Jobs: Teacher, Principal
+Document 1: Jobs: Software Engineer
+Document 2: No jobs mentioned
+Document 3: Jobs: Consultant, Writer
+Document 4: Jobs: Teacher (duplicate)`,
+                            highlightLines: [0, 1, 2, 3, 4, 5]
+                        }
+                    ],
+                    subCalls: [
+                        { id: 0, prompt: "Query: How many jobs?\nDocument 0: [Career bio...]", response: "Jobs: Teacher, Principal" },
+                        { id: 1, prompt: "Query: How many jobs?\nDocument 1: [Work history...]", response: "Jobs: Software Engineer" },
+                        { id: 2, prompt: "Query: How many jobs?\nDocument 2: [Personal life...]", response: "No jobs mentioned" },
+                        { id: 3, prompt: "Query: How many jobs?\nDocument 3: [Later career...]", response: "Jobs: Consultant, Writer" },
+                        { id: 4, prompt: "Query: How many jobs?\nDocument 4: [Early life...]", response: "Jobs: Teacher (duplicate)" }
+                    ]
+                },
+                {
+                    type: "aggregate",
+                    badge: "aggregate",
+                    title: "Collect & Deduplicate Jobs",
+                    description: "RLM aggregates all job mentions and removes duplicates",
+                    codeSections: [
+                        {
+                            label: "REPL: Parse and deduplicate",
+                            code: `all_jobs = set()
+for answer in answers:
+    if "No jobs" not in answer:
+        jobs = answer.replace("Jobs: ", "").split(", ")
+        all_jobs.update(jobs)
+print(f"Unique jobs: {all_jobs}")
+print(f"Total count: {len(all_jobs)}")`,
+                            output: `Unique jobs: {'Teacher', 'Principal', 'Software Engineer', 'Consultant', 'Writer'}
+Total count: 5`
+                        }
+                    ],
+                    aggregation: {
+                        chunks: ["Teacher, Principal", "Software Engineer", "(none)", "Consultant, Writer", "Teacher (dup)"],
+                        result: "5 unique jobs: Teacher, Principal, Software Engineer, Consultant, Writer"
+                    }
+                },
+                {
+                    type: "llm",
+                    badge: "llm",
+                    title: "Synthesize Final Answer",
+                    description: "RLM calls LLM to format the answer naturally",
+                    codeSections: [
+                        {
+                            label: "REPL: Synthesize answer",
+                            code: `synthesis_prompt = f"""
+Based on 5 documents, the author had:
+{', '.join(all_jobs)}
+How many jobs did the author have?
+"""
+final_answer = llm_query(synthesis_prompt)`,
+                            output: null
+                        }
+                    ],
+                    subCalls: [
+                        { id: 0, prompt: "Based on 5 documents, the author had: Teacher, Principal, Software Engineer, Consultant, Writer. How many jobs did the author have?", response: "The author had 5 distinct jobs: Teacher, Principal, Software Engineer, Consultant, and Writer." }
+                    ]
+                },
+                {
+                    type: "final",
+                    badge: "final",
+                    title: "Return Final Answer",
+                    description: "RLM returns the synthesized answer",
+                    codeSections: [
+                        {
+                            label: "REPL: Return answer",
+                            code: `FINAL_VAR(final_answer)`,
+                            output: null
+                        }
+                    ],
+                    finalAnswer: "The author had 5 distinct jobs: Teacher, Principal, Software Engineer, Consultant, and Writer."
+                }
+            ]
+        },
+        analysis: {
+            name: "Data Analysis with RLM Sub-calls",
+            contextSize: "8,000 chars",
+            chunkCount: "4 regions",
+            iterationCount: "7",
+            subCallCount: "4 + 1 (rlm_query)",
+            strategy: "Chunk Analysis + RLM Deep Reasoning",
+            steps: [
+                {
+                    type: "parent",
+                    badge: "parent",
+                    title: "Initialize RLM - Examine Dataset",
+                    description: "Dataset contains quarterly sales data across 4 regions",
+                    codeSections: [
+                        {
+                            label: "REPL: Explore the dataset",
+                            code: `import json
+data = json.loads(context)
+print(f"Regions: {list(data.keys())}")
+for region in data:
+    records = data[region]
+    print(f"{region}: {len(records)} quarterly records")`,
+                            output: `Regions: ['North', 'South', 'East', 'West']
+North: 4 quarterly records
+South: 4 quarterly records
+East: 4 quarterly records
+West: 4 quarterly records`
+                        }
+                    ]
+                },
+                {
+                    type: "code",
+                    badge: "code",
+                    title: "Compute Regional Statistics",
+                    description: "RLM writes code to calculate averages and growth per region",
+                    codeSections: [
+                        {
+                            label: "REPL: Calculate statistics",
+                            code: `for region in data:
+    records = data[region]
+    total = sum(r['sales'] for r in records)
+    avg = total / len(records)
+    growth = (records[-1]['sales'] - records[0]['sales']) / records[0]['sales']
+    print(f"{region}: avg=\${avg:,.0f}, growth={growth*100:.1f}%")`,
+                            output: `North: avg=$148, growth=48.3%
+South: avg=$90.5, growth=-8.4%
+East: avg=$111.5, growth=2.7%
+West: avg=$116.3, growth=78.8%`
+                        }
+                    ]
+                },
+                {
+                    type: "llm-batch",
+                    badge: "llm",
+                    title: "Analyze Each Region's Trend",
+                    description: "Parallel LLM calls to analyze trends per region",
+                    codeSections: [
+                        {
+                            label: "REPL: Analyze trends",
+                            code: `prompts = [
+    f"Analyze sales trend for {region}:\\n{json.dumps(data[region])}"
+    for region in data
+]
+trends = llm_query_batched(prompts)
+for region, trend in zip(data.keys(), trends):
+    print(f"{region}: {trend}")`,
+                            output: `North: TREND: Up - strong performance
+South: TREND: Down - concerning pattern
+East: TREND: Stable - consistent
+West: TREND: Up - highest growth`,
+                            highlightLines: [0, 1, 2, 3, 4, 5, 6]
+                        }
+                    ],
+                    subCalls: [
+                        { id: 0, prompt: "Analyze sales trend for North: [{'Q1': 120}, {'Q2': 138}, {'Q3': 155}, {'Q4': 178}]", response: "TREND: Up - 15% growth QoQ, strong performance" },
+                        { id: 1, prompt: "Analyze sales trend for South: [{'Q1': 95}, {'Q2': 92}, {'Q3': 88}, {'Q4': 87}]", response: "TREND: Down - 8% decline QoQ, concerning pattern" },
+                        { id: 2, prompt: "Analyze sales trend for East: [{'Q1': 110}, {'Q2': 112}, {'Q3': 111}, {'Q4': 113}]", response: "TREND: Stable - 2% growth QoQ, consistent" },
+                        { id: 3, prompt: "Analyze sales trend for West: [{'Q1': 85}, {'Q2': 103}, {'Q3': 125}, {'Q4': 152}]", response: "TREND: Up - 22% growth QoQ, highest growth" }
+                    ]
+                },
+                {
+                    type: "rlm",
+                    badge: "parent",
+                    title: "Deep Reasoning: Root Cause Analysis",
+                    description: "RLM spawns child RLM to investigate why South region is declining",
+                    codeSections: [
+                        {
+                            label: "REPL: Spawn child RLM",
+                            code: `south_data = data["South"]
+decline_analysis = rlm_query(f"""
+    South region shows consistent decline:
+    {json.dumps(south_data)}
+    Identify root causes and recommend actions.
+""")
+print(f"Analysis: {decline_analysis}")`,
+                            output: `Analysis: Root causes: Market saturation, increased competition. Recommendation: Investigate competitors, increase marketing, review pricing.`
+                        }
+                    ],
+                    subCalls: [
+                        { id: 0, prompt: "[Child RLM] South region shows consistent decline: [{'Q1': 95}, {'Q2': 92}, {'Q3': 88}, {'Q4': 87}]. Identify root causes and recommend actions.", response: "Root causes: Market saturation, increased competition, reduced marketing spend. Recommendation: Investigate competitor activity, increase local marketing, review pricing strategy." }
+                    ]
+                },
+                {
+                    type: "aggregate",
+                    badge: "aggregate",
+                    title: "Synthesize Regional Insights",
+                    description: "RLM combines all insights into comprehensive view",
+                    codeSections: [
+                        {
+                            label: "REPL: Combine insights",
+                            code: `insights = {
+    "North": trends[0],
+    "South": f"{trends[1]}. {decline_analysis}",
+    "East": trends[2],
+    "West": trends[3]
+}
+for k, v in insights.items():
+    print(f"{k}: {v}")`,
+                            output: `North: Up - strong performance
+South: Down. Market saturation, increased competition
+East: Stable - consistent
+West: Up - highest growth`
+                        }
+                    ],
+                    aggregation: {
+                        chunks: ["North: Up 48%", "South: Down 8% + root causes", "East: Stable 3%", "West: Up 79%"],
+                        result: "West and North growing strongly, South declining, East stable"
+                    }
+                },
+                {
+                    type: "llm",
+                    badge: "llm",
+                    title: "Generate Executive Summary",
+                    description: "Final LLM call to create natural language summary",
+                    codeSections: [
+                        {
+                            label: "REPL: Generate summary",
+                            code: `exec_summary = llm_query(f"""
+    Create executive summary:
+    {insights}
+    Provide actionable recommendations.
+""")`,
+                            output: null
+                        }
+                    ],
+                    subCalls: [
+                        { id: 0, prompt: "Create executive summary: North up 48%, South down 8%, East stable 3%, West up 79%. Provide actionable recommendations.", response: "Q4 Sales Summary: Overall positive with West (+79%) and North (+48%) leading growth. South (-8%) requires immediate attention. Recommendation: Invest in West/North expansion, investigate South decline." }
+                    ]
+                },
+                {
+                    type: "final",
+                    badge: "final",
+                    title: "Return Final Analysis",
+                    description: "RLM returns the executive summary",
+                    codeSections: [
+                        {
+                            label: "REPL: Return analysis",
+                            code: `FINAL_VAR(exec_summary)`,
+                            output: null
+                        }
+                    ],
+                    finalAnswer: "Q4 Sales Summary: Overall positive with West (+79%) and North (+48%) leading growth. South (-8%) requires immediate attention. Recommendation: Invest in West/North expansion, investigate South decline."
+                }
+            ]
+        }
+    };
+
+    // ==========================================
+    // Animation State
+    // ==========================================
+    let currentScenario = null;
+    let currentStep = 0;
+    let isPlaying = false;
+    let playInterval = null;
+    let speed = 1;
+
+    // ==========================================
+    // DOM Elements
+    // ==========================================
+    const playBtn = document.getElementById('playBtn');
+    const stepBtn = document.getElementById('stepBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const playIcon = document.getElementById('playIcon');
+    const playText = document.getElementById('playText');
+    const speedSlider = document.getElementById('speedSlider');
+    const speedValue = document.getElementById('speedValue');
+    const flowContainer = document.getElementById('flowContainer');
+    const progressBar = document.getElementById('progressBar');
+    const statusText = document.getElementById('statusText');
+    const statusIndicator = document.getElementById('statusIndicator');
+    const currentStepEl = document.getElementById('currentStep');
+    const totalStepsEl = document.getElementById('totalSteps');
+
+    // ==========================================
+    // Initialization
+    // ==========================================
+    function init() {
+        selectScenario('needle');
+    }
+
+    function selectScenario(scenarioId) {
+        // Stop any ongoing playback
+        stopPlayback();
+        
+        currentScenario = scenarioId;
+        currentStep = 0;
+        
+        // Update sidebar buttons
+        document.querySelectorAll('.scenario-btn').forEach(btn => btn.classList.remove('active'));
+        document.getElementById(`scenario-${scenarioId}`).classList.add('active');
+        
+        // Update scenario info
+        const s = scenarios[scenarioId];
+        document.getElementById('contextSize').textContent = s.contextSize;
+        document.getElementById('chunkCount').textContent = s.chunkCount;
+        document.getElementById('iterationCount').textContent = s.iterationCount;
+        document.getElementById('subCallCount').textContent = s.subCallCount;
+        document.getElementById('strategy').textContent = s.strategy;
+        
+        // Reset UI
+        totalStepsEl.textContent = s.steps.length;
+        currentStepEl.textContent = '0';
+        statusText.textContent = 'Ready';
+        statusIndicator.classList.remove('paused');
+        progressBar.style.width = '0%';
+        
+        // Show empty state
+        flowContainer.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">🎬</div>
+                <h2>${s.name}</h2>
+                <p>Click <strong>Play</strong> or <strong>Step</strong> to see how RLM processes this scenario.</p>
+            </div>
+        `;
+        
+        updateButtons();
+    }
+
+    // ==========================================
+    // Rendering
+    // ==========================================
+    function renderStep(stepData, stepIndex) {
+        const stepEl = document.createElement('div');
+        stepEl.className = 'flow-step';
+        stepEl.id = `step-${stepIndex}`;
+        
+        let html = '';
+        
+        // Header
+        html += `
+            <div class="flow-step-header">
+                <div class="step-number">${stepIndex + 1}</div>
+                <div class="step-title">${stepData.title}</div>
+                <span class="step-badge badge-${stepData.badge}">${stepData.badge}</span>
+            </div>
+        `;
+        
+        // Description
+        html += `<div class="step-description">${stepData.description}</div>`;
+        
+        // Code sections
+        if (stepData.codeSections) {
+            stepData.codeSections.forEach((section, si) => {
+                html += `<div class="code-section">`;
+                if (section.label) {
+                    html += `<div class="code-section-label">🖥️ ${escapeHtml(section.label)}</div>`;
+                }
+                html += `<div class="code-block">`;
+                const lines = section.code.split('\n');
+                const hlLines = section.highlightLines || [];
+                lines.forEach((line, i) => {
+                    const isHighlight = hlLines.includes(i) || shouldHighlight(line, stepData);
+                    html += `<div class="code-line${isHighlight ? ' highlight' : ''}" id="step-${stepIndex}-cs${si}-line-${i}">${syntaxHighlight(line)}</div>`;
+                });
+                html += `</div>`;
+                
+                // REPL output
+                if (section.output) {
+                    html += `
+                        <div class="repl-output" id="repl-output-${stepIndex}-${si}">
+                            <div class="repl-output-label">▶ REPL Output</div>
+                            <pre style="margin: 0; white-space: pre-wrap;">${escapeHtml(section.output)}</pre>
+                        </div>
+                    `;
+                }
+                
+                html += `</div>`;
+            });
+        }
+        
+        // Sub-calls
+        if (stepData.subCalls && stepData.subCalls.length > 0) {
+            html += '<div class="sub-calls-container">';
+            html += `<div class="sub-calls-header">🔄 ${stepData.subCalls.length} Parallel Sub-call${stepData.subCalls.length > 1 ? 's' : ''}</div>`;
+            stepData.subCalls.forEach((sc, i) => {
+                html += `
+                    <div class="sub-call" id="subcall-${stepIndex}-${i}">
+                        <div class="sub-call-header">
+                            <div class="sub-call-icon">🤖</div>
+                            <div class="sub-call-title">LLM Call #${sc.id}</div>
+                        </div>
+                        <div class="sub-call-section">
+                            <div class="sub-call-label">Prompt:</div>
+                            <div class="sub-call-prompt">${escapeHtml(sc.prompt)}</div>
+                        </div>
+                        <div class="sub-call-section">
+                            <div class="sub-call-label">Response:</div>
+                            <div class="sub-call-response">${escapeHtml(sc.response)}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+        }
+        
+        // Aggregation visual
+        if (stepData.aggregation) {
+            const agg = stepData.aggregation;
+            html += '<div class="aggregation-visual">';
+            html += '<div class="agg-title">📊 Aggregation Flow</div>';
+            html += '<div class="agg-flow">';
+            agg.chunks.forEach((chunk, i) => {
+                html += `<div class="agg-chunk" id="agg-chunk-${stepIndex}-${i}">${escapeHtml(chunk)}</div>`;
+                if (i < agg.chunks.length - 1) {
+                    html += `<span class="agg-arrow" id="agg-arrow-${stepIndex}-${i}">→</span>`;
+                }
+            });
+            html += `<span class="agg-arrow" id="agg-arrow-final-${stepIndex}">→</span>`;
+            html += `<div class="agg-result" id="agg-result-${stepIndex}">${escapeHtml(agg.result)}</div>`;
+            html += '</div></div>';
+        }
+        
+        // Final answer
+        if (stepData.finalAnswer) {
+            html += `
+                <div class="final-answer-box" id="final-answer-${stepIndex}">
+                    <div class="final-answer-title">✅ Final Answer</div>
+                    <div class="final-answer-text">${escapeHtml(stepData.finalAnswer)}</div>
+                </div>
+            `;
+        }
+        
+        stepEl.innerHTML = html;
+        return stepEl;
+    }
+
+    function shouldHighlight(line, stepData) {
+        const lineLower = line.toLowerCase();
+        if (stepData.type === 'llm-batch' || stepData.type === 'llm') {
+            return lineLower.includes('llm_query');
+        }
+        if (stepData.type === 'rlm') {
+            return lineLower.includes('rlm_query');
+        }
+        if (stepData.type === 'final') {
+            return lineLower.includes('final_var');
+        }
+        return false;
+    }
+
+    function syntaxHighlight(line) {
+        // Tokenize properly: strings first, then keywords/functions
+        const tokens = [];
+        let result = line;
+        
+        // Extract strings
+        result = result.replace(/(["'`])(.*?)\1/g, (match) => {
+            const idx = tokens.length;
+            tokens.push(`<span class="code-string">${match}</span>`);
+            return `%%TOKEN${idx}%%`;
+        });
+        
+        // Extract comments
+        result = result.replace(/(#.*)$/gm, (match) => {
+            const idx = tokens.length;
+            tokens.push(`<span class="code-comment">${match}</span>`);
+            return `%%TOKEN${idx}%%`;
+        });
+        
+        // Keywords
+        result = result.replace(/\b(import|for|if|in|else|def|class|return|as|from)\b/g, '<span class="code-keyword">$1</span>');
+        
+        // Builtins
+        result = result.replace(/\b(print|len|type|range|enumerate|list|dict|set|sum|zip|json|abs|float|int)\b/g, '<span class="code-builtin">$1</span>');
+        
+        // RLM functions
+        result = result.replace(/(llm_query|rlm_query|llm_query_batched|rlm_query_batched|FINAL_VAR|SHOW_VARS)\b/g, '<span class="code-function">$1</span>');
+        
+        // Restore tokens
+        for (let i = 0; i < tokens.length; i++) {
+            result = result.replace(`%%TOKEN${i}%%`, tokens[i]);
+        }
+        
+        return result;
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // ==========================================
+    // Animation Control
+    // ==========================================
+    function stepForward() {
+        const s = scenarios[currentScenario];
+        if (!s || currentStep >= s.steps.length) {
+            stopPlayback();
+            statusText.textContent = 'Complete';
+            statusIndicator.classList.add('paused');
+            return;
+        }
+        
+        // Remove empty state on first step
+        if (currentStep === 0) {
+            flowContainer.innerHTML = '';
+        }
+        
+        // Render and show this step
+        const stepData = s.steps[currentStep];
+        const stepEl = renderStep(stepData, currentStep);
+        flowContainer.appendChild(stepEl);
+        
+        // Trigger animation
+        requestAnimationFrame(() => {
+            stepEl.classList.add('visible');
+            
+            let animDelay = 0;
+            
+            // Animate each code section sequentially
+            const codeSections = stepEl.querySelectorAll('.code-section');
+            codeSections.forEach((section, si) => {
+                const lines = section.querySelectorAll('.code-line');
+                lines.forEach((line, i) => {
+                    setTimeout(() => {
+                        line.classList.add('visible');
+                    }, animDelay + i * 60);
+                });
+                animDelay += lines.length * 60 + 100;
+                
+                // Animate REPL output after lines
+                const replOutput = section.querySelector('.repl-output');
+                if (replOutput) {
+                    setTimeout(() => {
+                        replOutput.classList.add('visible');
+                    }, animDelay);
+                    animDelay += 400;
+                }
+            });
+            
+            // Animate sub-calls
+            const subCalls = stepEl.querySelectorAll('.sub-call');
+            subCalls.forEach((sc, i) => {
+                setTimeout(() => {
+                    sc.classList.add('visible');
+                    sc.classList.add('spawning');
+                }, animDelay + i * 250);
+            });
+            
+            if (subCalls.length > 0) {
+                animDelay += subCalls.length * 250 + 300;
+            }
+            
+            // Animate aggregation
+            const aggChunks = stepEl.querySelectorAll('.agg-chunk');
+            aggChunks.forEach((chunk, i) => {
+                setTimeout(() => {
+                    chunk.classList.add('visible');
+                }, animDelay + i * 200);
+            });
+            
+            const aggArrows = stepEl.querySelectorAll('.agg-arrow');
+            aggArrows.forEach((arrow, i) => {
+                setTimeout(() => {
+                    arrow.classList.add('visible');
+                }, animDelay + (aggChunks.length * 200) + (i * 100));
+            });
+            
+            const aggResult = stepEl.querySelector('.agg-result');
+            if (aggResult) {
+                setTimeout(() => {
+                    aggResult.classList.add('visible');
+                }, animDelay + (aggChunks.length * 200) + (aggArrows.length * 100) + 200);
+            }
+            
+            // Animate final answer
+            const finalAnswer = stepEl.querySelector('.final-answer-box');
+            if (finalAnswer) {
+                setTimeout(() => {
+                    finalAnswer.classList.add('visible');
+                }, animDelay + 400);
+            }
+            
+            // Scroll into view
+            setTimeout(() => {
+                stepEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 200);
+        });
+        
+        currentStep++;
+        currentStepEl.textContent = currentStep;
+        updateProgress();
+        updateButtons();
+        
+        if (currentStep >= s.steps.length) {
+            stopPlayback();
+            statusText.textContent = 'Complete';
+            statusIndicator.classList.add('paused');
+        }
+    }
+
+    function startPlayback() {
+        isPlaying = true;
+        playIcon.textContent = '⏸';
+        playText.textContent = 'Pause';
+        playBtn.classList.remove('primary');
+        statusText.textContent = 'Playing...';
+        statusIndicator.classList.remove('paused');
+        updateButtons();
+        
+        const interval = 2500 / speed;
+        playInterval = setInterval(() => {
+            stepForward();
+            if (!isPlaying) clearInterval(playInterval);
+        }, interval);
+    }
+
+    function stopPlayback() {
+        isPlaying = false;
+        playIcon.textContent = '▶';
+        playText.textContent = 'Play';
+        playBtn.classList.add('primary');
+        if (playInterval) {
+            clearInterval(playInterval);
+            playInterval = null;
+        }
+        updateButtons();
+    }
+
+    function resetAnimation() {
+        stopPlayback();
+        currentStep = 0;
+        currentStepEl.textContent = '0';
+        progressBar.style.width = '0%';
+        statusText.textContent = 'Ready';
+        statusIndicator.classList.remove('paused');
+        
+        if (currentScenario) {
+            const s = scenarios[currentScenario];
+            flowContainer.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">🎬</div>
+                    <h2>${s.name}</h2>
+                    <p>Click <strong>Play</strong> or <strong>Step</strong> to see how RLM processes this scenario.</p>
+                </div>
+            `;
+        }
+        
+        updateButtons();
+    }
+
+    function updateProgress() {
+        const s = scenarios[currentScenario];
+        if (!s) return;
+        const progress = (currentStep / s.steps.length) * 100;
+        progressBar.style.width = `${progress}%`;
+    }
+
+    function updateButtons() {
+        const s = scenarios[currentScenario];
+        const isComplete = s && currentStep >= s.steps.length;
+        stepBtn.disabled = isComplete;
+    }
+
+    // ==========================================
+    // Event Listeners
+    // ==========================================
+    playBtn.addEventListener('click', () => {
+        if (isPlaying) {
+            stopPlayback();
+        } else {
+            startPlayback();
+        }
+    });
+
+    stepBtn.addEventListener('click', () => {
+        if (!isPlaying) {
+            stepForward();
+        }
+    });
+
+    resetBtn.addEventListener('click', resetAnimation);
+
+    speedSlider.addEventListener('input', () => {
+        speed = parseFloat(speedSlider.value);
+        speedValue.textContent = `${speed}x`;
+        
+        if (isPlaying) {
+            clearInterval(playInterval);
+            const interval = 2500 / speed;
+            playInterval = setInterval(() => {
+                stepForward();
+                if (!isPlaying) clearInterval(playInterval);
+            }, interval);
+        }
+    });
+
+    // Scenario buttons
+    document.getElementById('scenario-needle').addEventListener('click', () => selectScenario('needle'));
+    document.getElementById('scenario-qa').addEventListener('click', () => selectScenario('qa'));
+    document.getElementById('scenario-analysis').addEventListener('click', () => selectScenario('analysis'));
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        if (e.code === 'Space') {
+            e.preventDefault();
+            if (isPlaying) stopPlayback();
+            else startPlayback();
+        }
+        if (e.code === 'ArrowRight' && !isPlaying) {
+            stepForward();
+        }
+        if (e.code === 'KeyR' && !isPlaying) {
+            resetAnimation();
+        }
+    });
+
+    // Start
+    init();
+    </script>
+</body>
+</html>
