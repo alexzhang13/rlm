@@ -232,8 +232,8 @@ class RLM:
             env_kwargs["lm_handler_address"] = (lm_handler.host, lm_handler.port)
             env_kwargs["context_payload"] = prompt
             env_kwargs["depth"] = self.depth + 1  # Environment depth is RLM depth + 1
-            # For local environment with max_depth > 1, pass subcall callback for recursive RLM calls
-            if self.environment_type == "local" and self.max_depth > 1:
+            # For local/ipython environments with max_depth > 1, pass subcall callback for recursive RLM calls
+            if self.environment_type in ("local", "ipython") and self.max_depth > 1:
                 env_kwargs["subcall_fn"] = self._subcall
             # Pass custom tools to the environment
             if self.custom_tools is not None:
@@ -828,7 +828,7 @@ class RLM:
             ValueError: If the environment type does not support persistent mode.
         """
         # Known environments that support persistence
-        persistent_supported_environments = {"local"}
+        persistent_supported_environments = {"local", "ipython"}
 
         if self.environment_type not in persistent_supported_environments:
             raise ValueError(

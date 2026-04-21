@@ -16,6 +16,7 @@ from rlm.environments.local_repl import LocalREPL
 
 __all__ = [
     "BaseEnv",
+    "IPythonREPL",
     "LocalREPL",
     "RESERVED_TOOL_NAMES",
     "SupportsCustomTools",
@@ -31,15 +32,19 @@ __all__ = [
 
 
 def get_environment(
-    environment: Literal["local", "modal", "docker", "daytona", "prime", "e2b"],
+    environment: Literal["local", "ipython", "modal", "docker", "daytona", "prime", "e2b"],
     environment_kwargs: dict[str, Any],
 ) -> BaseEnv:
     """
     Routes a specific environment and the args (as a dict) to the appropriate environment if supported.
-    Currently supported environments: ['local', 'modal', 'docker', 'daytona', 'prime', 'e2b']
+    Currently supported environments: ['local', 'ipython', 'modal', 'docker', 'daytona', 'prime', 'e2b']
     """
     if environment == "local":
         return LocalREPL(**environment_kwargs)
+    elif environment == "ipython":
+        from rlm.environments.ipython_repl import IPythonREPL
+
+        return IPythonREPL(**environment_kwargs)
     elif environment == "modal":
         from rlm.environments.modal_repl import ModalREPL
 
@@ -62,5 +67,5 @@ def get_environment(
         return E2BREPL(**environment_kwargs)
     else:
         raise ValueError(
-            f"Unknown environment: {environment}. Supported: ['local', 'modal', 'docker', 'daytona', 'prime', 'e2b']"
+            f"Unknown environment: {environment}. Supported: ['local', 'ipython', 'modal', 'docker', 'daytona', 'prime', 'e2b']"
         )
