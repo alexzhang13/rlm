@@ -14,6 +14,17 @@ from rlm.environments.base_env import (
 )
 from rlm.environments.local_repl import LocalREPL
 
+
+def __getattr__(name: str) -> Any:
+    # Lazy-load environments with optional dependencies so that the package
+    # imports cleanly even when those extras aren't installed.
+    if name == "IPythonREPL":
+        from rlm.environments.ipython_repl import IPythonREPL
+
+        return IPythonREPL
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 __all__ = [
     "BaseEnv",
     "IPythonREPL",

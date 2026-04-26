@@ -430,3 +430,212 @@ def test_get_environment_routes_ipython():
         assert "1024" in result.stdout
     finally:
         env.cleanup()
+
+
+@pytest.mark.skipif(not _has_subprocess, reason="jupyter_client not installed")
+def test_get_environment_routes_ipython_subprocess():
+    from rlm.environments import get_environment
+
+    env = get_environment("ipython", {"kernel_mode": "subprocess"})
+    try:
+        assert isinstance(env, IPythonREPL)
+        result = env.execute_code("print(2 ** 10)")
+        assert "1024" in result.stdout
+    finally:
+        env.cleanup()
+
+
+def test_ipython_repl_importable_from_package():
+    """``IPythonREPL`` is in ``__all__`` and must be importable lazily."""
+    from rlm.environments import IPythonREPL as Imported
+
+    assert Imported is IPythonREPL
+
+
+# -----------------------------------------------------------------------------
+# rlm_calls accounting (regression: prior subprocess impl leaked across cells)
+# -----------------------------------------------------------------------------
+
+
+@BOTH_MODES
+def test_rlm_calls_do_not_leak_across_cells(kernel_mode: str):
+    """Each REPLResult.rlm_calls must reflect only the current cell's calls."""
+    subcall = _FakeSubcall(responses=["x"])
+    with IPythonREPL(kernel_mode=kernel_mode, subcall_fn=subcall) as repl:
+        r1 = repl.execute_code('rlm_query("a")')
+        r2 = repl.execute_code('rlm_query("b")')
+        r3 = repl.execute_code('rlm_query("c")')
+        r4 = repl.execute_code('print("no rlm here")')
+    assert len(r1.rlm_calls) == 1
+    assert len(r2.rlm_calls) == 1
+    assert len(r3.rlm_calls) == 1
+    assert len(r4.rlm_calls) == 0
+
+
+# -----------------------------------------------------------------------------
+# cell_timeout normalization
+# -----------------------------------------------------------------------------
+
+
+@BOTH_MODES
+def test_cell_timeout_zero_treated_as_disabled(kernel_mode: str):
+    """``cell_timeout=0`` is meaningless; treated as ``None``."""
+    with IPythonREPL(kernel_mode=kernel_mode, cell_timeout=0) as repl:
+        assert repl.cell_timeout is None
+        # And short code still runs without spurious timeouts.
+        result = repl.execute_code("print(2 + 2)")
+    assert "4" in result.stdout
+
+
+# -----------------------------------------------------------------------------
+# In-process error formatting
+# -----------------------------------------------------------------------------
+
+
+def test_in_process_error_includes_traceback_and_user_frame():
+    """In-process stderr should include a real traceback, not just a one-liner."""
+    with IPythonREPL(kernel_mode="in_process") as repl:
+        result = repl.execute_code("def boom():\n    1/0\n\nboom()")
+    assert "ZeroDivisionError" in result.stderr
+    assert "Traceback" in result.stderr
+    assert "boom" in result.stderr  # user frame name visible
+
+
+# -----------------------------------------------------------------------------
+# Setup error → cleanup
+# -----------------------------------------------------------------------------
+
+
+# -----------------------------------------------------------------------------
+# Concurrency / isolation
+# -----------------------------------------------------------------------------
+
+
+def test_in_process_two_instances_have_distinct_user_modules():
+    """Two coexisting in-process instances must not share ``sys.modules['__main__']``."""
+    repl_a = IPythonREPL(kernel_mode="in_process")
+    repl_b = IPythonREPL(kernel_mode="in_process")
+    try:
+        repl_a.execute_code("x = 'A'")
+        repl_b.execute_code("x = 'B'")
+        ra = repl_a.execute_code("print(x)")
+        rb = repl_b.execute_code("print(x)")
+        assert "A" in ra.stdout and "B" not in ra.stdout
+        assert "B" in rb.stdout and "A" not in rb.stdout
+        # And ``sys.modules['__main__']`` is not the IPython user module
+        # for either instance.
+        assert repl_a._user_module is not repl_b._user_module
+        assert repl_a._user_module.__name__ != "__main__"
+        assert repl_b._user_module.__name__ != "__main__"
+    finally:
+        repl_a.cleanup()
+        repl_b.cleanup()
+
+
+def test_in_process_user_module_dropped_from_sys_modules_on_cleanup():
+    """No ``sys.modules`` leak after cleanup."""
+    import sys as _sys
+
+    repl = IPythonREPL(kernel_mode="in_process")
+    name = repl._user_module.__name__
+    assert name in _sys.modules
+    repl.cleanup()
+    assert name not in _sys.modules
+
+
+@BOTH_MODES
+def test_concurrent_add_context_indices_are_unique(kernel_mode: str):
+    """Two threads calling ``add_context`` concurrently must not collide."""
+    with IPythonREPL(kernel_mode=kernel_mode, persistent=True) as repl:
+        results: list[int] = []
+        lock = threading.Lock()
+
+        def worker(i: int) -> None:
+            idx = repl.add_context(f"payload-{i}")
+            with lock:
+                results.append(idx)
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+    # All indices distinct, contiguous, and 0..7 in some order.
+    assert sorted(results) == list(range(8))
+    assert repl.get_context_count() == 8
+
+
+def test_subcall_concurrency_is_globally_bounded():
+    """``max_concurrent_subcalls`` caps simultaneous ``subcall_fn`` calls
+    even across multiple ``rlm_query`` / ``rlm_query_batched`` requests."""
+    if not _has_subprocess:
+        pytest.skip("jupyter_client not installed")
+
+    in_flight = 0
+    peak = 0
+    cv_lock = threading.Lock()
+
+    def slow_subcall(prompt: str, model: str | None = None) -> RLMChatCompletion:
+        nonlocal in_flight, peak
+        with cv_lock:
+            in_flight += 1
+            peak = max(peak, in_flight)
+        time.sleep(0.05)
+        with cv_lock:
+            in_flight -= 1
+        usage = UsageSummary(
+            model_usage_summaries={
+                "fake-model": ModelUsageSummary(
+                    total_calls=1, total_input_tokens=0, total_output_tokens=0
+                )
+            }
+        )
+        return RLMChatCompletion(
+            root_model="fake-model",
+            prompt=prompt,
+            response="ok",
+            usage_summary=usage,
+            execution_time=0.05,
+        )
+
+    # cap=2 → no matter how many calls the kernel fans out, only 2 should
+    # ever be running at once.
+    with IPythonREPL(
+        kernel_mode="subprocess",
+        subcall_fn=slow_subcall,
+        max_concurrent_subcalls=2,
+    ) as repl:
+        # Two batched-of-8 requests issued from kernel-side threads
+        # simulates fan-out far above the cap.
+        result = repl.execute_code(
+            "import threading\n"
+            "def go():\n"
+            "    rlm_query_batched(['p1','p2','p3','p4','p5','p6','p7','p8'])\n"
+            "ts = [threading.Thread(target=go) for _ in range(2)]\n"
+            "for t in ts: t.start()\n"
+            "for t in ts: t.join()\n"
+            "print('done')"
+        )
+    assert "done" in result.stdout
+    assert peak <= 2, f"semaphore should bound concurrency to 2, saw peak={peak}"
+
+
+@pytest.mark.skipif(not _has_subprocess, reason="jupyter_client not installed")
+def test_setup_failure_runs_cleanup():
+    """If construction fails after the broker/kernel start, cleanup runs.
+
+    A non-JSON-serializable context_payload triggers a TypeError in
+    ``add_context`` *after* ``setup()`` has already brought up the kernel
+    and broker. The new try/except in ``__init__`` must run cleanup
+    before re-raising; otherwise the kernel + broker would be orphaned.
+    """
+
+    class _Unserializable:
+        pass
+
+    with pytest.raises(TypeError):
+        IPythonREPL(
+            kernel_mode="subprocess",
+            context_payload={"bad": _Unserializable()},
+        )

@@ -21,6 +21,7 @@ import copy
 import io
 import json
 import os
+import re
 import shutil
 import signal
 import socketserver
@@ -29,6 +30,7 @@ import tempfile
 import textwrap
 import threading
 import time
+import traceback
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -74,6 +76,18 @@ _IPYTHON_INTERNAL_NAMES: frozenset[str] = frozenset(
     }
 )
 
+# Matches the most common terminal escape forms emitted by IPython tracebacks:
+# CSI (``ESC[…``), OSC (``ESC]…BEL`` or ``ESC]…ESC\``), and the 2-byte
+# ``ESC <char>`` form. The previous CSI-only regex left OSC/ST sequences in
+# place when the surrounding terminal supported them.
+_ANSI_RE = re.compile(
+    r"\x1b(?:"
+    r"\[[0-9;?]*[ -/]*[@-~]"  # CSI
+    r"|\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC, BEL- or ST-terminated
+    r"|[@-Z\\-_]"  # 2-byte escape
+    r")"
+)
+
 
 # =============================================================================
 # Subcall broker (subprocess kernel mode)
@@ -111,6 +125,12 @@ class _SubcallBroker:
         self._server: socketserver.ThreadingTCPServer | None = None
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
+        # Bounds total in-flight ``subcall_fn`` invocations across *all*
+        # broker requests (single + batched), regardless of how many
+        # connections the kernel opens. Per-request thread pools alone
+        # only bound concurrency within a single batched request.
+        self._subcall_semaphore = threading.Semaphore(max(1, max_concurrent))
+        self._shutting_down = False
         self.completions: list[RLMChatCompletion] = []
         self.final_answer: str | None = None
 
@@ -143,8 +163,27 @@ class _SubcallBroker:
         self._thread.start()
         return self.address
 
+    def _run_subcall(self, prompt: str, model: str | None) -> RLMChatCompletion:
+        """Invoke ``subcall_fn`` under the global concurrency semaphore.
+
+        Without this gate, kernel-side code that fans out N concurrent
+        ``rlm_query`` calls (or runs N independent ``rlm_query_batched``
+        requests) would invoke ``subcall_fn`` N times in parallel, ignoring
+        ``max_concurrent``.
+        """
+        assert self.subcall_fn is not None
+        with self._subcall_semaphore:
+            return self.subcall_fn(prompt, model)
+
     def _dispatch(self, data: dict[str, Any]) -> dict[str, Any]:
         req_type = data.get("type")
+
+        # Reject new subcall work once cleanup has begun, so we don't kick
+        # off API calls (which incur cost) for a kernel that's about to
+        # die. ``final_var`` still goes through — it's cheap and we may
+        # already have its accumulated answer to drain.
+        if self._shutting_down and req_type in ("subcall", "subcall_batched"):
+            return {"error": "Broker shutting down"}
 
         if req_type == "final_var":
             value = data.get("value")
@@ -156,7 +195,7 @@ class _SubcallBroker:
             if self.subcall_fn is None:
                 return {"error": "No subcall_fn configured; rlm_query unavailable"}
             try:
-                completion = self.subcall_fn(data.get("prompt", ""), data.get("model"))
+                completion = self._run_subcall(data.get("prompt", ""), data.get("model"))
                 with self._lock:
                     self.completions.append(completion)
                 return {"completion": completion.to_dict()}
@@ -175,13 +214,17 @@ class _SubcallBroker:
 
             def _one(i: int, prompt: str) -> None:
                 try:
-                    completion = self.subcall_fn(prompt, model)  # type: ignore[misc]
+                    # _run_subcall already gates on the global semaphore.
+                    completion = self._run_subcall(prompt, model)
                     with local_lock:
                         local_completions.append((i, completion))
                     responses[i] = completion.response
                 except Exception as e:
                     errors[i] = f"{type(e).__name__}: {e}"
 
+            # Per-batch pool size is capped at ``max_concurrent`` for
+            # symmetry, but the semaphore inside ``_run_subcall`` is what
+            # actually bounds total in-flight subcalls across requests.
             max_workers = max(1, min(self.max_concurrent, len(prompts) or 1))
             with ThreadPoolExecutor(max_workers=max_workers) as ex:
                 futures = [ex.submit(_one, i, p) for i, p in enumerate(prompts)]
@@ -202,6 +245,12 @@ class _SubcallBroker:
         return {"error": f"Unknown message type: {req_type!r}"}
 
     def stop(self) -> None:
+        # Flip the flag *before* tearing down the server so any handler
+        # threads still inside ``_dispatch`` reject new subcall work
+        # instead of starting a fresh ``subcall_fn`` (which can incur API
+        # cost). Already-running ``subcall_fn`` invocations will run to
+        # completion — we can't cooperatively cancel arbitrary user code.
+        self._shutting_down = True
         if self._server is not None:
             self._server.shutdown()
             self._server.server_close()
@@ -233,6 +282,7 @@ def _build_kernel_bootstrap(
     lm_address: tuple[str, int] | None,
     subcall_address: tuple[str, int] | None,
     depth: int,
+    subcall_timeout: float | None,
 ) -> str:
     """Code executed once inside the kernel to wire up scaffold helpers."""
     return textwrap.dedent(
@@ -244,6 +294,7 @@ def _build_kernel_bootstrap(
         _RLM_LM_ADDRESS = {list(lm_address) if lm_address else None!r}
         _RLM_SUBCALL_ADDRESS = {list(subcall_address) if subcall_address else None!r}
         _RLM_DEPTH = {depth}
+        _RLM_SUBCALL_TIMEOUT = {subcall_timeout!r}
 
         def _rlm_socket_send(sock, data):
             payload = _rlm_json.dumps(data).encode("utf-8")
@@ -254,18 +305,20 @@ def _build_kernel_bootstrap(
             while len(raw_len) < 4:
                 chunk = sock.recv(4 - len(raw_len))
                 if not chunk:
-                    return {{}}
+                    # Surface EOF as an explicit error so callers don't read
+                    # an empty dict as a successful empty completion.
+                    return {{"error": "Connection closed before length prefix received"}}
                 raw_len += chunk
             length = _rlm_struct.unpack(">I", raw_len)[0]
             payload = b""
             while len(payload) < length:
                 chunk = sock.recv(length - len(payload))
                 if not chunk:
-                    raise ConnectionError("Connection closed before message complete")
+                    return {{"error": "Connection closed before message complete"}}
                 payload += chunk
             return _rlm_json.loads(payload.decode("utf-8"))
 
-        def _rlm_request(address, data, timeout=300):
+        def _rlm_request(address, data, timeout=_RLM_SUBCALL_TIMEOUT):
             if address is None:
                 return {{"error": "No address configured"}}
             sock = _rlm_socket.socket(_rlm_socket.AF_INET, _rlm_socket.SOCK_STREAM)
@@ -382,6 +435,24 @@ def _build_kernel_bootstrap(
 class IPythonREPL(NonIsolatedEnv):
     """IPython-backed REPL with in-process or subprocess kernel modes.
 
+    Concurrency / isolation:
+        * ``execute_code`` is serialized within an instance via an
+          :class:`~threading.RLock`, in both modes.
+        * Subcall fan-out (``rlm_query`` / ``rlm_query_batched``) is bounded
+          *globally* per broker by ``max_concurrent_subcalls``, regardless
+          of how many concurrent kernel requests fan in.
+        * In-process mode shares the parent Python process: ``sys.stdout``
+          /``sys.stderr`` redirection, ``os.chdir``, and ``signal.SIGALRM``
+          are process-global, and any other thread in the parent that
+          touches them while a cell is running will see the shadowed
+          state. Two in-process instances each get a *unique* user
+          module so they don't trample each other's ``sys.modules``
+          entry, but they still share the surrounding process. Use
+          ``kernel_mode="subprocess"`` for true isolation.
+        * Subprocess mode runs user code in a separate Python process via
+          ``ipykernel`` and is fully isolated from the parent's
+          namespace, cwd, and signals.
+
     Args:
         lm_handler_address: (host, port) of the LM handler socket server.
         context_payload: Initial context to load as ``context``/``context_0``.
@@ -403,6 +474,11 @@ class IPythonREPL(NonIsolatedEnv):
               Windows or when called off the main thread.
         startup_timeout: Max seconds to wait for a ``subprocess`` kernel to
             become ready.
+        subcall_timeout: Per-request timeout (seconds) for the kernel→parent
+            socket round-trip used by ``llm_query`` / ``rlm_query`` /
+            ``FINAL_VAR`` in subprocess mode. ``None`` (default) disables
+            the timeout, which matches in-process behavior where subcalls
+            block indefinitely.
         max_concurrent_subcalls: Cap on concurrent ``rlm_query_batched`` calls.
     """
 
@@ -419,6 +495,7 @@ class IPythonREPL(NonIsolatedEnv):
         kernel_mode: KernelMode = "in_process",
         cell_timeout: float | None = None,
         startup_timeout: float = 60.0,
+        subcall_timeout: float | None = None,
         max_concurrent_subcalls: int = 4,
         **kwargs,
     ):
@@ -437,8 +514,12 @@ class IPythonREPL(NonIsolatedEnv):
         self.lm_handler_address = lm_handler_address
         self.subcall_fn = subcall_fn
         self.kernel_mode: KernelMode = kernel_mode
-        self.cell_timeout = cell_timeout
+        # Normalize cell_timeout: 0 or negative is meaningless (subprocess
+        # mode would interpret it as "give up immediately"). Treat as
+        # disabled to match the in-process ``timeout > 0`` guard.
+        self.cell_timeout = cell_timeout if cell_timeout and cell_timeout > 0 else None
         self.startup_timeout = startup_timeout
+        self.subcall_timeout = subcall_timeout
 
         self.custom_tools = custom_tools or {}
         self.custom_sub_tools = (
@@ -448,7 +529,10 @@ class IPythonREPL(NonIsolatedEnv):
 
         self.original_cwd = os.getcwd()
         self.temp_dir = tempfile.mkdtemp(prefix=f"ipython_env_{uuid.uuid4()}_")
-        self._lock = threading.Lock()
+        # RLock lets ``add_context`` / ``add_history`` hold the lock while
+        # invoking ``execute_code`` (which re-acquires it) so the
+        # index→assign→count-increment sequence stays atomic across threads.
+        self._lock = threading.RLock()
         self._context_count: int = 0
         self._history_count: int = 0
 
@@ -465,18 +549,28 @@ class IPythonREPL(NonIsolatedEnv):
 
         # In-process: IPython shell instance
         self._shell: Any = None
+        # Per-instance ``__main__`` substitute used in in-process mode
+        # (see ``_setup_in_process``).
+        self._user_module: Any = None
         # Subprocess: jupyter_client manager/client
         self._km: Any = None
         self._kc: Any = None
         self._broker: _SubcallBroker | None = None
 
-        self.setup()
+        # If anything below fails after a kernel/broker has started, we must
+        # tear them down explicitly — relying on ``__del__`` is timing-
+        # dependent and would leave kernels orphaned on crash.
+        try:
+            self.setup()
 
-        if context_payload is not None:
-            self.load_context(context_payload)
+            if context_payload is not None:
+                self.load_context(context_payload)
 
-        if setup_code:
-            self.execute_code(setup_code)
+            if setup_code:
+                self.execute_code(setup_code)
+        except BaseException:
+            self.cleanup()
+            raise
 
     # -------------------------------------------------------------------------
     # Setup
@@ -491,16 +585,38 @@ class IPythonREPL(NonIsolatedEnv):
     def _setup_in_process(self) -> None:
         try:
             from IPython.core.interactiveshell import InteractiveShell
+            from traitlets.config import Config
         except ImportError as e:
             raise ImportError(
                 "IPython is required for IPythonREPL. Install with: "
                 "pip install 'rlms[ipython]' or pip install ipython"
             ) from e
 
+        # Disable IPython's history SQLite database. Without this, every
+        # in-process instance opens (and leaks until __del__) a connection
+        # to ~/.ipython/profile_default/history.sqlite, even though we
+        # already pass ``store_history=False`` to ``run_cell``.
+        config = Config()
+        config.HistoryAccessor.enabled = False
+
+        # By default, ``InteractiveShell`` names its user module
+        # ``__main__`` and writes ``sys.modules['__main__'] = user_module``.
+        # Two in-process IPythonREPLs in the same process would overwrite
+        # each other's ``__main__``. Use a unique module name per instance
+        # so each gets its own ``sys.modules`` slot. (The kernel-side
+        # ``__main__`` of the parent process is left untouched.)
+        import types as _types
+
+        unique_main = _types.ModuleType(
+            f"_rlm_ipython_main_{uuid.uuid4().hex[:8]}",
+            doc="Per-instance namespace for an in-process IPythonREPL.",
+        )
+
         # InteractiveShell is a singleton by default; using .instance() would
         # leak state across multiple IPythonREPL objects. Create a fresh one.
-        shell = InteractiveShell()
+        shell = InteractiveShell(config=config, user_module=unique_main)
         self._shell = shell
+        self._user_module = unique_main
         ns = shell.user_ns
 
         # Inject scaffold functions
@@ -554,8 +670,11 @@ class IPythonREPL(NonIsolatedEnv):
             lm_address=self.lm_handler_address,
             subcall_address=self._broker.address,
             depth=self.depth,
+            subcall_timeout=self.subcall_timeout,
         )
-        result = self._execute_in_kernel(bootstrap, timeout=self.startup_timeout)
+        result = self._execute_in_kernel(
+            bootstrap, timeout=self.startup_timeout, drain_broker=False
+        )
         if result.stderr:
             raise RuntimeError(f"Kernel bootstrap failed:\n{result.stderr}")
 
@@ -599,7 +718,7 @@ class IPythonREPL(NonIsolatedEnv):
                     {name} = _rlm_dill.loads(bytes.fromhex({payload!r}))
                     """
                 ).strip()
-                result = self._execute_in_kernel(code)
+                result = self._execute_in_kernel(code, drain_broker=False)
                 if result.stderr:
                     raise RuntimeError(
                         f"Failed to inject custom tool {name!r} into kernel: {result.stderr}"
@@ -616,7 +735,7 @@ class IPythonREPL(NonIsolatedEnv):
                     f"callables/objects. ({e})"
                 ) from e
             code = f"import json as _rlm_json; {name} = _rlm_json.loads({json_payload!r})"
-            result = self._execute_in_kernel(code)
+            result = self._execute_in_kernel(code, drain_broker=False)
             if result.stderr:
                 raise RuntimeError(
                     f"Failed to inject custom tool {name!r} into kernel: {result.stderr}"
@@ -755,40 +874,49 @@ class IPythonREPL(NonIsolatedEnv):
         context_payload: dict | list | str,
         context_index: int | None = None,
     ) -> int:
-        if context_index is None:
-            context_index = self._context_count
-        var_name = f"context_{context_index}"
+        # Hold the env lock for the whole index → write → increment
+        # sequence. Without this, two concurrent ``add_context`` calls with
+        # ``context_index=None`` would both pick the same index and
+        # silently overwrite each other.
+        with self._lock:
+            if context_index is None:
+                context_index = self._context_count
+            var_name = f"context_{context_index}"
 
-        if isinstance(context_payload, str):
-            context_path = os.path.join(self.temp_dir, f"context_{context_index}.txt")
-            with open(context_path, "w") as f:
-                f.write(context_payload)
-            code = f"with open(r'{context_path}', 'r') as _rlm_f:\n    {var_name} = _rlm_f.read()"
-        else:
-            context_path = os.path.join(self.temp_dir, f"context_{context_index}.json")
-            with open(context_path, "w") as f:
-                json.dump(context_payload, f)
-            code = (
-                "import json as _rlm_json\n"
-                f"with open(r'{context_path}', 'r') as _rlm_f:\n"
-                f"    {var_name} = _rlm_json.load(_rlm_f)"
-            )
+            if isinstance(context_payload, str):
+                context_path = os.path.join(self.temp_dir, f"context_{context_index}.txt")
+                with open(context_path, "w") as f:
+                    f.write(context_payload)
+                code = (
+                    f"with open(r'{context_path}', 'r') as _rlm_f:\n    {var_name} = _rlm_f.read()"
+                )
+            else:
+                context_path = os.path.join(self.temp_dir, f"context_{context_index}.json")
+                with open(context_path, "w") as f:
+                    json.dump(context_payload, f)
+                code = (
+                    "import json as _rlm_json\n"
+                    f"with open(r'{context_path}', 'r') as _rlm_f:\n"
+                    f"    {var_name} = _rlm_json.load(_rlm_f)"
+                )
 
-        result = self.execute_code(code)
-        if result.stderr:
-            raise RuntimeError(f"Failed to load context: {result.stderr}")
-
-        if context_index == 0:
-            self.execute_code(f"context = {var_name}")
-
-        # Shadow for subprocess mode so self.locals can report context_N.
-        if self.kernel_mode == "subprocess":
-            self._subprocess_shadow[var_name] = copy.deepcopy(context_payload)
+            # Fold the ``context = context_0`` alias into the same cell to
+            # save a kernel round-trip in subprocess mode.
             if context_index == 0:
-                self._subprocess_shadow["context"] = self._subprocess_shadow[var_name]
+                code += f"\ncontext = {var_name}"
 
-        self._context_count = max(self._context_count, context_index + 1)
-        return context_index
+            result = self.execute_code(code)
+            if result.stderr:
+                raise RuntimeError(f"Failed to load context: {result.stderr}")
+
+            # Shadow for subprocess mode so self.locals can report context_N.
+            if self.kernel_mode == "subprocess":
+                self._subprocess_shadow[var_name] = copy.deepcopy(context_payload)
+                if context_index == 0:
+                    self._subprocess_shadow["context"] = self._subprocess_shadow[var_name]
+
+            self._context_count = max(self._context_count, context_index + 1)
+            return context_index
 
     def get_context_count(self) -> int:
         return self._context_count
@@ -799,39 +927,42 @@ class IPythonREPL(NonIsolatedEnv):
         history_index: int | None = None,
     ) -> int:
         """Store a message history as ``history_N`` (and ``history`` for index 0)."""
-        if history_index is None:
-            history_index = self._history_count
-        var_name = f"history_{history_index}"
-        payload = copy.deepcopy(message_history)
+        # See ``add_context`` for the rationale on holding ``self._lock``.
+        with self._lock:
+            if history_index is None:
+                history_index = self._history_count
+            var_name = f"history_{history_index}"
+            payload = copy.deepcopy(message_history)
 
-        # In-process: assign directly into user_ns.
-        if self.kernel_mode == "in_process":
-            assert self._shell is not None
-            self._shell.user_ns[var_name] = payload
-            if history_index == 0:
-                self._shell.user_ns["history"] = payload
-        else:
-            # Subprocess: round-trip via a temp JSON file (histories are
-            # always JSON-serializable by construction: role/content dicts).
-            history_path = os.path.join(self.temp_dir, f"history_{history_index}.json")
-            with open(history_path, "w") as f:
-                json.dump(payload, f)
-            code = (
-                "import json as _rlm_json\n"
-                f"with open(r'{history_path}', 'r') as _rlm_f:\n"
-                f"    {var_name} = _rlm_json.load(_rlm_f)"
-            )
-            result = self.execute_code(code)
-            if result.stderr:
-                raise RuntimeError(f"Failed to load history: {result.stderr}")
-            if history_index == 0:
-                self.execute_code(f"history = {var_name}")
-            self._subprocess_shadow[var_name] = payload
-            if history_index == 0:
-                self._subprocess_shadow["history"] = payload
+            # In-process: assign directly into user_ns.
+            if self.kernel_mode == "in_process":
+                assert self._shell is not None
+                self._shell.user_ns[var_name] = payload
+                if history_index == 0:
+                    self._shell.user_ns["history"] = payload
+            else:
+                # Subprocess: round-trip via a temp JSON file (histories are
+                # always JSON-serializable by construction: role/content
+                # dicts).
+                history_path = os.path.join(self.temp_dir, f"history_{history_index}.json")
+                with open(history_path, "w") as f:
+                    json.dump(payload, f)
+                code = (
+                    "import json as _rlm_json\n"
+                    f"with open(r'{history_path}', 'r') as _rlm_f:\n"
+                    f"    {var_name} = _rlm_json.load(_rlm_f)"
+                )
+                if history_index == 0:
+                    code += f"\nhistory = {var_name}"
+                result = self.execute_code(code)
+                if result.stderr:
+                    raise RuntimeError(f"Failed to load history: {result.stderr}")
+                self._subprocess_shadow[var_name] = payload
+                if history_index == 0:
+                    self._subprocess_shadow["history"] = payload
 
-        self._history_count = max(self._history_count, history_index + 1)
-        return history_index
+            self._history_count = max(self._history_count, history_index + 1)
+            return history_index
 
     def get_history_count(self) -> int:
         return self._history_count
@@ -845,7 +976,7 @@ class IPythonREPL(NonIsolatedEnv):
                 _RLM_LM_ADDRESS = {list(address)!r}
                 """
             ).strip()
-            self._execute_in_kernel(update)
+            self._execute_in_kernel(update, drain_broker=False)
 
     # -------------------------------------------------------------------------
     # Execution
@@ -854,7 +985,7 @@ class IPythonREPL(NonIsolatedEnv):
     def execute_code(self, code: str) -> REPLResult:
         if self.kernel_mode == "in_process":
             return self._execute_in_process(code)
-        return self._execute_in_kernel(code, timeout=self.cell_timeout)
+        return self._execute_in_kernel(code, timeout=self.cell_timeout, drain_broker=True)
 
     def _execute_in_process(self, code: str) -> REPLResult:
         start_time = time.perf_counter()
@@ -901,12 +1032,23 @@ class IPythonREPL(NonIsolatedEnv):
                         signal.setitimer(signal.ITIMER_REAL, *prev_timer)
 
             if result is not None:
+                # IPython's own traceback printer doesn't reliably go through
+                # ``sys.stderr`` (it binds to ``IPython.utils.io.stderr`` at
+                # import time, before our ``redirect_stderr``). Format the
+                # exception ourselves so the LLM sees a useful traceback,
+                # matching the verbosity of subprocess-mode output.
                 if result.error_before_exec is not None:
                     err = result.error_before_exec
-                    stderr_buf.write(f"\n{type(err).__name__}: {err}")
+                    stderr_buf.write(
+                        "\n"
+                        + "".join(traceback.format_exception(type(err), err, err.__traceback__))
+                    )
                 if result.error_in_exec is not None:
                     err = result.error_in_exec
-                    stderr_buf.write(f"\n{type(err).__name__}: {err}")
+                    stderr_buf.write(
+                        "\n"
+                        + "".join(traceback.format_exception(type(err), err, err.__traceback__))
+                    )
 
             # Re-inject scaffold in case user code overwrote it
             self._restore_scaffold_in_process()
@@ -929,9 +1071,42 @@ class IPythonREPL(NonIsolatedEnv):
             final_answer=final_answer,
         )
 
-    def _execute_in_kernel(self, code: str, timeout: float | None = None) -> REPLResult:
+    def _execute_in_kernel(
+        self,
+        code: str,
+        timeout: float | None = None,
+        drain_broker: bool = True,
+    ) -> REPLResult:
+        """Execute ``code`` in the subprocess kernel.
+
+        ``drain_broker=False`` is for setup paths (bootstrap, custom-tool
+        injection, ``update_handler_address``) that must not consume
+        completions destined for a future user-facing cell. User-facing
+        ``execute_code`` always passes ``drain_broker=True``.
+
+        Acquires ``self._lock`` so concurrent ``execute_code`` calls from
+        different threads don't race on ``_kc.execute_interactive`` or on
+        broker drain.
+        """
         assert self._kc is not None and self._broker is not None
+
+        with self._lock:
+            return self._execute_in_kernel_locked(code, timeout, drain_broker)
+
+    def _execute_in_kernel_locked(
+        self,
+        code: str,
+        timeout: float | None,
+        drain_broker: bool,
+    ) -> REPLResult:
         start_time = time.perf_counter()
+
+        # If a previous cell timed out mid-subcall, ``subcall_fn`` may have
+        # finished after we drained, leaving stragglers in the broker.
+        # Discard them so they aren't misattributed to *this* cell.
+        if drain_broker:
+            assert self._broker is not None
+            self._broker.drain()
 
         stdout_parts: list[str] = []
         stderr_parts: list[str] = []
@@ -992,24 +1167,26 @@ class IPythonREPL(NonIsolatedEnv):
             else:
                 stderr_parts.append(f"\n{ename}: {evalue}")
 
-        # Drain broker state (rlm_query completions, FINAL_VAR answer)
-        completions, final_answer = self._broker.drain()
-        self._pending_llm_calls.extend(completions)
+        # Drain broker state (rlm_query completions, FINAL_VAR answer) only on
+        # user-facing cells. ``rlm_calls`` reports what was made *during this
+        # cell* — never accumulate across cells.
+        if drain_broker:
+            completions, final_answer = self._broker.drain()
+        else:
+            completions, final_answer = [], None
 
         return REPLResult(
             stdout="".join(stdout_parts),
             stderr="".join(stderr_parts),
             locals={},  # serializing arbitrary user_ns through ZMQ is costly; skip for now
             execution_time=time.perf_counter() - start_time,
-            rlm_calls=self._pending_llm_calls.copy(),
+            rlm_calls=list(completions),
             final_answer=final_answer,
         )
 
     @staticmethod
     def _strip_ansi(s: str) -> str:
-        import re
-
-        return re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", s)
+        return _ANSI_RE.sub("", s)
 
     def _restore_scaffold_in_process(self) -> None:
         if self._shell is None:
@@ -1037,14 +1214,21 @@ class IPythonREPL(NonIsolatedEnv):
 
     @property
     def locals(self) -> dict[str, Any]:
+        """Snapshot of the user-defined namespace.
+
+        In-process mode mirrors the IPython shell's ``user_ns``. Subprocess
+        mode only tracks variables we ourselves injected via ``add_context``
+        / ``add_history`` (the parent doesn't round-trip the kernel's
+        ``user_ns`` on every cell). User-defined variables from
+        ``execute_code`` are not visible here in subprocess mode — query the
+        kernel directly with another cell instead.
+        """
         if self.kernel_mode == "in_process" and self._shell is not None:
             return {
                 k: v
                 for k, v in self._shell.user_ns.items()
                 if not k.startswith("_") and k not in _IPYTHON_INTERNAL_NAMES
             }
-        # Subprocess: we don't round-trip the kernel's full user_ns. We do
-        # surface persistence-mode context/history via the shadow dict.
         return dict(self._subprocess_shadow)
 
     @contextmanager
@@ -1090,6 +1274,13 @@ class IPythonREPL(NonIsolatedEnv):
             except Exception:
                 pass
             self._shell = None
+
+        # Drop the per-instance module from sys.modules so we don't
+        # accumulate one slot per IPythonREPL ever created.
+        user_module = getattr(self, "_user_module", None)
+        if user_module is not None:
+            sys.modules.pop(user_module.__name__, None)
+            self._user_module = None
 
         try:
             shutil.rmtree(self.temp_dir)
