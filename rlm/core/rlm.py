@@ -235,6 +235,9 @@ class RLM:
             # For local/ipython environments with max_depth > 1, pass subcall callback for recursive RLM calls
             if self.environment_type in ("local", "ipython") and self.max_depth > 1:
                 env_kwargs["subcall_fn"] = self._subcall
+                # Preamble/finalize used by the subprocess-based parallel batched path
+                env_kwargs["subcall_preamble_fn"] = self._subcall_preamble
+                env_kwargs["subcall_finalize_fn"] = self._subcall_finalize
             # Pass custom tools to the environment
             if self.custom_tools is not None:
                 env_kwargs["custom_tools"] = self.custom_tools
@@ -242,7 +245,8 @@ class RLM:
                 env_kwargs["custom_sub_tools"] = self.custom_sub_tools
             if self.compaction and self.environment_type == "local":
                 env_kwargs["compaction"] = True
-            env_kwargs["max_concurrent_subcalls"] = self.max_concurrent_subcalls
+            if self.environment_type == "local":
+                env_kwargs["max_concurrent_subcalls"] = self.max_concurrent_subcalls
             environment: BaseEnv = get_environment(self.environment_type, env_kwargs)
 
             if self.persistent:
@@ -646,6 +650,135 @@ class RLM:
         client: BaseLM = get_client(self.backend, self.backend_kwargs)
         response = client.completion(message)
         return response
+
+    def _fire_subcall_start(self, next_depth: int, resolved_model: str, prompt: str) -> None:
+        if self.on_subcall_start:
+            try:
+                prompt_preview = prompt[:80] if len(prompt) > 80 else prompt
+                self.on_subcall_start(next_depth, str(resolved_model), prompt_preview)
+            except Exception:
+                pass
+
+    def _subcall_preamble(
+        self, prompt: str, model: str | None = None
+    ) -> tuple[str, Any, float, int, str]:
+        """
+        Plan a sub-call without running it; used by subprocess-based batched sub-calls.
+
+        Returns one of:
+          ("short_circuit", completion, start_time, next_depth, resolved_model)
+          ("plain_lm", (backend, backend_kwargs, root_model), start_time, next_depth, resolved_model)
+          ("rlm", config_dict, start_time, next_depth, resolved_model)
+
+        Fires on_subcall_start for non-short-circuit cases.
+        """
+        next_depth = self.depth + 1
+
+        if model is not None:
+            child_backend_kwargs = (self.backend_kwargs or {}).copy()
+            child_backend_kwargs["model_name"] = model
+        else:
+            child_backend_kwargs = self.backend_kwargs
+        resolved_model = model or (child_backend_kwargs or {}).get("model_name", "unknown")
+
+        start_time = time.perf_counter()
+
+        # Max-depth boundary: plain LM call at the leaf
+        if next_depth >= self.max_depth:
+            if self.other_backends and self.other_backend_kwargs:
+                backend = self.other_backends[0]
+                backend_kwargs = self.other_backend_kwargs[0]
+            else:
+                backend = self.backend
+                backend_kwargs = child_backend_kwargs or {}
+            root_model = model or backend_kwargs.get("model_name", "unknown")
+            self._fire_subcall_start(next_depth, root_model, prompt)
+            return (
+                "plain_lm",
+                (backend, backend_kwargs, root_model),
+                start_time,
+                next_depth,
+                root_model,
+            )
+
+        # Budget short-circuit
+        remaining_budget = None
+        if self.max_budget is not None:
+            remaining_budget = self.max_budget - self._cumulative_cost
+            if remaining_budget <= 0:
+                completion = RLMChatCompletion(
+                    root_model=resolved_model,
+                    prompt=prompt,
+                    response=(
+                        "Error: Budget exhausted "
+                        f"(spent ${self._cumulative_cost:.6f} of ${self.max_budget:.6f})"
+                    ),
+                    usage_summary=UsageSummary(model_usage_summaries={}),
+                    execution_time=0.0,
+                )
+                return ("short_circuit", completion, start_time, next_depth, resolved_model)
+
+        # Timeout short-circuit
+        remaining_timeout = None
+        if self.max_timeout is not None and self._completion_start_time is not None:
+            elapsed = time.perf_counter() - self._completion_start_time
+            remaining_timeout = self.max_timeout - elapsed
+            if remaining_timeout <= 0:
+                completion = RLMChatCompletion(
+                    root_model=resolved_model,
+                    prompt=prompt,
+                    response=f"Error: Timeout exhausted ({elapsed:.1f}s of {self.max_timeout:.1f}s)",
+                    usage_summary=UsageSummary(model_usage_summaries={}),
+                    execution_time=0.0,
+                )
+                return ("short_circuit", completion, start_time, next_depth, resolved_model)
+
+        self._fire_subcall_start(next_depth, resolved_model, prompt)
+
+        # Serializable config for the child RLM. subcall_fn is NOT included; the subprocess's
+        # child will wire its own in completion().
+        config = {
+            "backend": self.backend,
+            "backend_kwargs": child_backend_kwargs,
+            "environment": self.environment_type,
+            "environment_kwargs": self.environment_kwargs,
+            "depth": next_depth,
+            "max_depth": self.max_depth,
+            "max_iterations": self.max_iterations,
+            "max_budget": remaining_budget,
+            "max_timeout": remaining_timeout,
+            "max_tokens": self.max_tokens,
+            "max_errors": self.max_errors,
+            "custom_system_prompt": self.system_prompt,
+            "other_backends": self.other_backends,
+            "other_backend_kwargs": self.other_backend_kwargs,
+            "logger": None,
+            "verbose": False,
+            "custom_tools": self.custom_sub_tools,
+            "custom_sub_tools": self.custom_sub_tools,
+            "max_concurrent_subcalls": self.max_concurrent_subcalls,
+        }
+        return ("rlm", config, start_time, next_depth, resolved_model)
+
+    def _subcall_finalize(
+        self,
+        completion: RLMChatCompletion,
+        start_time: float,
+        next_depth: int,
+        resolved_model: str,
+        error_msg: str | None,
+        cost_already_tracked: bool = False,
+    ) -> None:
+        """Track cumulative cost and fire on_subcall_complete after a sub-call resolves."""
+        if not cost_already_tracked and error_msg is None:
+            if completion.usage_summary and completion.usage_summary.total_cost:
+                self._cumulative_cost += completion.usage_summary.total_cost
+        if self.on_subcall_complete:
+            try:
+                duration = time.perf_counter() - start_time
+                self.on_subcall_complete(next_depth, str(resolved_model), duration, error_msg)
+            except Exception:
+                pass
 
     def _subcall(self, prompt: str, model: str | None = None) -> RLMChatCompletion:
         """

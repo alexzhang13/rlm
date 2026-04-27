@@ -1,6 +1,7 @@
 import copy
 import io
 import json
+import multiprocessing as mp
 import os
 import shutil
 import sys
@@ -9,18 +10,129 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from contextlib import contextmanager
 from typing import Any
 
+import dill
+
 from rlm.core.comms_utils import LMRequest, send_lm_request, send_lm_request_batched
-from rlm.core.types import REPLResult, RLMChatCompletion
+from rlm.core.types import REPLResult, RLMChatCompletion, UsageSummary
 from rlm.environments.base_env import (
     RESERVED_TOOL_NAMES,
     NonIsolatedEnv,
     extract_tool_value,
     validate_custom_tools,
 )
+
+# =============================================================================
+# Global Subprocess Budget
+# =============================================================================
+# Bounds the number of concurrent subprocess sub-calls actively doing work
+# across the entire Python process, at every depth. A worker holding a slot
+# is one that's currently inside child.completion(). When a worker itself
+# needs to spawn grandchildren (rlm_query_batched inside its REPL), it
+# releases its slot before awaiting them and reacquires after — this keeps
+# the cap enforceable without deadlocking on recursion.
+
+_DEFAULT_MAX_SUBPROCESSES = 16
+_global_subprocess_semaphore: Any = None
+
+# Per-process flag: set True inside a subprocess worker so _rlm_query_batched_parallel
+# knows to release/reacquire the slot when orchestrating grandchildren.
+_IN_SUBPROCESS_WORKER: bool = False
+
+
+def set_max_subprocesses(n: int) -> None:
+    """Set the global cap on concurrent subprocess-based RLM sub-calls.
+
+    Must be called before any subprocess-based sub-call runs. Not safe to
+    change mid-run.
+    """
+    global _global_subprocess_semaphore
+    _global_subprocess_semaphore = mp.get_context("spawn").BoundedSemaphore(n)
+
+
+def _get_subprocess_semaphore():
+    global _global_subprocess_semaphore
+    if _global_subprocess_semaphore is None:
+        _global_subprocess_semaphore = mp.get_context("spawn").BoundedSemaphore(
+            _DEFAULT_MAX_SUBPROCESSES
+        )
+    return _global_subprocess_semaphore
+
+
+def _init_subprocess_worker(semaphore) -> None:
+    """ProcessPoolExecutor initializer: install the global semaphore in this worker.
+
+    BoundedSemaphores can't be passed through submit() arguments under the
+    spawn start method — only through initargs (or fork inheritance). We set
+    the module-level _global_subprocess_semaphore here so workers and any
+    grandchild pools they spawn can share the same kernel semaphore.
+    """
+    global _global_subprocess_semaphore
+    _global_subprocess_semaphore = semaphore
+
+
+def _subprocess_worker_entry(job_bytes: bytes) -> bytes:
+    """Top-level entry for subprocess-based sub-calls.
+
+    Unpacks a dill-pickled (kind, data, prompt) tuple and either constructs a
+    child RLM and runs its completion, or makes a plain LM call at max-depth.
+    Acquires the global semaphore (set by _init_subprocess_worker) while doing
+    work and sets _IN_SUBPROCESS_WORKER so recursive rlm_query_batched inside
+    this worker can release/reacquire the slot.
+    """
+    global _IN_SUBPROCESS_WORKER
+    semaphore = _global_subprocess_semaphore
+    kind, data, prompt = dill.loads(job_bytes)
+
+    semaphore.acquire()
+    _IN_SUBPROCESS_WORKER = True
+    try:
+        if kind == "rlm":
+            from rlm.core.rlm import RLM
+
+            child = RLM(**data)
+            try:
+                result = child.completion(prompt, root_prompt=None)
+            finally:
+                child.close()
+            return dill.dumps(result)
+
+        if kind == "plain_lm":
+            from rlm.clients import get_client
+
+            backend, backend_kwargs, root_model = data
+            client = get_client(backend, backend_kwargs)
+            start = time.perf_counter()
+            try:
+                response = client.completion(prompt)
+                end = time.perf_counter()
+                model_usage = client.get_last_usage()
+                result = RLMChatCompletion(
+                    root_model=root_model,
+                    prompt=prompt,
+                    response=response,
+                    usage_summary=UsageSummary(model_usage_summaries={root_model: model_usage}),
+                    execution_time=end - start,
+                )
+            except Exception as e:
+                end = time.perf_counter()
+                result = RLMChatCompletion(
+                    root_model=root_model,
+                    prompt=prompt,
+                    response=f"Error: LM query failed at max depth - {e}",
+                    usage_summary=UsageSummary(model_usage_summaries={}),
+                    execution_time=end - start,
+                )
+            return dill.dumps(result)
+
+        raise ValueError(f"Unknown subprocess job kind: {kind!r}")
+    finally:
+        _IN_SUBPROCESS_WORKER = False
+        semaphore.release()
+
 
 # =============================================================================
 # Safe Builtins
@@ -133,6 +245,8 @@ class LocalREPL(NonIsolatedEnv):
         persistent: bool = False,
         depth: int = 1,
         subcall_fn: Callable[[str, str | None], RLMChatCompletion] | None = None,
+        subcall_preamble_fn: Callable[..., tuple] | None = None,
+        subcall_finalize_fn: Callable[..., None] | None = None,
         custom_tools: dict[str, Any] | None = None,
         custom_sub_tools: dict[str, Any] | None = None,
         compaction: bool = False,
@@ -148,6 +262,8 @@ class LocalREPL(NonIsolatedEnv):
 
         self.lm_handler_address = lm_handler_address
         self.subcall_fn = subcall_fn  # Callback for recursive RLM calls (depth > 1 support)
+        self.subcall_preamble_fn = subcall_preamble_fn
+        self.subcall_finalize_fn = subcall_finalize_fn
         self.original_cwd = os.getcwd()
         self.temp_dir = tempfile.mkdtemp(prefix=f"repl_env_{uuid.uuid4()}_")
         self._lock = threading.Lock()
@@ -326,9 +442,9 @@ class LocalREPL(NonIsolatedEnv):
         """Spawn recursive RLM sub-calls for multiple prompts in parallel.
 
         Each prompt gets its own child RLM for deeper thinking. When multiple
-        prompts are provided, subcalls run concurrently using a thread pool
-        (bounded by max_concurrent_subcalls) since they are independent and
-        I/O-bound. Results are returned in the same order as input prompts.
+        prompts are provided and max_concurrent_subcalls > 1, subcalls run
+        concurrently using a thread pool. Results are returned in the same
+        order as input prompts.
 
         Falls back to llm_query_batched if no recursive capability is configured.
 
@@ -340,51 +456,139 @@ class LocalREPL(NonIsolatedEnv):
             List of responses in the same order as input prompts.
         """
         if self.subcall_fn is not None:
-            # For 0 or 1 prompts, no need for thread pool overhead
-            if len(prompts) <= 1:
-                results = []
-                for prompt in prompts:
-                    try:
-                        completion = self.subcall_fn(prompt, model)
-                        self._pending_llm_calls.append(completion)
-                        results.append(completion.response)
-                    except Exception as e:
-                        results.append(f"Error: RLM query failed - {e}")
-                return results
+            if not prompts:
+                return []
 
-            # Parallel execution for multiple prompts
-            max_workers = min(self.max_concurrent_subcalls, len(prompts))
-            # Pre-allocate result slots to preserve ordering
-            results: list[str] = [""] * len(prompts)
-            completions: list[tuple[int, RLMChatCompletion]] = []
-            lock = threading.Lock()
+            # Parallel execution: multiple prompts + concurrency enabled
+            if self.max_concurrent_subcalls > 1 and len(prompts) > 1:
+                return self._rlm_query_batched_parallel(prompts, model)
 
-            def _run_subcall(index: int, prompt: str) -> None:
+            # Sequential execution (default): zero overhead, identical to previous behavior
+            results = []
+            for prompt in prompts:
                 try:
                     completion = self.subcall_fn(prompt, model)
-                    with lock:
-                        completions.append((index, completion))
-                    results[index] = completion.response
+                    self._pending_llm_calls.append(completion)
+                    results.append(completion.response)
                 except Exception as e:
-                    results[index] = f"Error: RLM query failed - {e}"
-
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = [
-                    executor.submit(_run_subcall, i, prompt) for i, prompt in enumerate(prompts)
-                ]
-                # Wait for all futures to complete; exceptions are captured inside _run_subcall
-                for future in as_completed(futures):
-                    future.result()  # Re-raises unexpected executor errors
-
-            # Append completions in original prompt order for deterministic metadata
-            completions.sort(key=lambda x: x[0])
-            for _, completion in completions:
-                self._pending_llm_calls.append(completion)
-
+                    results.append(f"Error: RLM query failed - {e}")
             return results
 
         # Fall back to plain batched LM call if no recursive capability
         return self._llm_query_batched(prompts, model)
+
+    def _rlm_query_batched_parallel(
+        self, prompts: list[str], model: str | None = None
+    ) -> list[str]:
+        """
+        Spawn recursive RLM sub-calls for multiple prompts in parallel subprocesses.
+
+        Each sub-call runs in its own subprocess so it has its own cwd (via
+        _temp_cwd) and file-system state without racing with siblings. Global
+        concurrency is bounded by a module-level BoundedSemaphore; see
+        set_max_subprocesses.
+        """
+        if self.subcall_preamble_fn is None or self.subcall_finalize_fn is None:
+            # Missing wiring — fall back to sequential sub-calls via subcall_fn.
+            # The subprocess path requires preamble/finalize callbacks that RLM
+            # installs at completion-time.
+            results = []
+            for prompt in prompts:
+                try:
+                    completion = self.subcall_fn(prompt, model)
+                    self._pending_llm_calls.append(completion)
+                    results.append(completion.response)
+                except Exception as e:
+                    results.append(f"Error: RLM query failed - {e}")
+            return results
+
+        semaphore = _get_subprocess_semaphore()
+        global _IN_SUBPROCESS_WORKER
+        is_reentrant = _IN_SUBPROCESS_WORKER
+
+        # If we're inside a subprocess worker, release our slot while orchestrating
+        # grandchildren to prevent deadlock; reclaim on the way out.
+        if is_reentrant:
+            semaphore.release()
+
+        try:
+            # Plan each sub-call in the parent process (synchronous, cheap)
+            preambles = [self.subcall_preamble_fn(prompt, model) for prompt in prompts]
+            # preamble = (kind, data, start_time, next_depth, resolved_model)
+
+            # Collect jobs that need a subprocess (rlm or plain_lm)
+            pool_jobs: list[tuple[int, tuple]] = []
+            for idx, preamble in enumerate(preambles):
+                if preamble[0] != "short_circuit":
+                    pool_jobs.append((idx, preamble))
+
+            results_by_idx: dict[int, tuple[RLMChatCompletion, str | None]] = {}
+
+            if pool_jobs:
+                max_workers = min(self.max_concurrent_subcalls, len(pool_jobs))
+                ctx = mp.get_context("spawn")
+                with ProcessPoolExecutor(
+                    max_workers=max_workers,
+                    mp_context=ctx,
+                    initializer=_init_subprocess_worker,
+                    initargs=(semaphore,),
+                ) as executor:
+                    fut_to_idx: dict[Any, int] = {}
+                    for idx, preamble in pool_jobs:
+                        kind, data, _, _, resolved_model = preamble
+                        prompt = prompts[idx]
+                        job_bytes = dill.dumps((kind, data, prompt))
+                        fut = executor.submit(_subprocess_worker_entry, job_bytes)
+                        fut_to_idx[fut] = idx
+
+                    for fut in as_completed(fut_to_idx):
+                        idx = fut_to_idx[fut]
+                        preamble = preambles[idx]
+                        resolved_model = preamble[4]
+                        try:
+                            completion = dill.loads(fut.result())
+                            error_msg = None
+                        except Exception as e:
+                            error_msg = f"Subprocess sub-call failed - {e}"
+                            completion = RLMChatCompletion(
+                                root_model=resolved_model,
+                                prompt=prompts[idx],
+                                response=f"Error: {error_msg}",
+                                usage_summary=UsageSummary(model_usage_summaries={}),
+                                execution_time=0.0,
+                            )
+                        results_by_idx[idx] = (completion, error_msg)
+
+            # Build response list and fire finalize callbacks in prompt order
+            responses: list[str | None] = [None] * len(prompts)
+            ordered_completions: list[RLMChatCompletion] = []
+            for idx, preamble in enumerate(preambles):
+                kind, data, start_time, next_depth, resolved_model = preamble
+                if kind == "short_circuit":
+                    completion = data  # completion stored in slot 1 for short-circuit
+                    error_msg = None
+                    cost_already_tracked = True  # short-circuit completions carry no cost
+                else:
+                    completion, error_msg = results_by_idx[idx]
+                    cost_already_tracked = False
+                self.subcall_finalize_fn(
+                    completion,
+                    start_time,
+                    next_depth,
+                    resolved_model,
+                    error_msg,
+                    cost_already_tracked,
+                )
+                responses[idx] = completion.response
+                ordered_completions.append(completion)
+
+            for completion in ordered_completions:
+                self._pending_llm_calls.append(completion)
+
+            return responses  # type: ignore[return-value]
+        finally:
+            if is_reentrant:
+                semaphore.acquire()
 
     def load_context(self, context_payload: dict | list | str):
         """Load context into the environment as context_0 (and 'context' alias)."""
@@ -493,13 +697,20 @@ class LocalREPL(NonIsolatedEnv):
 
     @contextmanager
     def _temp_cwd(self):
-        """Temporarily change to temp directory for execution."""
-        old_cwd = os.getcwd()
+        """chdir into temp_dir for the duration of exec().
+
+        Safe because this process is single-threaded for its own execute_code:
+        parallel RLM sub-calls run in subprocesses, not threads, so no other
+        thread can race on os.chdir.
+        """
         try:
             os.chdir(self.temp_dir)
             yield
         finally:
-            os.chdir(old_cwd)
+            try:
+                os.chdir(self.original_cwd)
+            except OSError:
+                pass
 
     def _restore_scaffold(self) -> None:
         """Restore scaffold names after execution so overwrites (e.g. context = 'x') don't persist."""
