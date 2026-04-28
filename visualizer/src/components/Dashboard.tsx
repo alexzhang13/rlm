@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { FileUploader } from './FileUploader';
 import { LogViewer } from './LogViewer';
@@ -11,6 +12,7 @@ import { ThemeToggle } from './ThemeToggle';
 import { parseLogFile, extractContextVariable } from '@/lib/parse-logs';
 import { RLMLogFile } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { Bot, RefreshCw } from 'lucide-react';
 
 interface DemoLogInfo {
   fileName: string;
@@ -24,9 +26,20 @@ export function Dashboard() {
   const [selectedLog, setSelectedLog] = useState<RLMLogFile | null>(null);
   const [demoLogs, setDemoLogs] = useState<DemoLogInfo[]>([]);
   const [loadingDemos, setLoadingDemos] = useState(true);
+const [ollamaStatus, setOllamaStatus] = useState<{
+    connected: boolean;
+    models: string[];
+    selectedModel: string;
+  }>({
+    connected: false,
+    models: [],
+    selectedModel: "",
+  });
+  const [checkingOllama, setCheckingOllama] = useState(false);
 
   // Load demo log previews on mount - fetches latest 10 from API
   useEffect(() => {
+    checkOllamaStatus();
     async function loadDemoPreviews() {
       try {
         // Fetch list of log files from API
@@ -91,6 +104,24 @@ export function Dashboard() {
     }
   }, [handleFileLoaded]);
 
+  const checkOllamaStatus = useCallback(async () => {
+    setCheckingOllama(true);
+    try {
+      const response = await fetch('/api/ollama/status');
+      const data = await response.json();
+      const models = data.models || [];
+      setOllamaStatus({
+        connected: data.connected,
+        models: models,
+        selectedModel: models.length > 0 ? models[0] : "",
+      });
+    } catch {
+      setOllamaStatus(prev => ({ ...prev, connected: false }));
+    } finally {
+      setCheckingOllama(false);
+    }
+  }, []);
+
   if (selectedLog) {
     return (
       <LogViewer 
@@ -122,6 +153,41 @@ export function Dashboard() {
                 </p>
               </div>
               <div className="flex items-center gap-4">
+                {/* Ollama Status */}
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/50 border border-border">
+                  <Bot className={cn(
+                    "h-4 w-4",
+                    ollamaStatus.connected ? "text-emerald-500" : "text-muted-foreground"
+                  )} />
+                  <span className="text-xs text-muted-foreground">
+                    {ollamaStatus.connected ? (
+                      ollamaStatus.models.length > 0 ? (
+                        <select
+                          className="bg-background border border-border rounded px-2 py-1 text-xs cursor-pointer hover:border-primary/50"
+                          value={ollamaStatus.selectedModel}
+                          onChange={(e) => setOllamaStatus(prev => ({ ...prev, selectedModel: e.target.value }))}
+                        >
+                          {ollamaStatus.models.map((model) => (
+                            <option key={model} value={model}>{model}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-emerald-500">Ollama Ready (no models)</span>
+                      )
+                    ) : (
+                      <span className="text-destructive">Ollama Offline</span>
+                    )}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2"
+                    onClick={checkOllamaStatus}
+                    disabled={checkingOllama}
+                  >
+                    <RefreshCw className={cn("h-3 w-3", checkingOllama && "animate-spin")} />
+                  </Button>
+                </div>
                 <ThemeToggle />
                 <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-mono">
                   <span className="flex items-center gap-1.5">

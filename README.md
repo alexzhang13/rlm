@@ -120,6 +120,47 @@ export PRIME_API_KEY=...
 ### Model Providers
 We currently support most major clients (OpenAI, Anthropic), as well as the router platforms (OpenRouter, Portkey). For local models, we recommend using vLLM (which interfaces with the [OpenAI client](https://github.com/alexzhang13/rlm/blob/main/rlm/clients/openai.py)). To view or add support for more clients, start by looking at [`rlm/clients/`](https://github.com/alexzhang13/rlm/tree/main/rlm/clients).
 
+#### Ollama / llama.cpp
+
+For running RLMs with local models via [Ollama](https://ollama.ai/) or llama.cpp:
+
+```bash
+# Install Ollama (macOS)
+brew install ollama
+
+# Start Ollama server
+ollama serve
+
+# Pull a model (any model you want)
+ollama pull llama3
+ollama pull mistral
+ollama pull codellama
+```
+
+List available models:
+```bash
+ollama list
+```
+
+Then in Python, specify the model name you want to use:
+```python
+from rlm import RLM
+
+rlm = RLM(
+    backend="ollama",
+    backend_kwargs={"model_name": "llama3"},  # or any model you've pulled
+    verbose=True,
+)
+
+result = rlm.completion("Explain what RLMs are in one sentence.")
+print(result.response)
+```
+
+Environment variables (optional):
+```bash
+export OLLAMA_BASE_URL=http://localhost:11434/v1
+```
+
 ## Relevant Reading
 * **[Dec '25]** [Recursive Language Models arXiv](https://arxiv.org/abs/2512.24601)
 * **[Oct '25]** [Recursive Language Models Blogpost](https://alexzhang13.github.io/blog/2025/rlm/)
