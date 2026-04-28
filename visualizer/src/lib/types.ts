@@ -70,3 +70,12 @@ export function extractFinalAnswer(answer: string | [string, string] | null): st
   return answer;
 }
 
+export interface TraceNode {
+  id: string;
+  parentId: string | null;
+  depth: number;
+  prompt: string;
+  response: string;
+  timestamp: number;
+}
+

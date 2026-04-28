@@ -1,18 +1,23 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { FileUploader } from './FileUploader';
 import { LogViewer } from './LogViewer';
 import { AsciiRLM } from './AsciiGlobe';
 import { ThemeToggle } from './ThemeToggle';
+import { ChatPanel } from './ChatPanel';
+import { ExecutionController } from './ExecutionController';
+import { NodeInspector } from './NodeInspector';
 import { parseLogFile, extractContextVariable } from '@/lib/parse-logs';
 import { RLMLogFile } from '@/lib/types';
+import { useRLMMetaStore, TraceNode } from '@/lib/store';
 import { cn } from '@/lib/utils';
-import { Bot, RefreshCw } from 'lucide-react';
+import { Bot, RefreshCw, Play, Square, Settings2 } from 'lucide-react';
 
 interface DemoLogInfo {
   fileName: string;
@@ -26,60 +31,72 @@ export function Dashboard() {
   const [selectedLog, setSelectedLog] = useState<RLMLogFile | null>(null);
   const [demoLogs, setDemoLogs] = useState<DemoLogInfo[]>([]);
   const [loadingDemos, setLoadingDemos] = useState(true);
-const [ollamaStatus, setOllamaStatus] = useState<{
-    connected: boolean;
-    models: string[];
-    selectedModel: string;
-  }>({
-    connected: false,
-    models: [],
-    selectedModel: "",
-  });
-  const [checkingOllama, setCheckingOllama] = useState(false);
+  const [showChatPanel, setShowChatPanel] = useState(true);
+  
+  const {
+    ollamaConnected,
+    ollamaModels,
+    selectedModel,
+    executionStatus,
+    maxDepth,
+    useRLM,
+    setOllamaStatus,
+    setSelectedModel,
+    setExecutionStatus,
+    addChatMessage,
+    addTraceNode,
+    traceNodes,
+    clearTraceNodes,
+  } = useRLMMetaStore();
 
-  // Load demo log previews on mount - fetches latest 10 from API
+  const checkOllamaStatus = useCallback(async () => {
+    try {
+      const response = await fetch('/api/ollama/status');
+      const data = await response.json();
+      const models = data.models || [];
+      setOllamaStatus(data.connected, models);
+    } catch {
+      setOllamaStatus(false, []);
+    }
+  }, [setOllamaStatus]);
+
   useEffect(() => {
     checkOllamaStatus();
-    async function loadDemoPreviews() {
-      try {
-        // Fetch list of log files from API
-        const listResponse = await fetch('/api/logs');
-        if (!listResponse.ok) {
-          throw new Error('Failed to fetch log list');
-        }
-        const { files } = await listResponse.json();
-        
-        const previews: DemoLogInfo[] = [];
-        
-        for (const fileName of files) {
-          try {
-            const response = await fetch(`/logs/${fileName}`);
-            if (!response.ok) continue;
-            const content = await response.text();
-            const parsed = parseLogFile(fileName, content);
-            const contextVar = extractContextVariable(parsed.iterations);
-            
-            previews.push({
-              fileName,
-              contextPreview: contextVar,
-              hasFinalAnswer: !!parsed.metadata.finalAnswer,
-              iterations: parsed.metadata.totalIterations,
-            });
-          } catch (e) {
-            console.error('Failed to load demo preview:', fileName, e);
-          }
-        }
-        
-        setDemoLogs(previews);
-      } catch (e) {
-        console.error('Failed to load demo logs:', e);
-      } finally {
-        setLoadingDemos(false);
-      }
-    }
-    
     loadDemoPreviews();
   }, []);
+
+  async function loadDemoPreviews() {
+    try {
+      const listResponse = await fetch('/api/logs');
+      if (!listResponse.ok) throw new Error('Failed to fetch log list');
+      const { files } = await listResponse.json();
+      
+      const previews: DemoLogInfo[] = [];
+      for (const fileName of files.slice(0, 10)) {
+        try {
+          const response = await fetch(`/logs/${fileName}`);
+          if (!response.ok) continue;
+          const content = await response.text();
+          const parsed = parseLogFile(fileName, content);
+          const contextVar = extractContextVariable(parsed.iterations);
+          
+          previews.push({
+            fileName,
+            contextPreview: contextVar,
+            hasFinalAnswer: !!parsed.metadata.finalAnswer,
+            iterations: parsed.metadata.totalIterations,
+          });
+        } catch (e) {
+          console.error('Failed to load demo preview:', fileName, e);
+        }
+      }
+      setDemoLogs(previews);
+    } catch (e) {
+      console.error('Failed to load demo logs:', e);
+    } finally {
+      setLoadingDemos(false);
+    }
+  }
 
   const handleFileLoaded = useCallback((fileName: string, content: string) => {
     const parsed = parseLogFile(fileName, content);
@@ -104,273 +121,301 @@ const [ollamaStatus, setOllamaStatus] = useState<{
     }
   }, [handleFileLoaded]);
 
-  const checkOllamaStatus = useCallback(async () => {
-    setCheckingOllama(true);
+  const handleSendMessage = useCallback(async (message: string) => {
+    clearTraceNodes();
+    setExecutionStatus('running');
+    
     try {
-      const response = await fetch('/api/ollama/status');
-      const data = await response.json();
-      const models = data.models || [];
-      setOllamaStatus({
-        connected: data.connected,
-        models: models,
-        selectedModel: models.length > 0 ? models[0] : "",
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          model: selectedModel,
+          maxDepth,
+          useRLM,
+        }),
       });
-    } catch {
-      setOllamaStatus(prev => ({ ...prev, connected: false }));
-    } finally {
-      setCheckingOllama(false);
+
+      if (!response.ok) {
+        throw new Error('Chat request failed');
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No response body');
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalAnswer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          
+          const data = line.slice(6);
+          if (data === '[DONE]') continue;
+
+          try {
+            const event = JSON.parse(data);
+            
+            if (event.type === 'status') {
+              if (event.status === 'completed') {
+                setExecutionStatus('ready');
+              } else if (event.status === 'error') {
+                setExecutionStatus('error');
+              }
+            } else if (event.type === 'node' && event.node) {
+              addTraceNode(event.node);
+            } else if (event.type === 'final' && event.finalAnswer) {
+              finalAnswer = event.finalAnswer;
+            }
+          } catch {
+            // Skip invalid JSON
+          }
+        }
+      }
+
+      if (finalAnswer) {
+        addChatMessage({ role: 'assistant', content: finalAnswer });
+      } else if (traceNodes.length > 0) {
+        const lastNode = traceNodes[traceNodes.length - 1];
+        addChatMessage({ role: 'assistant', content: lastNode.response || 'No response' });
+      }
+      
+      setExecutionStatus('ready');
+    } catch (error) {
+      console.error('Chat error:', error);
+      setExecutionStatus('error');
+      addChatMessage({ role: 'assistant', content: 'Error: ' + (error instanceof Error ? error.message : 'Unknown error') });
     }
-  }, []);
+  }, [selectedModel, maxDepth, useRLM, setExecutionStatus, addChatMessage, addTraceNode, clearTraceNodes, traceNodes]);
+
+  const handleNodeUpdate = useCallback((node: TraceNode) => {
+    addTraceNode(node);
+  }, [addTraceNode]);
 
   if (selectedLog) {
-    return (
-      <LogViewer 
-        logFile={selectedLog} 
-        onBack={() => setSelectedLog(null)} 
-      />
-    );
+    return <LogViewer logFile={selectedLog} onBack={() => setSelectedLog(null)} />;
   }
 
   return (
-    <div className="min-h-screen bg-background relative overflow-hidden">
-      {/* Background effects */}
-      <div className="absolute inset-0 grid-pattern opacity-30 dark:opacity-15" />
-      <div className="absolute top-0 left-1/3 w-[500px] h-[500px] bg-primary/5 rounded-full blur-3xl" />
-      <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-primary/3 rounded-full blur-3xl" />
-      
-      <div className="relative z-10">
-        {/* Header */}
-        <header className="border-b border-border">
-          <div className="max-w-7xl mx-auto px-6 py-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-bold tracking-tight">
-                  <span className="text-primary">RLM</span>
-                  <span className="text-muted-foreground ml-2 font-normal">Visualizer</span>
-                </h1>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Debug recursive language model execution traces
-                </p>
-              </div>
-              <div className="flex items-center gap-4">
-                {/* Ollama Status */}
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/50 border border-border">
-                  <Bot className={cn(
-                    "h-4 w-4",
-                    ollamaStatus.connected ? "text-emerald-500" : "text-muted-foreground"
-                  )} />
-                  <span className="text-xs text-muted-foreground">
-                    {ollamaStatus.connected ? (
-                      ollamaStatus.models.length > 0 ? (
-                        <select
-                          className="bg-background border border-border rounded px-2 py-1 text-xs cursor-pointer hover:border-primary/50"
-                          value={ollamaStatus.selectedModel}
-                          onChange={(e) => setOllamaStatus(prev => ({ ...prev, selectedModel: e.target.value }))}
-                        >
-                          {ollamaStatus.models.map((model) => (
-                            <option key={model} value={model}>{model}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <span className="text-emerald-500">Ollama Ready (no models)</span>
-                      )
+    <div className="h-screen flex flex-col overflow-hidden bg-background">
+      {/* Top Bar */}
+      <header className="border-b border-border bg-card/80 backdrop-blur-sm">
+        <div className="px-6 py-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-bold tracking-tight">
+                <span className="text-primary">RLM</span>
+                <span className="text-muted-foreground ml-2 font-normal">Visualizer</span>
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                Debug recursive language model execution traces
+              </p>
+            </div>
+            <div className="flex items-center gap-4">
+              {/* Ollama Status */}
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/50 border border-border">
+                <Bot className={cn(
+                  "h-4 w-4",
+                  ollamaConnected ? "text-emerald-500" : "text-muted-foreground"
+                )} />
+                <span className="text-xs text-muted-foreground">
+                  {ollamaConnected ? (
+                    ollamaModels.length > 0 ? (
+                      <select
+                        className="bg-background border border-border rounded px-2 py-1 text-xs cursor-pointer hover:border-primary/50"
+                        value={selectedModel}
+                        onChange={(e) => setSelectedModel(e.target.value)}
+                      >
+                        {ollamaModels.map((model) => (
+                          <option key={model} value={model}>{model}</option>
+                        ))}
+                      </select>
                     ) : (
-                      <span className="text-destructive">Ollama Offline</span>
-                    )}
-                  </span>
+                      <span className="text-emerald-500">Ollama Ready (no models)</span>
+                    )
+                  ) : (
+                    <span className="text-destructive">Ollama Offline</span>
+                  )}
+                </span>
+                <Button variant="ghost" size="sm" className="h-6 px-2" onClick={checkOllamaStatus}>
+                  <RefreshCw className="h-3 w-3" />
+                </Button>
+              </div>
+              
+              {/* Execution Status */}
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/50 border border-border">
+                <div className={cn(
+                  "w-2 h-2 rounded-full",
+                  executionStatus === 'running' ? "bg-amber-500 animate-pulse" :
+                  executionStatus === 'ready' ? "bg-emerald-500" :
+                  executionStatus === 'error' ? "bg-red-500" :
+                  "bg-muted"
+                )} />
+                <span className="text-xs font-medium uppercase">{executionStatus}</span>
+              </div>
+              
+              <ThemeToggle />
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <div className="flex-1 min-h-0">
+        <ResizablePanelGroup orientation="horizontal">
+          {/* Left Panel - Chat & History */}
+          <ResizablePanel defaultSize={25} minSize={20} maxSize={40}>
+            <div className="h-full border-r border-border flex flex-col">
+              {/* Chat History */}
+              <div className="flex-shrink-0 border-b border-border p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="text-sm font-medium flex items-center gap-2">
+                    <Bot className="h-4 w-4" />
+                    Chat
+                  </h2>
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-6 px-2"
-                    onClick={checkOllamaStatus}
-                    disabled={checkingOllama}
+                    onClick={() => setShowChatPanel(!showChatPanel)}
                   >
-                    <RefreshCw className={cn("h-3 w-3", checkingOllama && "animate-spin")} />
+                    {showChatPanel ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                   </Button>
                 </div>
-                <ThemeToggle />
-                <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-mono">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                    READY
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        {/* Main Content */}
-        <main className="max-w-7xl mx-auto px-6 py-8">
-          <div className="grid lg:grid-cols-2 gap-10">
-            {/* Left Column - Upload & ASCII Art */}
-            <div className="space-y-8">
-              {/* Upload Section */}
-              <div>
-                <h2 className="text-sm font-medium mb-3 flex items-center gap-2 text-muted-foreground">
-                  <span className="text-primary font-mono">01</span>
-                  Upload Log File
-                </h2>
-                <FileUploader onFileLoaded={handleFileLoaded} />
-              </div>
-              
-              {/* ASCII Architecture Diagram */}
-              <div className="hidden lg:block">
-                <h2 className="text-sm font-medium mb-3 flex items-center gap-2 text-muted-foreground">
-                  <span className="text-primary font-mono">◈</span>
-                  RLM Architecture
-                </h2>
-                <div className="bg-muted/50 border border-border rounded-lg p-4 overflow-x-auto">
-                  <AsciiRLM />
-                </div>
-              </div>
-            </div>
-
-            {/* Right Column - Demo Logs & Loaded Files */}
-            <div className="space-y-8">
-              {/* Demo Logs Section */}
-              <div>
-                <h2 className="text-sm font-medium mb-3 flex items-center gap-2 text-muted-foreground">
-                  <span className="text-primary font-mono">02</span>
-                  Recent Traces
-                  <span className="text-[10px] text-muted-foreground/60 ml-1">(latest 10)</span>
-                </h2>
-                
-                {loadingDemos ? (
-                  <Card>
-                    <CardContent className="p-6 text-center">
-                      <div className="animate-pulse flex items-center justify-center gap-2 text-muted-foreground text-sm">
-                        Loading traces...
-                      </div>
-                    </CardContent>
-                  </Card>
-                ) : demoLogs.length === 0 ? (
-                  <Card className="border-dashed">
-                    <CardContent className="p-6 text-center text-muted-foreground text-sm">
-                      No log files found in /public/logs/
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <ScrollArea className="h-[320px]">
-                    <div className="space-y-2 pr-4">
-                      {demoLogs.map((demo) => (
-                        <Card
-                          key={demo.fileName}
-                          onClick={() => loadDemoLog(demo.fileName)}
-                          className={cn(
-                            'cursor-pointer transition-all hover:scale-[1.01]',
-                            'hover:border-primary/50 hover:bg-primary/5'
-                          )}
-                        >
-                          <CardContent className="p-3">
-                            <div className="flex items-center gap-3">
-                              {/* Status indicator */}
-                              <div className="relative flex-shrink-0">
-                                <div className={cn(
-                                  'w-2.5 h-2.5 rounded-full',
-                                  demo.hasFinalAnswer 
-                                    ? 'bg-primary' 
-                                    : 'bg-muted-foreground/30'
-                                )} />
-                                {demo.hasFinalAnswer && (
-                                  <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-primary animate-ping opacity-50" />
-                                )}
-                              </div>
-                              
-                              {/* Content */}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className="font-mono text-xs text-foreground/80">
-                                    {demo.fileName}
-                                  </span>
-                                  <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4">
-                                    {demo.iterations} iter
-                                  </Badge>
-                                </div>
-                                {demo.contextPreview && (
-                                  <p className="text-[11px] font-mono text-muted-foreground truncate">
-                                    {demo.contextPreview.length > 80 
-                                      ? demo.contextPreview.slice(0, 80) + '...'
-                                      : demo.contextPreview}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  </ScrollArea>
+                {showChatPanel && (
+                  <div className="h-[calc(100vh-300px)] min-h-[300px]">
+                    <ChatPanel onSendMessage={handleSendMessage} disabled={executionStatus === 'running'} />
+                  </div>
                 )}
               </div>
-
-              {/* Loaded Files Section */}
-              {logFiles.length > 0 && (
-                <div>
-                  <h2 className="text-sm font-medium mb-3 flex items-center gap-2 text-muted-foreground">
-                    <span className="text-primary font-mono">03</span>
-                    Loaded Files
-                  </h2>
-                  <ScrollArea className="h-[200px]">
-                    <div className="space-y-2 pr-4">
-                      {logFiles.map((log) => (
-                        <Card
-                          key={log.fileName}
-                          className={cn(
-                            'cursor-pointer transition-all hover:scale-[1.01]',
-                            'hover:border-primary/50 hover:bg-primary/5'
-                          )}
-                          onClick={() => setSelectedLog(log)}
-                        >
-                          <CardContent className="p-3">
-                            <div className="flex items-center gap-3">
-                              <div className="relative flex-shrink-0">
+              
+              {/* Demo Logs */}
+              <div className="flex-1 border-t border-border overflow-hidden">
+                <div className="p-4">
+                  <h3 className="text-xs font-medium uppercase text-muted-foreground mb-3">
+                    Saved Traces
+                  </h3>
+                  <ScrollArea className="h-[calc(100vh-450px)]">
+                    <div className="space-y-2">
+                      {loadingDemos ? (
+                        <p className="text-xs text-muted-foreground">Loading...</p>
+                      ) : demoLogs.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No traces found</p>
+                      ) : (
+                        demoLogs.map((demo) => (
+                          <Card
+                            key={demo.fileName}
+                            onClick={() => loadDemoLog(demo.fileName)}
+                            className="cursor-pointer hover:border-primary/50"
+                          >
+                            <CardContent className="p-3">
+                              <div className="flex items-center gap-3">
                                 <div className={cn(
                                   'w-2.5 h-2.5 rounded-full',
-                                  log.metadata.finalAnswer 
-                                    ? 'bg-primary' 
-                                    : 'bg-muted-foreground/30'
+                                  demo.hasFinalAnswer ? 'bg-primary' : 'bg-muted-foreground/30'
                                 )} />
-                                {log.metadata.finalAnswer && (
-                                  <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-primary animate-ping opacity-50" />
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className="font-mono text-xs truncate text-foreground/80">
-                                    {log.fileName}
+                                <div className="flex-1 min-w-0">
+                                  <span className="font-mono text-xs truncate block">
+                                    {demo.fileName}
                                   </span>
-                                  <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4">
-                                    {log.metadata.totalIterations} iter
-                                  </Badge>
+                                  <span className="text-[10px] text-muted-foreground">
+                                    {demo.iterations} iterations
+                                  </span>
                                 </div>
-                                <p className="text-[11px] text-muted-foreground truncate">
-                                  {log.metadata.contextQuestion}
-                                </p>
                               </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
+                            </CardContent>
+                          </Card>
+                        ))
+                      )}
                     </div>
                   </ScrollArea>
                 </div>
-              )}
+              </div>
             </div>
-          </div>
-        </main>
+          </ResizablePanel>
 
-        {/* Footer */}
-        <footer className="border-t border-border mt-8">
-          <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-            <p className="text-[10px] text-muted-foreground font-mono">
-              RLM Visualizer • Recursive Language Models
-            </p>
-            <p className="text-[10px] text-muted-foreground font-mono">
-              Prompt → [LM ↔ REPL] → Answer
-            </p>
-          </div>
-        </footer>
+          <ResizableHandle withHandle className="bg-border hover:bg-primary/30 transition-colors" />
+
+          {/* Center - RLM Visualization (placeholder for live execution) */}
+          <ResizablePanel defaultSize={50} minSize={30} maxSize={70}>
+            <div className="h-full border-r border-border flex flex-col">
+              <div className="flex-shrink-0 border-b border-border p-4">
+                <h2 className="text-sm font-medium">RLM Execution Tree</h2>
+              </div>
+              <div className="flex-1 overflow-auto p-4">
+                {traceNodes.length === 0 ? (
+                  <div className="h-full flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-muted/30 border border-border flex items-center justify-center">
+                        <AsciiRLM />
+                      </div>
+                      <p className="text-muted-foreground text-sm">
+                        No execution in progress
+                      </p>
+                      <p className="text-muted-foreground text-xs mt-1">
+                        Send a message to start RLM execution
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {traceNodes.map((node) => (
+                      <Card key={node.id} className="border-l-4">
+                        <CardContent className="p-3">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Badge variant="outline">depth={node.depth}</Badge>
+                            <span className="text-xs text-muted-foreground font-mono">
+                              {new Date(node.timestamp).toLocaleTimeString()}
+                            </span>
+                          </div>
+                          <div className="text-xs font-mono">
+                            <div className="mb-2">
+                              <span className="text-muted-foreground">Prompt: </span>
+                              {node.prompt.slice(0, 100)}...
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Response: </span>
+                              {node.response?.slice(0, 100) || '...'}...
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </ResizablePanel>
+
+          <ResizableHandle withHandle className="bg-border hover:bg-primary/30 transition-colors" />
+
+          {/* Right Panel - Node Inspector & Controls */}
+          <ResizablePanel defaultSize={25} minSize={20} maxSize={40}>
+            <div className="h-full flex flex-col">
+              {/* Controls */}
+              <div className="flex-shrink-0 border-b border-border">
+                <ExecutionController 
+                  onSendMessage={handleSendMessage} 
+                  onNodeUpdate={handleNodeUpdate}
+                  status={executionStatus}
+                />
+              </div>
+              
+              {/* Node Inspector */}
+              <div className="flex-1 overflow-hidden">
+                <NodeInspector />
+              </div>
+            </div>
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </div>
     </div>
   );
