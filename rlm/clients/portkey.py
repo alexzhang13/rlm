@@ -42,6 +42,7 @@ class PortkeyClient(BaseLM):
         model = model or self.model_name
         if not model:
             raise ValueError("Model name is required for Portkey client.")
+        self.validate_prompt_context_window(prompt, model)
 
         response = self.client.chat.completions.create(
             model=model,
@@ -50,7 +51,9 @@ class PortkeyClient(BaseLM):
         self._track_cost(response, model)
         return response.choices[0].message.content
 
-    async def acompletion(self, prompt: str | dict[str, Any], model: str | None = None) -> str:
+    async def acompletion(
+        self, prompt: str | list[dict[str, Any]], model: str | None = None
+    ) -> str:
         if isinstance(prompt, str):
             messages = [{"role": "user", "content": prompt}]
         elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
@@ -61,6 +64,7 @@ class PortkeyClient(BaseLM):
         model = model or self.model_name
         if not model:
             raise ValueError("Model name is required for Portkey client.")
+        self.validate_prompt_context_window(prompt, model)
 
         response = await self.async_client.chat.completions.create(model=model, messages=messages)
         self._track_cost(response, model)

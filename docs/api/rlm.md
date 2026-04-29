@@ -546,9 +546,9 @@ The following functions are available to model-generated code inside the REPL:
 
 | Function | Description |
 |:---------|:------------|
-| `llm_query(prompt, model=None)` | Single plain LM completion. Fast, no REPL or iteration. |
+| `llm_query(prompt, model=None)` | Single plain LM completion. Fast, no REPL or iteration. Use when the prompt already fits the target model's context window. |
 | `llm_query_batched(prompts, model=None)` | Multiple plain LM completions concurrently. |
-| `rlm_query(prompt, model=None)` | Spawn a child RLM with its own REPL for deeper thinking. Falls back to `llm_query` at max depth. |
+| `rlm_query(prompt, model=None)` | Spawn a child RLM with its own REPL for deeper thinking, or to offload a large subtask where recursive subcalls are available. Falls back to `llm_query` at max depth. |
 | `rlm_query_batched(prompts, model=None)` | Spawn multiple child RLMs. Falls back to `llm_query_batched` at max depth. |
 | `FINAL_VAR(variable_name)` | Return a REPL variable as the final answer. |
 | `SHOW_VARS()` | List all user-created variables in the REPL. |

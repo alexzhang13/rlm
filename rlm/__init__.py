@@ -2,6 +2,7 @@ from rlm.core.rlm import RLM
 from rlm.utils.exceptions import (
     BudgetExceededError,
     CancellationError,
+    ContextWindowExceededError,
     ErrorThresholdExceededError,
     TimeoutExceededError,
     TokenLimitExceededError,
@@ -14,4 +15,5 @@ __all__ = [
     "TokenLimitExceededError",
     "ErrorThresholdExceededError",
     "CancellationError",
+    "ContextWindowExceededError",
 ]
