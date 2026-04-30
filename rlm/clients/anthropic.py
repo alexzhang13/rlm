@@ -1,10 +1,17 @@
+import os
 from collections import defaultdict
 from typing import Any
 
 import anthropic
+from dotenv import load_dotenv
 
 from rlm.clients.base_lm import BaseLM
 from rlm.core.types import ModelUsageSummary, UsageSummary
+
+load_dotenv()
+
+DEFAULT_ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+DEFAULT_ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL")
 
 
 class AnthropicClient(BaseLM):
@@ -14,14 +21,32 @@ class AnthropicClient(BaseLM):
 
     def __init__(
         self,
-        api_key: str,
+        api_key: str | None = None,
         model_name: str | None = None,
+        base_url: str | None = None,
         max_tokens: int = 32768,
         **kwargs,
     ):
         super().__init__(model_name=model_name, **kwargs)
-        self.client = anthropic.Anthropic(api_key=api_key, timeout=self.timeout)
-        self.async_client = anthropic.AsyncAnthropic(api_key=api_key, timeout=self.timeout)
+
+        if api_key is None:
+            api_key = DEFAULT_ANTHROPIC_API_KEY
+
+        if api_key is None:
+            raise ValueError(
+                "Anthropic API key is required. Set ANTHROPIC_API_KEY env var or pass api_key."
+            )
+
+        # Fall back to ANTHROPIC_BASE_URL env var if base_url is not explicitly provided.
+        if base_url is None:
+            base_url = DEFAULT_ANTHROPIC_BASE_URL
+
+        client_kwargs = {"api_key": api_key, "timeout": self.timeout}
+        if base_url is not None:
+            client_kwargs["base_url"] = base_url
+
+        self.client = anthropic.Anthropic(**client_kwargs)
+        self.async_client = anthropic.AsyncAnthropic(**client_kwargs)
         self.model_name = model_name
         self.max_tokens = max_tokens
 

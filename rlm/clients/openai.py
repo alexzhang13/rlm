@@ -10,8 +10,9 @@ from rlm.core.types import ModelUsageSummary, UsageSummary
 
 load_dotenv()
 
-# Load API keys from environment variables
+# Load API keys and base URL from environment variables
 DEFAULT_OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+DEFAULT_OPENAI_API_BASE = os.getenv("OPENAI_API_BASE")
 DEFAULT_OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 DEFAULT_VERCEL_API_KEY = os.getenv("AI_GATEWAY_API_KEY")
 DEFAULT_PRIME_API_KEY = os.getenv("PRIME_API_KEY")
@@ -35,6 +36,10 @@ class OpenAIClient(BaseLM):
         **kwargs,
     ):
         super().__init__(model_name=model_name, **kwargs)
+
+        # Fall back to OPENAI_API_BASE env var if base_url is not explicitly provided.
+        if base_url is None:
+            base_url = DEFAULT_OPENAI_API_BASE
 
         if api_key is None:
             if base_url == "https://api.openai.com/v1" or base_url is None:
