@@ -50,17 +50,21 @@ writing it *into* the runner rather than retrofitting it turned a
 failed pilot night into a usable one. For the next project, runners
 ship with per-cell deadlines.
 
-I spent more of my agent-assisted time than expected on environment
-scaffolding (OAuth token discovery, Agent SDK vs raw Anthropic
-trade-offs, stdin-cap diagnosis) rather than on the core experimental
-contribution. That's not a failure of agent assistance — it's a
-feature of the actual work that needed doing. The part where Claude
-Code accelerated me the most was the mechanical breadth: writing five
-thin benchmark adapters with a shared `Query` type and paired-sampling
-helper, then three analysis scripts that aggregate + bootstrap + print
-a Markdown table, was a half-day task I didn't have to own keystroke
-by keystroke. The part where human oversight mattered most was
-catching the research agent's factual errors in smoke tests before
-they contaminated the actual experiment matrix. The project shipped
-with one failed smoke-test fix per subagent hand-off, which is about
-the right calibration.
+**4. Token consumption substantially exceeded my forecast.** The pilot
+plan and actual spend diverged by several multiples. The Agent SDK
+injects a ~16K-token Claude Code preamble into every call (3-4x raw
+API). Max-subscription quotas are token-weighted, so a single 100K-token
+CodeQA call drained more quota than twenty short S-NIAH calls. The
+per-cell hang in lesson 3 cost a full overnight before I caught it.
+Next time, multiply naive token estimates by harness overhead first,
+and budget for the long tail of extension runs the design inevitably
+grows into.
+
+Most agent-assisted time went to environment scaffolding (OAuth tokens,
+SDK trade-offs, stdin-cap diagnosis), not the core contribution. That
+is the actual work, not a failure of agent assistance. Where Claude Code
+accelerated me most was mechanical breadth — five benchmark adapters,
+three analysis scripts, all wired through a shared `Query` type. Where
+human oversight mattered most was catching the research agent's factual
+errors before they contaminated the experiment matrix. About one failed
+smoke-test fix per subagent hand-off, which is the right calibration.
