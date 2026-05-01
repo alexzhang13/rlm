@@ -36,6 +36,9 @@ This repository provides an extensible inference engine for using RLMs around st
 > This repository contains inference code for RLMs with support for various sandbox environments. Open-source contributions are welcome. This repository is maintained by the authors of the paper from the MIT OASYS lab.
 
 ## Quick Setup
+> [!NOTE]
+> `rlms` requires **Python 3.11 or later**.
+
 You can try out RLMs quickly by installing from PyPi:
 ```bash
 pip install rlms
