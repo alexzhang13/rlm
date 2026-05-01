@@ -4,7 +4,7 @@ from typing import Any
 from rlm.core.types import ModelUsageSummary, UsageSummary
 
 # Default timeout for LM API calls (in seconds)
-DEFAULT_TIMEOUT: float = 300.0
+DEFAULT_TIMEOUT: float = 900.0
 
 
 class BaseLM(ABC):

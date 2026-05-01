@@ -64,6 +64,7 @@ METHOD_ORDER = [
 BENCHMARK_ORDER = [
     "sniah",
     "longbench_codeqa",
+    "oolong_pairs",
 ]
 
 

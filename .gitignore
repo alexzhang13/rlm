@@ -218,5 +218,14 @@ results/*
 !results/.gitkeep
 logs/
 slides/*.pptx
+slides/*.aux
+slides/*.fdb_latexmk
+slides/*.fls
+slides/*.log
+slides/*.nav
+slides/*.out
+slides/*.snm
+slides/*.toc
+slides/*.xdv
 report/*.pdf
 .env

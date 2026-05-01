@@ -26,6 +26,8 @@ from experiments.baselines.base import RunResult
 from experiments.benchmarks.base import Benchmark, Query
 from experiments.benchmarks.browsecomp_plus import BrowseCompPlus1K
 from experiments.benchmarks.codeqa import LongBenchCodeQA
+from experiments.benchmarks.oolong import OOLONGAGNews
+from experiments.benchmarks.oolong_pairs import OOLONGPairs
 from experiments.benchmarks.sniah import SNIAH
 from experiments.runners.methods import all_methods, method_by_name
 
@@ -44,6 +46,8 @@ RESULTS_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "results"
 BENCHMARK_REGISTRY: dict[str, tuple[type[Benchmark], dict]] = {
     "sniah": (SNIAH, {}),
     "longbench_codeqa": (LongBenchCodeQA, {}),
+    "oolong_pairs": (OOLONGPairs, {}),
+    "oolong_agnews": (OOLONGAGNews, {}),
 }
 
 
@@ -52,6 +56,8 @@ PILOT_N = {b: 3 for b in BENCHMARK_REGISTRY}
 FULL_N = {
     "sniah": 10,
     "longbench_codeqa": 10,
+    "oolong_pairs": 4,
+    "oolong_agnews": 4,
 }
 
 
@@ -147,7 +153,7 @@ def main():
     parser.add_argument("--seed", type=int, default=2640)
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(
-        "--cell-timeout", type=float, default=480.0,
+        "--cell-timeout", type=float, default=1200.0,
         help="max seconds for one (method, query) cell (default 480)",
     )
     args = parser.parse_args()
