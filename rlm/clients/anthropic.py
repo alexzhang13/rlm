@@ -23,8 +23,8 @@ class AnthropicClient(BaseLM):
         self,
         api_key: str | None = None,
         model_name: str | None = None,
-        base_url: str | None = None,
         max_tokens: int = 32768,
+        base_url: str | None = None,
         **kwargs,
     ):
         super().__init__(model_name=model_name, **kwargs)
