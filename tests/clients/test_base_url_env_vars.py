@@ -4,10 +4,9 @@ in OpenAI, Anthropic, and Gemini clients.
 """
 
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
-
 
 # =============================================================================
 # OpenAI
