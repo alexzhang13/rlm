@@ -28,7 +28,7 @@ class TestOpenAIClientBaseUrl:
             from rlm.clients.openai import OpenAIClient
 
             with patch("rlm.clients.openai.DEFAULT_OPENAI_API_BASE", "https://my-org.example.com/v1"):
-                client = OpenAIClient(api_key="test-key")
+                _ = OpenAIClient(api_key="test-key")
 
             _, kwargs = mock_openai.call_args
             assert kwargs.get("base_url") == "https://my-org.example.com/v1"
@@ -40,7 +40,7 @@ class TestOpenAIClientBaseUrl:
         ), patch("rlm.clients.openai.DEFAULT_OPENAI_API_BASE", "https://env-base.example.com/v1"):
             from rlm.clients.openai import OpenAIClient
 
-            client = OpenAIClient(api_key="test-key", base_url="https://explicit.example.com/v1")
+            _ = OpenAIClient(api_key="test-key", base_url="https://explicit.example.com/v1")
 
             _, kwargs = mock_openai.call_args
             assert kwargs.get("base_url") == "https://explicit.example.com/v1"
@@ -52,7 +52,7 @@ class TestOpenAIClientBaseUrl:
         ), patch("rlm.clients.openai.DEFAULT_OPENAI_API_BASE", None):
             from rlm.clients.openai import OpenAIClient
 
-            client = OpenAIClient(api_key="test-key")
+            _ = OpenAIClient(api_key="test-key")
 
             _, kwargs = mock_openai.call_args
             assert kwargs.get("base_url") is None
@@ -75,7 +75,7 @@ class TestAnthropicClientEnvVars:
         ):
             from rlm.clients.anthropic import AnthropicClient
 
-            client = AnthropicClient()
+            _ = AnthropicClient()
 
             _, kwargs = mock_anthropic.call_args
             assert kwargs.get("api_key") == "env-anthropic-key"
@@ -101,7 +101,7 @@ class TestAnthropicClientEnvVars:
         ):
             from rlm.clients.anthropic import AnthropicClient
 
-            client = AnthropicClient()
+            _ = AnthropicClient()
 
             _, kwargs = mock_anthropic.call_args
             assert kwargs.get("base_url") == "https://my-org.example.com"
@@ -117,7 +117,7 @@ class TestAnthropicClientEnvVars:
         ):
             from rlm.clients.anthropic import AnthropicClient
 
-            client = AnthropicClient(base_url="https://explicit.example.com")
+            _ = AnthropicClient(base_url="https://explicit.example.com")
 
             _, kwargs = mock_anthropic.call_args
             assert kwargs.get("base_url") == "https://explicit.example.com"
@@ -133,7 +133,7 @@ class TestAnthropicClientEnvVars:
         ):
             from rlm.clients.anthropic import AnthropicClient
 
-            client = AnthropicClient()
+            _ = AnthropicClient()
 
             _, kwargs = mock_anthropic.call_args
             assert "base_url" not in kwargs
@@ -156,7 +156,7 @@ class TestGeminiClientBaseUrl:
         ):
             from rlm.clients.gemini import GeminiClient
 
-            client = GeminiClient(api_key="test-key")
+            _ = GeminiClient(api_key="test-key")
 
             _, kwargs = mock_http_options.call_args
             assert kwargs.get("base_url") == "https://my-org.example.com"
@@ -170,7 +170,7 @@ class TestGeminiClientBaseUrl:
         ):
             from rlm.clients.gemini import GeminiClient
 
-            client = GeminiClient(api_key="test-key", base_url="https://explicit.example.com")
+            _ = GeminiClient(api_key="test-key", base_url="https://explicit.example.com")
 
             _, kwargs = mock_http_options.call_args
             assert kwargs.get("base_url") == "https://explicit.example.com"
@@ -184,7 +184,7 @@ class TestGeminiClientBaseUrl:
         ):
             from rlm.clients.gemini import GeminiClient
 
-            client = GeminiClient(api_key="test-key")
+            _ = GeminiClient(api_key="test-key")
 
             _, kwargs = mock_http_options.call_args
             assert "base_url" not in kwargs
