@@ -1065,6 +1065,20 @@ wheels = [
 ]
 
 [[package]]
+name = "instavm"
+version = "0.21.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyyaml" },
+    { name = "requests" },
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9c/11/e2a584de66605961a2b0a3e11bbab6599a06efd161c36e0a1dff17936025/instavm-0.21.0.tar.gz", hash = "sha256:02e081d770c0755ccdb50d252462289612da1e36b4a3e911e28aa542da42b143", size = 146408, upload-time = "2026-04-28T22:58:56.776Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e3/4e/89dfd96c99eafff3f093f7d9f6486d2e22f281f1c42a1a5f8ff605c7f53f/instavm-0.21.0-py3-none-any.whl", hash = "sha256:60bcacd5b7f1a1399333a092689dff3a44eb06b538a20d2f103bf646dc8c38af", size = 103727, upload-time = "2026-04-28T22:58:55.416Z" },
+]
+
+[[package]]
 name = "ipykernel"
 version = "7.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2220,6 +2234,10 @@ e2b = [
     { name = "dill" },
     { name = "e2b-code-interpreter" },
 ]
+instavm = [
+    { name = "dill" },
+    { name = "instavm" },
+]
 ipython = [
     { name = "dill" },
     { name = "ipykernel" },
@@ -2254,11 +2272,13 @@ requires-dist = [
     { name = "daytona", marker = "extra == 'daytona'", specifier = ">=0.128.1" },
     { name = "dill", marker = "extra == 'daytona'", specifier = ">=0.3.7" },
     { name = "dill", marker = "extra == 'e2b'", specifier = ">=0.3.7" },
+    { name = "dill", marker = "extra == 'instavm'", specifier = ">=0.3.7" },
     { name = "dill", marker = "extra == 'ipython'", specifier = ">=0.3.7" },
     { name = "dill", marker = "extra == 'modal'", specifier = ">=0.3.7" },
     { name = "dill", marker = "extra == 'prime'", specifier = ">=0.3.7" },
     { name = "e2b-code-interpreter", marker = "extra == 'e2b'", specifier = ">=0.0.11" },
     { name = "google-genai", specifier = ">=1.56.0" },
+    { name = "instavm", marker = "extra == 'instavm'", specifier = ">=0.21.0" },
     { name = "ipykernel", marker = "extra == 'ipython'", specifier = ">=6.0.0" },
     { name = "ipython", marker = "extra == 'ipython'", specifier = ">=8.0.0" },
     { name = "jupyter-client", marker = "extra == 'ipython'", specifier = ">=8.0.0" },
@@ -2271,7 +2291,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32.5" },
     { name = "rich", specifier = ">=13.0.0" },
 ]
-provides-extras = ["modal", "e2b", "daytona", "prime", "ipython"]
+provides-extras = ["modal", "e2b", "daytona", "prime", "instavm", "ipython"]
 
 [package.metadata.requires-dev]
 dev = [
