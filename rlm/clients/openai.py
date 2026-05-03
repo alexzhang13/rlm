@@ -50,6 +50,10 @@ class OpenAIClient(BaseLM):
                 api_key = DEFAULT_VERCEL_API_KEY
             elif base_url == DEFAULT_PRIME_INTELLECT_BASE_URL:
                 api_key = DEFAULT_PRIME_API_KEY
+            else:
+                # For any custom/unknown base URL (e.g. org proxies set via OPENAI_API_BASE),
+                # fall back to OPENAI_API_KEY so the client is not left unauthenticated.
+                api_key = DEFAULT_OPENAI_API_KEY
 
         # Pass through arbitrary kwargs to the OpenAI client (e.g. default_headers, default_query, max_retries).
         # Exclude model_name since it is not an OpenAI client constructor argument.

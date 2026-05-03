@@ -56,6 +56,23 @@ class TestOpenAIClientBaseUrl:
             _, kwargs = mock_openai.call_args
             assert kwargs.get("base_url") is None
 
+    def test_openai_api_key_used_for_custom_base_url(self):
+        """When OPENAI_API_BASE is a custom URL and api_key is omitted, OPENAI_API_KEY is still used."""
+        with patch("rlm.clients.openai.openai.OpenAI") as mock_openai, patch(
+            "rlm.clients.openai.openai.AsyncOpenAI"
+        ), patch(
+            "rlm.clients.openai.DEFAULT_OPENAI_API_BASE", "https://my-org.example.com/v1"
+        ), patch(
+            "rlm.clients.openai.DEFAULT_OPENAI_API_KEY", "my-openai-key"
+        ):
+            from rlm.clients.openai import OpenAIClient
+
+            _ = OpenAIClient()
+
+            _, kwargs = mock_openai.call_args
+            assert kwargs.get("api_key") == "my-openai-key"
+            assert kwargs.get("base_url") == "https://my-org.example.com/v1"
+
 
 # =============================================================================
 # Anthropic
