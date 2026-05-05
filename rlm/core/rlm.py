@@ -200,18 +200,39 @@ class RLM:
         # Create client and wrap in handler
         client: BaseLM = get_client(self.backend, self.backend_kwargs)
 
-        # Create other_backend_client if provided (for depth=1 routing)
-        other_backend_client: BaseLM | None = None
+        # Create one BaseLM instance per (backend, kwargs) pair. Each entry in
+        # `other_backends` / `other_backend_kwargs` is constructed exactly
+        # once. The first sub-client serves both as `other_backend_client`
+        # (depth=1 default routing when LMHandler.get_client receives no
+        # `model` arg) AND is registered by its `model_name` for explicit-
+        # model routing — same instance, both paths.
+        #
+        # Previous behavior constructed the first sub-client TWICE: once at
+        # line 206 (for `other_backend_client`) and again inside the loop at
+        # line 213 (for `register_client`). With backends that hold expensive
+        # underlying state (HTTP connection pools, async clients, OS sockets),
+        # the duplicate carried real cost; with multi-backend Anthropic on
+        # macOS we observed a 3-min hang at iter 2 of every multi-backend
+        # trajectory, fully recovered by de-dup. Usage tracking also merged
+        # via dict.update at lm_handler.py:198-205, so the duplicate
+        # over-wrote one of the two instances' usage summaries.
+        other_clients: list[BaseLM] = []
         if self.other_backends and self.other_backend_kwargs:
-            other_backend_client = get_client(self.other_backends[0], self.other_backend_kwargs[0])
+            for backend, kwargs in zip(
+                self.other_backends, self.other_backend_kwargs, strict=True,
+            ):
+                other_clients.append(get_client(backend, kwargs))
+
+        other_backend_client: BaseLM | None = (
+            other_clients[0] if other_clients else None
+        )
 
         lm_handler = LMHandler(client, other_backend_client=other_backend_client)
 
-        # Register other clients to be available as sub-call options (by model name)
-        if self.other_backends and self.other_backend_kwargs:
-            for backend, kwargs in zip(self.other_backends, self.other_backend_kwargs, strict=True):
-                other_client: BaseLM = get_client(backend, kwargs)
-                lm_handler.register_client(other_client.model_name, other_client)
+        # Register every sub-client (including `other_backend_client`) by its
+        # `model_name` — the SAME instance, NOT a new one.
+        for sub_client in other_clients:
+            lm_handler.register_client(sub_client.model_name, sub_client)
 
         lm_handler.start()
 
