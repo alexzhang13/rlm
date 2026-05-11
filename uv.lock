@@ -2632,7 +2632,6 @@ prime = [
 [package.dev-dependencies]
 dev = [
     { name = "pre-commit" },
-    { name = "rlms" },
     { name = "ruff" },
     { name = "ty" },
 ]
@@ -2671,7 +2670,6 @@ provides-extras = ["modal", "e2b", "daytona", "prime", "ipython"]
 [package.metadata.requires-dev]
 dev = [
     { name = "pre-commit", specifier = ">=4.5.1" },
-    { name = "rlms", editable = "." },
     { name = "ruff", specifier = ">=0.14.10" },
     { name = "ty", specifier = ">=0.0.7" },
 ]
