@@ -52,7 +52,6 @@ include = ["rlm", "rlm.*"]
 [dependency-groups]
 dev = [
     "pre-commit>=4.5.1",
-    "rlms",
     "ruff>=0.14.10",
     "ty>=0.0.7",
 ]
@@ -84,13 +83,4 @@ quote-style = "double"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
-[tool.uv.workspace]
-members = [
-    ".",
-    ".",
-    ".",
-]
-
-[tool.uv.sources]
 rlms = { workspace = true }
