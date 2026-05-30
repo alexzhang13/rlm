@@ -57,6 +57,7 @@ class GeminiClient(BaseLM):
         model = model or self.model_name
         if not model:
             raise ValueError("Model name is required for Gemini client.")
+        self.validate_prompt_context_window(prompt, model)
 
         config = None
         if system_instruction:
@@ -79,6 +80,7 @@ class GeminiClient(BaseLM):
         model = model or self.model_name
         if not model:
             raise ValueError("Model name is required for Gemini client.")
+        self.validate_prompt_context_window(prompt, model)
 
         config = None
         if system_instruction:

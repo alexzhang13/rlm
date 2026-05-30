@@ -2,6 +2,7 @@
 
 from rlm.core.comms_utils import LMRequest, send_lm_request, send_lm_request_batched
 from rlm.core.lm_handler import LMHandler
+from rlm.utils.exceptions import ContextWindowExceededError
 from tests.mock_lm import MockLM
 
 
@@ -43,3 +44,46 @@ def test_lm_handler_batched_many_prompts_semaphore_cap():
     for i, resp in enumerate(result):
         assert resp.success, (i, resp.error)
         assert resp.chat_completion.response == f"resp-{i}"
+
+
+def test_lm_handler_single_request_propagates_context_window_error():
+    """Client preflight errors should be returned as handler error responses."""
+
+    def raise_context_window_error(_prompt):
+        raise ContextWindowExceededError(
+            model_name="gpt-4",
+            estimated_input_tokens=9_000,
+            context_limit=8_192,
+            prompt_kind="string",
+            estimation_method="character estimate (4 chars/token)",
+        )
+
+    mock = MockLM(model_name="gpt-4", response_fn=raise_context_window_error)
+    with LMHandler(client=mock) as handler:
+        response = send_lm_request(handler.address, LMRequest(prompt="too big"))
+
+    assert not response.success
+    assert response.error is not None
+    assert "Context window exceeded" in response.error
+
+
+def test_lm_handler_batched_request_propagates_context_window_error():
+    """Batched handler failures should fan out as one error response per prompt."""
+
+    def raise_context_window_error(_prompt):
+        raise ContextWindowExceededError(
+            model_name="gpt-4",
+            estimated_input_tokens=9_000,
+            context_limit=8_192,
+            prompt_kind="string",
+            estimation_method="character estimate (4 chars/token)",
+        )
+
+    mock = MockLM(model_name="gpt-4", response_fn=raise_context_window_error)
+    with LMHandler(client=mock) as handler:
+        responses = send_lm_request_batched(handler.address, ["a", "b", "c"])
+
+    assert len(responses) == 3
+    assert all(not response.success for response in responses)
+    assert all(response.error is not None for response in responses)
+    assert all("Context window exceeded" in response.error for response in responses)

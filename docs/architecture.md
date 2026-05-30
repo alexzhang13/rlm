@@ -168,7 +168,8 @@ They have very different behaviors:
 ### `llm_query(prompt, model=None)` — Plain LM call
 
 Always makes a single, direct LM completion. No REPL, no iteration — just
-prompt in, text out. Fast and lightweight.
+prompt in, text out. Fast and lightweight, but the prompt still has to fit
+the selected model's context window.
 
 ```
 Model code: answer = llm_query("Summarize this text: ...")

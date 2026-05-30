@@ -82,6 +82,7 @@ class AzureOpenAIClient(BaseLM):
         model = model or self.model_name
         if not model:
             raise ValueError("Model name is required for Azure OpenAI client.")
+        self.validate_prompt_context_window(prompt, model)
 
         response = self.client.chat.completions.create(
             model=model,
@@ -103,6 +104,7 @@ class AzureOpenAIClient(BaseLM):
         model = model or self.model_name
         if not model:
             raise ValueError("Model name is required for Azure OpenAI client.")
+        self.validate_prompt_context_window(prompt, model)
 
         response = await self.async_client.chat.completions.create(
             model=model,

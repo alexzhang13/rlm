@@ -7,6 +7,8 @@ with ~4 characters per token.
 
 from typing import Any
 
+from rlm.utils.exceptions import ContextWindowExceededError
+
 # Default context limit when model is unknown (tokens)
 DEFAULT_CONTEXT_LIMIT = 128_000
 
@@ -122,6 +124,59 @@ def _count_tokens_tiktoken(messages: list[dict[str, Any]], model_name: str) -> i
     return total
 
 
+def _count_text_tokens_tiktoken(text: str, model_name: str) -> int | None:
+    """Count text tokens with tiktoken if available. Returns None on failure."""
+    try:
+        import tiktoken
+    except ImportError:
+        return None
+    try:
+        enc = tiktoken.encoding_for_model(model_name)
+    except Exception:
+        try:
+            enc = tiktoken.get_encoding("cl100k_base")
+        except Exception:
+            return None
+    return len(enc.encode(text))
+
+
+def _estimate_text_tokens_with_method(text: str, model_name: str) -> tuple[int, str]:
+    """Estimate token count for raw text and report the estimation method used."""
+    if model_name and model_name != "unknown":
+        n = _count_text_tokens_tiktoken(text, model_name)
+        if n is not None:
+            return n, "tiktoken estimate"
+    return (
+        (len(text) + CHARS_PER_TOKEN_ESTIMATE - 1) // CHARS_PER_TOKEN_ESTIMATE,
+        f"character estimate ({CHARS_PER_TOKEN_ESTIMATE} chars/token)",
+    )
+
+
+def _estimate_message_tokens_with_method(
+    messages: list[dict[str, Any]], model_name: str
+) -> tuple[int, str]:
+    """Estimate token count for a chat-style message list."""
+    if not messages:
+        return 0, "empty prompt"
+    if model_name and model_name != "unknown":
+        n = _count_tokens_tiktoken(messages, model_name)
+        if n is not None:
+            return n, "tiktoken estimate"
+    total_chars = 0
+    for m in messages:
+        raw = m.get("content", "") or ""
+        total_chars += len(raw) if isinstance(raw, str) else len(str(raw))
+    return (
+        (total_chars + CHARS_PER_TOKEN_ESTIMATE - 1) // CHARS_PER_TOKEN_ESTIMATE,
+        f"character estimate ({CHARS_PER_TOKEN_ESTIMATE} chars/token)",
+    )
+
+
+def estimate_text_tokens(text: str, model_name: str) -> int:
+    """Estimate token count for raw text."""
+    return _estimate_text_tokens_with_method(text, model_name)[0]
+
+
 def count_tokens(messages: list[dict[str, Any]], model_name: str) -> int:
     """
     Count tokens in a list of message dicts (role, content).
@@ -129,15 +184,42 @@ def count_tokens(messages: list[dict[str, Any]], model_name: str) -> int:
     Uses tiktoken for OpenAI-style models when the package is available;
     otherwise estimates with character length / CHARS_PER_TOKEN_ESTIMATE.
     """
-    if not messages:
-        return 0
-    if model_name and model_name != "unknown":
-        n = _count_tokens_tiktoken(messages, model_name)
-        if n is not None:
-            return n
-    # Fallback: count chars (stringify in case content is not str, e.g. list)
-    total_chars = 0
-    for m in messages:
-        raw = m.get("content", "") or ""
-        total_chars += len(raw) if isinstance(raw, str) else len(str(raw))
-    return (total_chars + CHARS_PER_TOKEN_ESTIMATE - 1) // CHARS_PER_TOKEN_ESTIMATE
+    return _estimate_message_tokens_with_method(messages, model_name)[0]
+
+
+def count_prompt_tokens(prompt: str | list[dict[str, Any]], model_name: str) -> int:
+    """Estimate token count for a plain prompt string or a chat message list."""
+    return _count_prompt_tokens_with_method(prompt, model_name)[0]
+
+
+def validate_prompt_fits_context_window(
+    prompt: str | list[dict[str, Any]], model_name: str
+) -> None:
+    """Raise ContextWindowExceededError when a prompt is too large for the model."""
+    estimated_tokens, estimation_method, prompt_kind = _count_prompt_tokens_with_method(
+        prompt, model_name
+    )
+    context_limit = get_context_limit(model_name)
+    if estimated_tokens > context_limit:
+        raise ContextWindowExceededError(
+            model_name=model_name,
+            estimated_input_tokens=estimated_tokens,
+            context_limit=context_limit,
+            prompt_kind=prompt_kind,
+            estimation_method=estimation_method,
+        )
+
+
+def _count_prompt_tokens_with_method(
+    prompt: str | list[dict[str, Any]], model_name: str
+) -> tuple[int, str, str]:
+    """Estimate prompt tokens and return (count, method, prompt_kind)."""
+    if isinstance(prompt, str):
+        count, method = _estimate_message_tokens_with_method(
+            [{"role": "user", "content": prompt}], model_name
+        )
+        return count, method, "string"
+    if isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
+        count, method = _estimate_message_tokens_with_method(prompt, model_name)
+        return count, method, "message-list"
+    raise ValueError(f"Invalid prompt type: {type(prompt)}")

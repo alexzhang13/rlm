@@ -102,6 +102,7 @@ class OpenAIClient(BaseLM):
         model = model or self.model_name
         if not model:
             raise ValueError("Model name is required for OpenAI client.")
+        self.validate_prompt_context_window(prompt, model)
 
         extra_body: dict[str, Any] = {}
         if self.client.base_url == DEFAULT_PRIME_INTELLECT_BASE_URL:
@@ -130,6 +131,7 @@ class OpenAIClient(BaseLM):
         model = model or self.model_name
         if not model:
             raise ValueError("Model name is required for OpenAI client.")
+        self.validate_prompt_context_window(prompt, model)
 
         extra_body: dict[str, Any] = {}
         if self.client.base_url == DEFAULT_PRIME_INTELLECT_BASE_URL:

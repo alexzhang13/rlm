@@ -65,6 +65,35 @@ class ErrorThresholdExceededError(Exception):
         )
 
 
+class ContextWindowExceededError(Exception):
+    """Raised when a prompt is estimated to exceed a model's context window."""
+
+    def __init__(
+        self,
+        model_name: str,
+        estimated_input_tokens: int,
+        context_limit: int,
+        prompt_kind: str,
+        estimation_method: str,
+        message: str | None = None,
+    ):
+        self.model_name = model_name
+        self.estimated_input_tokens = estimated_input_tokens
+        self.context_limit = context_limit
+        self.prompt_kind = prompt_kind
+        self.estimation_method = estimation_method
+        super().__init__(
+            message
+            or (
+                f"Context window exceeded for model '{model_name}': estimated "
+                f"{estimated_input_tokens:,} input tokens for {prompt_kind} prompt exceeds "
+                f"{context_limit:,}-token limit ({estimation_method}). Reduce, chunk, or "
+                "summarize the prompt first, or use rlm_query(...) where recursive subcalls "
+                "are supported."
+            )
+        )
+
+
 class CancellationError(Exception):
     """Raised when the RLM execution is cancelled by the user."""
 

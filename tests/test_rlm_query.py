@@ -4,8 +4,11 @@ import threading
 import time
 from unittest.mock import MagicMock
 
+from rlm.core.lm_handler import LMHandler
 from rlm.core.types import RLMChatCompletion, UsageSummary
 from rlm.environments.local_repl import LocalREPL
+from rlm.utils.exceptions import ContextWindowExceededError
+from tests.mock_lm import MockLM
 
 
 def _make_completion(response: str) -> RLMChatCompletion:
@@ -71,6 +74,24 @@ class TestRlmQueryWithoutSubcallFn:
         repl.execute_code("response = rlm_query('test')")
         assert "Error" in repl.locals["response"]
         repl.cleanup()
+
+    def test_rlm_query_fallback_surfaces_context_window_error(self):
+        """Leaf fallback should surface context-window failures from plain LM calls."""
+
+        def raise_context_window_error(_prompt):
+            raise ContextWindowExceededError(
+                model_name="gpt-4",
+                estimated_input_tokens=9_000,
+                context_limit=8_192,
+                prompt_kind="string",
+                estimation_method="character estimate (4 chars/token)",
+            )
+
+        mock = MockLM(model_name="gpt-4", response_fn=raise_context_window_error)
+        with LMHandler(client=mock) as handler:
+            with LocalREPL(lm_handler_address=handler.address) as repl:
+                repl.execute_code("response = rlm_query('too big')")
+                assert "Context window exceeded" in repl.locals["response"]
 
 
 class TestRlmQueryBatchedWithSubcallFn:

@@ -173,8 +173,8 @@ result = rlm.completion(
 
 Depth>1 recursive subcalls are supported. The REPL provides two LM call functions:
 
-- **`llm_query(prompt)`** — Always makes a plain, single LM completion. Fast and lightweight. Use for simple extraction, summarization, or Q&A.
-- **`rlm_query(prompt)`** — Spawns a child RLM with its own REPL and iterative reasoning. Use for subtasks that need multi-step thinking or code execution. Falls back to `llm_query` when `depth >= max_depth`.
+- **`llm_query(prompt)`** — Always makes a plain, single LM completion. Fast and lightweight. Use for simple extraction, summarization, or Q&A when the prompt already fits the target model's context window.
+- **`rlm_query(prompt)`** — Spawns a child RLM with its own REPL and iterative reasoning. Use for subtasks that need multi-step thinking or code execution, and where recursive subcalls are available it can also offload a large subtask into a child RLM. Falls back to `llm_query` when `depth >= max_depth`.
 
 Both have batched variants (`llm_query_batched`, `rlm_query_batched`) for processing multiple prompts concurrently.
 
@@ -187,6 +187,7 @@ RLM raises explicit exceptions when limits are exceeded:
 - `TimeoutExceededError`
 - `TokenLimitExceededError`
 - `ErrorThresholdExceededError`
+- `ContextWindowExceededError`
 - `CancellationError` (on `KeyboardInterrupt`)
 
 All exceptions are importable from the top-level package (`from rlm import TimeoutExceededError, ...`).
