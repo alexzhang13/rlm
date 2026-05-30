@@ -173,7 +173,7 @@ def load_state():
         try:
             with open(STATE_FILE, "rb") as f:
                 return dill.load(f)
-        except:
+        except Exception:
             pass
     return {{}}
 
@@ -185,7 +185,7 @@ def save_state(state):
         try:
             dill.dumps(v)
             clean_state[k] = v
-        except:
+        except Exception:
             pass
     with open(STATE_FILE, "wb") as f:
         dill.dump(clean_state, f)
@@ -197,7 +197,7 @@ def serialize_locals(state):
             continue
         try:
             result[k] = repr(v)
-        except:
+        except Exception:
             result[k] = f"<{{type(v).__name__}}>"
     return result
 
