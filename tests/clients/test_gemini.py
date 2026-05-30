@@ -1,5 +1,6 @@
 """Tests for the Gemini client."""
 
+import asyncio
 import os
 from unittest.mock import MagicMock, patch
 
@@ -172,10 +173,10 @@ class TestGeminiClientIntegration:
         not os.environ.get("GEMINI_API_KEY"),
         reason="GEMINI_API_KEY not set",
     )
-    async def test_async_completion(self):
+    def test_async_completion(self):
         """Test async completion."""
         client = GeminiClient(model_name="gemini-2.5-flash")
-        result = await client.acompletion("What is 3+3? Reply with just the number.")
+        result = asyncio.run(client.acompletion("What is 3+3? Reply with just the number."))
         assert "6" in result
 
 
