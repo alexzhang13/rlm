@@ -205,6 +205,120 @@ ORCHESTRATOR_ADDENDUM = "\n\n".join(
 )
 
 
+ADAPTIVE_ORCHESTRATOR_ADDENDUM = "\n\n".join(
+    [
+        "Adaptive execution tools are available in the REPL: `adaptive_batch`, "
+        "`adaptive_map`, `adaptive_dag`, `adaptive_search_tree`, and `adaptive_stats`.",
+        (
+            "Tool signatures: `adaptive_batch(prompts, query='llm', model=None, "
+            "batch_size=None)`; `adaptive_map(items, prompt_fn, items_per_prompt=1, "
+            "query='llm', model=None, batch_size=None, parse_fn=None, flatten=False)` "
+            "where `prompt_fn(batch_items, start_index)` returns one prompt; and "
+            "`adaptive_dag(nodes, query='llm', model=None, batch_size=None)` for "
+            "nodes with `id`, `deps`, and either `prompt` or `prompt_template`. "
+            "Use `adaptive_search_tree(candidates, query, score_prompt_fn, "
+            "parse_score_fn, top_k=20, stages=1, expand_fn=None, "
+            "extract_prompt_fn=None, batch_size=None, model=None)` for sparse "
+            "evidence search over many candidates."
+        ),
+        (
+            "Before doing expensive sub-LM work, choose the task topology. For many "
+            "independent records, use `adaptive_map` and reduce in Python. For many "
+            "files or chunks, use `adaptive_map` over chunks and aggregate evidence. "
+            "For dependent subproblems, use `adaptive_dag`. For deep search, first "
+            "filter candidates cheaply in Python, then use `adaptive_search_tree` "
+            "to score and narrow the promising frontier. "
+            "For a small uncertain option set, verify options in parallel."
+        ),
+        (
+            "For sparse-evidence tasks over many documents, files, chunks, or "
+            "sections, use `adaptive_search_tree`. Do not scan every candidate with "
+            "full semantic extraction first. Score candidates in batched waves, keep "
+            "top-k, expand promising candidates if useful, then verify the final "
+            "answer from compact evidence."
+        ),
+        (
+            "Do not write long sequential `llm_query` or `rlm_query` loops when calls "
+            "are independent. Pack multiple records into each prompt when possible, "
+            "run batched waves with the adaptive helpers, parse structured outputs, "
+            "and do deterministic aggregation in Python."
+        ),
+        (
+            "For exact aggregation tasks over many records, split the records, pack "
+            "multiple records per prompt, ask for structured outputs, parse them, "
+            "and aggregate exactly in Python. Do not guess when exact counting or "
+            "exhaustive coverage is required."
+        ),
+        (
+            "If record labels, categories, relevance, or answers require semantic "
+            "judgment, do not replace sub-LM classification with broad hand-written "
+            "heuristics unless the labels are explicitly present in the data. Use "
+            "`adaptive_map` for the semantic pass, then use Python only for parsing, "
+            "counting, joining, filtering, and deterministic reduction."
+        ),
+        (
+            "In required adaptive mode, the runtime will reject a final answer until "
+            "one of `adaptive_batch`, `adaptive_map`, `adaptive_dag`, or "
+            "`adaptive_search_tree` has actually "
+            "scheduled sub-call work (`adaptive_stats()['scheduled_prompts'] > 0`). "
+            "If your first attempt is rejected, call an adaptive helper before trying "
+            "to finalize again."
+        ),
+        (
+            "Final answers in adaptive-required mode must be plain text. Do not set "
+            "`answer['content']` to markdown code fences or a ```repl block. Execute "
+            "code in the REPL, then set `answer['content']` to the final answer text "
+            "and `answer['ready'] = True`."
+        ),
+    ]
+)
+
+
+def build_adaptive_requirement_addendum(required_adaptive_helper: str | None) -> str:
+    if required_adaptive_helper is None:
+        return ""
+
+    helper_guidance = {
+        "adaptive_batch": (
+            "Use `adaptive_batch` when you already have a list of independent prompts. "
+            "Build the prompt list in Python, call `adaptive_batch`, then aggregate the "
+            "responses deterministically before finalizing."
+        ),
+        "adaptive_map": (
+            "Use `adaptive_map` when many independent records/items need the same "
+            "semantic operation. Pack multiple items per prompt when possible, parse "
+            "structured outputs, then reduce in Python."
+        ),
+        "adaptive_dag": (
+            "Use `adaptive_dag` when the task decomposes into dependent subproblems. "
+            "Represent each subproblem as a node with `id`, `deps`, and a prompt or "
+            "prompt_template so independent frontiers can run in batched waves."
+        ),
+        "adaptive_search_tree": (
+            "Use `adaptive_search_tree` when the answer is likely supported by a small "
+            "subset of many documents, chunks, files, or sections. Split the context "
+            "into candidates, define `score_prompt_fn(candidate, index, query)`, define "
+            "`parse_score_fn(response, candidate, index)` returning at least score, "
+            "reason, and evidence, call `adaptive_search_tree`, then answer from the "
+            "compact top evidence."
+        ),
+    }
+
+    guidance = helper_guidance.get(required_adaptive_helper, "Call the required adaptive helper.")
+    return "\n\n".join(
+        [
+            f"Adaptive requirement for this run: you must call `{required_adaptive_helper}` "
+            "before finalizing.",
+            guidance,
+            (
+                "The runtime will reject finalization until `adaptive_stats()` shows "
+                f"`{required_adaptive_helper}` in `topologies`, `scheduled_prompts > 0`, "
+                "and `batch_waves > 0`."
+            ),
+        ]
+    )
+
+
 _DEFAULT_MAX_ITERATIONS = 30
 
 

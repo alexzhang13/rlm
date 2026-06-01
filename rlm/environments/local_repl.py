@@ -162,6 +162,7 @@ class LocalREPL(NonIsolatedEnv):
         custom_sub_tools: dict[str, Any] | None = None,
         compaction: bool = False,
         max_concurrent_subcalls: int = 4,
+        adaptive: bool = False,
         **kwargs,
     ):
         super().__init__(
@@ -179,6 +180,8 @@ class LocalREPL(NonIsolatedEnv):
         self._context_count: int = 0
         self._history_count: int = 0
         self.compaction = compaction
+        self.adaptive = adaptive
+        self.adaptive_runtime = None
 
         # Custom tools: functions available in the REPL
         self.custom_tools = custom_tools or {}
@@ -225,6 +228,8 @@ class LocalREPL(NonIsolatedEnv):
         self.globals["llm_query_batched"] = self._llm_query_batched
         self.globals["rlm_query"] = self._rlm_query
         self.globals["rlm_query_batched"] = self._rlm_query_batched
+        if self.adaptive:
+            self._setup_adaptive_helpers()
 
         # The model marks completion via ``answer["ready"] = True``; the
         # custom dict captures the content as soon as that happens so we
@@ -240,6 +245,26 @@ class LocalREPL(NonIsolatedEnv):
             else:
                 # For non-callable values (constants, data), add to locals
                 self.locals[name] = value
+
+    def _setup_adaptive_helpers(self) -> None:
+        from rlm.adaptive import AdaptiveRuntime
+
+        self.adaptive_runtime = AdaptiveRuntime(
+            llm_query_batched=self._llm_query_batched,
+            rlm_query_batched=self._rlm_query_batched,
+            max_batch_size=self.max_concurrent_subcalls,
+        )
+        self.locals["adaptive_metrics"] = self.adaptive_runtime.metrics
+        self._restore_adaptive_helpers()
+
+    def _restore_adaptive_helpers(self) -> None:
+        if self.adaptive_runtime is None:
+            return
+        self.globals["adaptive_batch"] = self.adaptive_runtime.adaptive_batch
+        self.globals["adaptive_map"] = self.adaptive_runtime.adaptive_map
+        self.globals["adaptive_dag"] = self.adaptive_runtime.adaptive_dag
+        self.globals["adaptive_search_tree"] = self.adaptive_runtime.adaptive_search_tree
+        self.globals["adaptive_stats"] = self.adaptive_runtime.adaptive_stats
 
     def _capture_answer(self, content: Any) -> None:
         self._last_final_answer = str(content)
@@ -524,6 +549,15 @@ class LocalREPL(NonIsolatedEnv):
                 self.globals["rlm_query_batched"] = self._rlm_query_batched
             elif name == "SHOW_VARS":
                 self.globals["SHOW_VARS"] = self._show_vars
+            elif name in {
+                "adaptive_batch",
+                "adaptive_map",
+                "adaptive_dag",
+                "adaptive_search_tree",
+                "adaptive_stats",
+            }:
+                if self.adaptive:
+                    self._restore_adaptive_helpers()
             elif name == "answer":
                 current = self.locals.get("answer")
                 # If the model rebound ``answer`` to a plain dict, the

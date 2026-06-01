@@ -29,8 +29,10 @@ from rlm.utils.parsing import (
     format_iteration,
 )
 from rlm.utils.prompts import (
+    ADAPTIVE_ORCHESTRATOR_ADDENDUM,
     RLM_SYSTEM_PROMPT,
     QueryMetadata,
+    build_adaptive_requirement_addendum,
     build_rlm_system_prompt,
     build_user_prompt,
 )
@@ -78,6 +80,9 @@ class RLM:
         sub_sampling_args: dict[str, Any] | None = None,
         orchestrator: bool = True,
         user_prologue: str | None = None,
+        adaptive: bool = False,
+        adaptive_policy: str = "require",
+        required_adaptive_helper: str | None = None,
     ):
         """
         Args:
@@ -112,6 +117,13 @@ class RLM:
             on_subcall_complete: Callback fired when a child RLM completes. Args: (depth, model, duration, error_or_none).
             on_iteration_start: Callback fired when an iteration starts. Args: (depth, iteration_num).
             on_iteration_complete: Callback fired when an iteration completes. Args: (depth, iteration_num, duration).
+            adaptive: If True, expose adaptive batching/DAG helpers in the local REPL and
+                add prompt guidance for task-adaptive parallel execution.
+            adaptive_policy: "suggest" only prompts for adaptive helpers; "require"
+                rejects final answers until adaptive helpers schedule sub-call work.
+            required_adaptive_helper: Optional specific helper topology to require, e.g.
+                "adaptive_map". If None, any adaptive helper that schedules prompts satisfies
+                the requirement.
         """
         # Sampling args plumbed into backend_kwargs / other_backend_kwargs
         # before the clients are constructed, so they reach the chat-completions
@@ -138,6 +150,21 @@ class RLM:
             other_backend_kwargs[0] = first
 
         # Store config for spawning per-completion
+        if adaptive and environment != "local":
+            raise ValueError("adaptive=True currently supports environment='local' only")
+        if adaptive_policy not in {"suggest", "require"}:
+            raise ValueError("adaptive_policy must be 'suggest' or 'require'")
+        if required_adaptive_helper is not None and required_adaptive_helper not in {
+            "adaptive_batch",
+            "adaptive_map",
+            "adaptive_dag",
+            "adaptive_search_tree",
+        }:
+            raise ValueError(
+                "required_adaptive_helper must be one of: "
+                "'adaptive_batch', 'adaptive_map', 'adaptive_dag', 'adaptive_search_tree'"
+            )
+
         self.backend = backend
         self.backend_kwargs = backend_kwargs
         self.environment_type = environment
@@ -178,6 +205,9 @@ class RLM:
         # ``user_prologue`` so canonical inference can match envs that
         # depend on a task-specific tips message (e.g. BC+).
         self.user_prologue = user_prologue
+        self.adaptive = adaptive
+        self.adaptive_policy = adaptive_policy
+        self.required_adaptive_helper = required_adaptive_helper
         self.logger = logger
         self.verbose = VerbosePrinter(enabled=verbose)
 
@@ -217,6 +247,8 @@ class RLM:
                 if environment_kwargs
                 else {},
                 other_backends=other_backends,
+                adaptive=adaptive,
+                adaptive_policy=adaptive_policy if adaptive else "off",
             )
             if self.logger:
                 self.logger.log_metadata(metadata)
@@ -269,9 +301,13 @@ class RLM:
             environment.add_context(prompt)
         else:
             env_kwargs = self.environment_kwargs.copy()
+            if self.adaptive and self.environment_type != "local":
+                raise ValueError("adaptive=True currently supports environment='local' only")
             env_kwargs["lm_handler_address"] = (lm_handler.host, lm_handler.port)
             env_kwargs["context_payload"] = prompt
             env_kwargs["depth"] = self.depth + 1  # Environment depth is RLM depth + 1
+            if self.adaptive:
+                env_kwargs["adaptive"] = True
             # For local/ipython environments with max_depth > 1, pass subcall callback for recursive RLM calls
             if self.environment_type in ("local", "ipython") and self.max_depth > 1:
                 env_kwargs["subcall_fn"] = self._subcall
@@ -305,8 +341,17 @@ class RLM:
         up the initial message history.
         """
         metadata = QueryMetadata(prompt)
+        system_prompt = self.system_prompt
+        if self.adaptive:
+            system_prompt = f"{system_prompt}\n\n{ADAPTIVE_ORCHESTRATOR_ADDENDUM}"
+            requirement_addendum = build_adaptive_requirement_addendum(
+                self.required_adaptive_helper
+            )
+            if requirement_addendum:
+                system_prompt = f"{system_prompt}\n\n{requirement_addendum}"
+
         message_history = build_rlm_system_prompt(
-            system_prompt=self.system_prompt,
+            system_prompt=system_prompt,
             query_metadata=metadata,
             custom_tools=self.custom_tools,
             root_prompt=root_prompt,
@@ -416,6 +461,16 @@ class RLM:
                         if getattr(block.result, "final_answer", None) is not None:
                             final_answer = block.result.final_answer
                             break
+                    if final_answer is not None and not self._adaptive_requirement_satisfied(
+                        environment
+                    ):
+                        self._block_adaptive_final_answer(environment, iteration)
+                        final_answer = None
+                    if final_answer is not None and not self._final_answer_is_plain_text(
+                        final_answer
+                    ):
+                        self._block_malformed_final_answer(environment, iteration)
+                        final_answer = None
                     iteration.final_answer = final_answer
 
                     # Store as best partial answer (most recent response with content)
@@ -467,7 +522,37 @@ class RLM:
 
             # Default behavior: we run out of iterations, provide one final answer
             time_end = time.perf_counter()
-            final_answer = self._default_answer(message_history, lm_handler)
+            if not self._adaptive_requirement_satisfied(environment):
+                final_answer = (
+                    "Error: adaptive execution was required before final answer, "
+                    "but no adaptive helper scheduled sub-call work."
+                )
+                usage = lm_handler.get_usage_summary()
+                self.verbose.print_final_answer(final_answer)
+                self.verbose.print_summary(
+                    self.max_iterations, time_end - time_start, usage.to_dict()
+                )
+                return RLMChatCompletion(
+                    root_model=self.backend_kwargs.get("model_name", "unknown")
+                    if self.backend_kwargs
+                    else "unknown",
+                    prompt=prompt,
+                    response=final_answer,
+                    usage_summary=usage,
+                    execution_time=time_end - time_start,
+                    metadata=self.logger.get_trajectory() if self.logger else None,
+                )
+
+            final_answer = self._default_answer(
+                message_history,
+                lm_handler,
+                plain_text_only=self.adaptive and self.adaptive_policy == "require",
+            )
+            if not self._final_answer_is_plain_text(final_answer):
+                final_answer = (
+                    "Error: adaptive execution completed but final answer was malformed "
+                    "because it contained code."
+                )
             usage = lm_handler.get_usage_summary()
             self.verbose.print_final_answer(final_answer)
             self.verbose.print_summary(self.max_iterations, time_end - time_start, usage.to_dict())
@@ -506,6 +591,69 @@ class RLM:
                     f"{elapsed:.1f}s of {self.max_timeout:.1f}s limit"
                 ),
             )
+
+    def _adaptive_requirement_satisfied(self, environment: BaseEnv) -> bool:
+        if not self.adaptive or self.adaptive_policy != "require":
+            return True
+
+        runtime = getattr(environment, "adaptive_runtime", None)
+        if runtime is None:
+            return False
+        stats = runtime.adaptive_stats()
+        if stats.get("scheduled_prompts", 0) <= 0 or stats.get("batch_waves", 0) <= 0:
+            return False
+        if self.required_adaptive_helper is None:
+            return True
+        return self.required_adaptive_helper in stats.get("topologies", [])
+
+    def _block_adaptive_final_answer(self, environment: BaseEnv, iteration: RLMIteration) -> None:
+        runtime = getattr(environment, "adaptive_runtime", None)
+        stats = runtime.adaptive_stats() if runtime is not None else {}
+        required = (
+            self.required_adaptive_helper
+            or "adaptive_batch/adaptive_map/adaptive_dag/adaptive_search_tree"
+        )
+        warning = (
+            "\nAdaptive execution required before final answer. "
+            f"Call {required} so adaptive_stats() shows scheduled_prompts > 0 "
+            f"and batch_waves > 0. Current adaptive_stats(): {stats}"
+        )
+
+        for block in iteration.code_blocks:
+            if getattr(block.result, "final_answer", None) is not None:
+                block.result.final_answer = None
+                block.result.stderr = f"{block.result.stderr}{warning}"
+                break
+
+        locals_view = getattr(environment, "locals", None)
+        if isinstance(locals_view, dict):
+            answer = locals_view.get("answer")
+            if isinstance(answer, dict):
+                answer["ready"] = False
+
+    @staticmethod
+    def _final_answer_is_plain_text(final_answer: str) -> bool:
+        return "```" not in str(final_answer)
+
+    def _block_malformed_final_answer(self, environment: BaseEnv, iteration: RLMIteration) -> None:
+        warning = (
+            "\nAdaptive final answer must be plain text. Do not return markdown "
+            "code fences or ```repl blocks as the final answer. Execute code in the "
+            "REPL, then set answer['content'] to the plain final answer and "
+            "answer['ready'] = True."
+        )
+
+        for block in iteration.code_blocks:
+            if getattr(block.result, "final_answer", None) is not None:
+                block.result.final_answer = None
+                block.result.stderr = f"{block.result.stderr}{warning}"
+                break
+
+        locals_view = getattr(environment, "locals", None)
+        if isinstance(locals_view, dict):
+            answer = locals_view.get("answer")
+            if isinstance(answer, dict):
+                answer["ready"] = False
 
     def _check_iteration_limits(
         self, iteration: RLMIteration, iteration_num: int, lm_handler: LMHandler
@@ -668,17 +816,25 @@ class RLM:
             iteration_time=iteration_time,
         )
 
-    def _default_answer(self, message_history: list[dict[str, Any]], lm_handler: LMHandler) -> str:
+    def _default_answer(
+        self,
+        message_history: list[dict[str, Any]],
+        lm_handler: LMHandler,
+        plain_text_only: bool = False,
+    ) -> str:
         """
         Default behavior if the RLM runs out of iterations and does not find a final answer.
         It will take the message history, and try to generate a final answer from it.
         """
-        current_prompt = message_history + [
-            {
-                "role": "assistant",
-                "content": "Please provide a final answer to the user's question based on the information provided.",
-            }
-        ]
+        instruction = "Please provide a final answer to the user's question based on the information provided."
+        if plain_text_only:
+            instruction = (
+                "Return the final answer as plain text only. Do not include code. "
+                "Do not include markdown fences. Do not include a ```repl block. "
+                "Do not describe how to compute the answer. Use only executed REPL "
+                "state and adaptive results already available."
+            )
+        current_prompt = message_history + [{"role": "assistant", "content": instruction}]
         response = lm_handler.completion(current_prompt)
 
         if self.logger:
