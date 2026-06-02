@@ -7,10 +7,8 @@ import pytest
 from dotenv import load_dotenv
 
 from rlm.clients import get_client
-from rlm.clients.openai import (
-    DEFAULT_MINIMAX_BASE_URL,
-    OpenAIClient,
-)
+from rlm.clients.minimax import DEFAULT_MINIMAX_BASE_URL
+from rlm.clients.openai import OpenAIClient
 from rlm.core.types import ModelUsageSummary, UsageSummary
 
 load_dotenv()
@@ -80,7 +78,7 @@ class TestMiniMaxClientUnit:
         """MINIMAX_API_KEY env var should be used when no explicit key is given."""
         with patch.dict(os.environ, {"MINIMAX_API_KEY": "env-minimax-key"}):
             with patch(
-                "rlm.clients.openai.DEFAULT_MINIMAX_API_KEY", "env-minimax-key"
+                "rlm.clients.minimax.DEFAULT_MINIMAX_API_KEY", "env-minimax-key"
             ):
                 with patch("rlm.clients.openai.openai.OpenAI") as mock_openai:
                     with patch("rlm.clients.openai.openai.AsyncOpenAI"):
@@ -272,14 +270,20 @@ class TestMiniMaxClientUnit:
         # Literal types expose __args__
         assert "minimax" in ClientBackend.__args__
 
-    def test_legacy_m25_model_still_works(self):
-        """Older MiniMax-M2.5 model should still be usable."""
+    def test_m3_default_model(self):
+        """MiniMax-M3 should be the default model when none is specified."""
+        from rlm.clients.minimax import DEFAULT_MINIMAX_MODEL
+
+        assert DEFAULT_MINIMAX_MODEL == "MiniMax-M3"
+
+    def test_m3_model(self):
+        """MiniMax-M3 should work correctly when explicitly selected."""
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "Legacy response"
-        mock_response.usage.prompt_tokens = 10
-        mock_response.usage.completion_tokens = 5
-        mock_response.usage.total_tokens = 15
+        mock_response.choices[0].message.content = "M3 response"
+        mock_response.usage.prompt_tokens = 8
+        mock_response.usage.completion_tokens = 4
+        mock_response.usage.total_tokens = 12
         mock_response.usage.cost = None
         mock_response.usage.model_extra = {}
 
@@ -292,12 +296,13 @@ class TestMiniMaxClientUnit:
                     backend="minimax",
                     backend_kwargs={
                         "api_key": "test-key",
-                        "model_name": "MiniMax-M2.5",
+                        "model_name": "MiniMax-M3",
                     },
                 )
-                result = client.completion("Test legacy model")
-                assert result == "Legacy response"
-                assert client.model_name == "MiniMax-M2.5"
+                result = client.completion("Test M3")
+                assert result == "M3 response"
+                assert client.model_name == "MiniMax-M3"
+                assert client.model_call_counts["MiniMax-M3"] == 1
 
     def test_m27_highspeed_model(self):
         """MiniMax-M2.7-highspeed should work correctly."""

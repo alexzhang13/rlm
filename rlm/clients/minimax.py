@@ -10,7 +10,7 @@ load_dotenv()
 
 DEFAULT_MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY")
 DEFAULT_MINIMAX_BASE_URL = "https://api.minimax.io/v1"
-DEFAULT_MINIMAX_MODEL = "MiniMax-M2.5"
+DEFAULT_MINIMAX_MODEL = "MiniMax-M3"
 
 
 class MinimaxClient(OpenAIClient):
@@ -18,8 +18,9 @@ class MinimaxClient(OpenAIClient):
     LM Client for running models with the MiniMax API (OpenAI-compatible).
 
     Supported models:
-      - MiniMax-M2.5 (default): 204K context, peak performance
-      - MiniMax-M2.5-highspeed: 204K context, same performance, faster
+      - MiniMax-M3 (default): 512K context, 128K max output, image input support
+      - MiniMax-M2.7: previous generation model
+      - MiniMax-M2.7-highspeed: low-latency version of M2.7
 
     Uses the MiniMax OpenAI-compatible endpoint at https://api.minimax.io/v1.
     Set MINIMAX_API_KEY environment variable or pass api_key directly.

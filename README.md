@@ -120,21 +120,21 @@ We currently support most major clients (OpenAI, Anthropic, [MiniMax](https://pl
 <details>
 <summary><b>Using MiniMax</b></summary>
 
-[MiniMax](https://platform.minimax.io) provides the M2.5 model family with 204K context window. Set your `MINIMAX_API_KEY` environment variable, then:
+[MiniMax](https://platform.minimax.io) provides the M3 model family with 512K context window. Set your `MINIMAX_API_KEY` environment variable, then:
 
 ```python
 from rlm import RLM
 
 rlm = RLM(
     backend="minimax",
-    backend_kwargs={"model_name": "MiniMax-M2.5"},
+    backend_kwargs={"model_name": "MiniMax-M3"},
     verbose=True,
 )
 
 print(rlm.completion("What is 2+2? Reply with just the number.").response)
 ```
 
-Supported models: `MiniMax-M2.5` (default), `MiniMax-M2.5-highspeed` (faster).
+Supported models: `MiniMax-M3` (default), `MiniMax-M2.7`, `MiniMax-M2.7-highspeed` (faster).
 
 </details>
 
