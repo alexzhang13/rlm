@@ -88,7 +88,12 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
         return {"responses": results}
 
 
-def _build_exec_script(code: str, proxy_port: int, depth: int = 1) -> str:
+def _build_exec_script(
+    code: str,
+    proxy_port: int,
+    depth: int = 1,
+    proxy_host: str = "host.docker.internal",
+) -> str:
     """Build execution script for the container."""
     code_b64 = base64.b64encode(code.encode()).decode()
 
@@ -100,7 +105,7 @@ try:
 except ImportError:
     import pickle as dill
 
-PROXY = "http://host.docker.internal:{proxy_port}"
+PROXY = "http://{proxy_host}:{proxy_port}"
 STATE = "/workspace/state.dill"
 
 def llm_query(prompt, model=None):

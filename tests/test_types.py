@@ -217,3 +217,13 @@ class TestRLMMetadata:
         assert d["root_model"] == "gpt-4"
         assert d["max_depth"] == 2
         assert d["backend"] == "openai"
+
+
+def test_local_backend_and_environment_literals_accept_apple_options():
+    from rlm.core.types import ClientBackend, EnvironmentType
+
+    backend: ClientBackend = "mlx"
+    environment: EnvironmentType = "apple"
+
+    assert backend == "mlx"
+    assert environment == "apple"

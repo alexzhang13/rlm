@@ -49,11 +49,15 @@ def get_client(
         from rlm.clients.gemini import GeminiClient
 
         return GeminiClient(**backend_kwargs)
+    elif backend == "mlx":
+        from rlm.clients.mlx import MLXClient
+
+        return MLXClient(**backend_kwargs)
     elif backend == "azure_openai":
         from rlm.clients.azure_openai import AzureOpenAIClient
 
         return AzureOpenAIClient(**backend_kwargs)
     else:
         raise ValueError(
-            f"Unknown backend: {backend}. Supported backends: ['openai', 'vllm', 'portkey', 'openrouter', 'anthropic', 'azure_openai', 'gemini', 'vercel']"
+            f"Unknown backend: {backend}. Supported backends: ['openai', 'vllm', 'portkey', 'openrouter', 'anthropic', 'azure_openai', 'gemini', 'vercel', 'mlx']"
         )
