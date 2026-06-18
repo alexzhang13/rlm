@@ -44,7 +44,7 @@ export function CodeBlock({ block, index }: CodeBlockProps) {
               <div className="flex items-center gap-2">
                 {executionTime && (
                   <Badge variant="outline" className="font-mono text-xs">
-                    {executionTime}s
+                    {executionTime}
                   </Badge>
                 )}
                 {hasError && (
@@ -66,7 +66,8 @@ export function CodeBlock({ block, index }: CodeBlockProps) {
         </CollapsibleTrigger>
         
         <CollapsibleContent>
-          <CardContent className="p-0">
+          <div style={{ width: 0, minWidth: '100%' }}>
+            <CardContent className="p-0">
             {/* Code */}
             <div className="bg-muted border-t border-border">
               <div className="px-3 py-1.5 border-b border-border/50 flex items-center gap-2">
@@ -74,7 +75,7 @@ export function CodeBlock({ block, index }: CodeBlockProps) {
                   Python
                 </span>
               </div>
-              <div className="code-block p-4 overflow-x-auto">
+              <div className="code-block p-2 overflow-x-auto">
                 <CodeWithLineNumbers code={block.code} language="python" />
               </div>
             </div>
@@ -97,7 +98,7 @@ export function CodeBlock({ block, index }: CodeBlockProps) {
 
             {/* Errors */}
             {hasError && (
-              <div className="border-t border-border bg-red-500/5 dark:bg-red-400/5">
+              <div className="border-t border-border bg-red-500/5 dark:bg-red-400/5 overflow-hidden">
                 <div className="px-3 py-1.5 border-b border-border/50 flex items-center gap-2">
                   <span className="text-[10px] uppercase tracking-wider text-red-600 dark:text-red-400 font-medium">
                     stderr
@@ -178,8 +179,11 @@ export function CodeBlock({ block, index }: CodeBlockProps) {
               </div>
             )}
           </CardContent>
+          </div>
         </CollapsibleContent>
       </Card>
+
+
     </Collapsible>
   );
 }
