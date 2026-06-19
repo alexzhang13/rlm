@@ -22,11 +22,16 @@ def __getattr__(name: str) -> Any:
         from rlm.environments.ipython_repl import IPythonREPL
 
         return IPythonREPL
+    if name == "AppleContainerREPL":
+        from rlm.environments.apple_container_repl import AppleContainerREPL
+
+        return AppleContainerREPL
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
     "BaseEnv",
+    "AppleContainerREPL",
     "IPythonREPL",
     "LocalREPL",
     "RESERVED_TOOL_NAMES",
@@ -43,12 +48,12 @@ __all__ = [
 
 
 def get_environment(
-    environment: Literal["local", "ipython", "modal", "docker", "daytona", "prime", "e2b"],
+    environment: Literal["local", "ipython", "modal", "docker", "apple", "daytona", "prime", "e2b"],
     environment_kwargs: dict[str, Any],
 ) -> BaseEnv:
     """
     Routes a specific environment and the args (as a dict) to the appropriate environment if supported.
-    Currently supported environments: ['local', 'ipython', 'modal', 'docker', 'daytona', 'prime', 'e2b']
+    Currently supported environments: ['local', 'ipython', 'modal', 'docker', 'apple', 'daytona', 'prime', 'e2b']
     """
     if environment == "local":
         return LocalREPL(**environment_kwargs)
@@ -64,6 +69,10 @@ def get_environment(
         from rlm.environments.docker_repl import DockerREPL
 
         return DockerREPL(**environment_kwargs)
+    elif environment == "apple":
+        from rlm.environments.apple_container_repl import AppleContainerREPL
+
+        return AppleContainerREPL(**environment_kwargs)
     elif environment == "daytona":
         from rlm.environments.daytona_repl import DaytonaREPL
 
@@ -78,5 +87,5 @@ def get_environment(
         return E2BREPL(**environment_kwargs)
     else:
         raise ValueError(
-            f"Unknown environment: {environment}. Supported: ['local', 'ipython', 'modal', 'docker', 'daytona', 'prime', 'e2b']"
+            f"Unknown environment: {environment}. Supported: ['local', 'ipython', 'modal', 'docker', 'apple', 'daytona', 'prime', 'e2b']"
         )
