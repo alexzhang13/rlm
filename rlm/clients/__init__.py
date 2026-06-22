@@ -53,7 +53,11 @@ def get_client(
         from rlm.clients.azure_openai import AzureOpenAIClient
 
         return AzureOpenAIClient(**backend_kwargs)
+    elif backend == "litellm_responses":
+        from rlm.clients.litellm_responses import LiteLLMResponsesClient
+
+        return LiteLLMResponsesClient(**backend_kwargs)
     else:
         raise ValueError(
-            f"Unknown backend: {backend}. Supported backends: ['openai', 'vllm', 'portkey', 'openrouter', 'anthropic', 'azure_openai', 'gemini', 'vercel']"
+            f"Unknown backend: {backend}. Supported backends: ['openai', 'vllm', 'portkey', 'openrouter', 'anthropic', 'azure_openai', 'gemini', 'vercel', 'litellm_responses']"
         )
