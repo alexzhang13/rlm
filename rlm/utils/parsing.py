@@ -7,11 +7,14 @@ import re
 from rlm.core.types import REPLResult, RLMIteration
 
 
-def find_code_blocks(text: str) -> list[str]:
+def find_code_blocks(text: str | None) -> list[str]:
     """
     Find REPL code blocks in text wrapped in triple backticks and return List of content(s).
     Returns None if no code blocks are found.
     """
+    if not text:
+        return []
+
     pattern = r"```repl\s*\n(.*?)\n```"
     results = []
 
