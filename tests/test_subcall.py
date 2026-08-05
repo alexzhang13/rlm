@@ -81,6 +81,30 @@ class TestClientFactoryInjection:
         assert result.response == "child answer"
         assert calls == [("openai", {"model_name": "review-model"})]
 
+    def test_recursive_child_defaults_to_configured_other_backend(self):
+        calls = []
+
+        def client_factory(backend, backend_kwargs):
+            calls.append((backend, dict(backend_kwargs)))
+            return MockLM(
+                model_name=backend_kwargs["model_name"],
+                responses=[final("independent child answer")],
+            )
+
+        parent = RLM(
+            backend="owner-runtime",
+            backend_kwargs={"model_name": "content-owner"},
+            other_backends=["review-runtime"],
+            other_backend_kwargs=[{"model_name": "self-assess"}],
+            client_factory=client_factory,
+            max_depth=3,
+        )
+
+        result = parent._subcall("review this")
+
+        assert result.response == "independent child answer"
+        assert calls[0] == ("review-runtime", {"model_name": "self-assess"})
+
     def test_factory_is_used_by_max_depth_plain_lm_fallback(self):
         calls = []
 

@@ -730,21 +730,24 @@ class RLM:
         """
         next_depth = self.depth + 1
 
-        # Determine which backend/kwargs to use (model override or parent's default)
+        # Determine which backend/kwargs to use. An explicit model stays on the
+        # parent's backend. Without one, the configured recursive child backend is
+        # the default for both child RLMs and max-depth plain calls.
         if model is not None:
+            child_backend = self.backend
             child_backend_kwargs = (self.backend_kwargs or {}).copy()
             child_backend_kwargs["model_name"] = model
+        elif self.other_backends and self.other_backend_kwargs:
+            child_backend = self.other_backends[0]
+            child_backend_kwargs = self.other_backend_kwargs[0]
         else:
+            child_backend = self.backend
             child_backend_kwargs = self.backend_kwargs
         resolved_model = model or (child_backend_kwargs or {}).get("model_name", "unknown")
 
         # If we'd hit/exceed the cap, do a normal LM completion (no REPL)
         if next_depth >= self.max_depth:
-            # Use other_backend if available, otherwise use main backend
-            if self.other_backends and self.other_backend_kwargs:
-                client = self.client_factory(self.other_backends[0], self.other_backend_kwargs[0])
-            else:
-                client = self.client_factory(self.backend, child_backend_kwargs or {})
+            client = self.client_factory(child_backend, child_backend_kwargs or {})
             root_model = model or client.model_name
             start_time = time.perf_counter()
             try:
@@ -814,7 +817,7 @@ class RLM:
 
         # Spawn a child RLM with its own LocalREPL
         child = RLM(
-            backend=self.backend,
+            backend=child_backend,
             backend_kwargs=child_backend_kwargs,
             environment=self.environment_type,
             environment_kwargs=self.environment_kwargs,

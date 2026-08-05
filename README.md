@@ -146,6 +146,10 @@ rlm = RLM(
 )
 ```
 
+When `other_backends` is configured, its first client is the default for an
+`rlm_query(prompt)` recursive child as well as a max-depth plain sub-call. Passing
+`model=` to `rlm_query` explicitly overrides that default on the parent backend.
+
 ## Training
 We provide a simple RL training harness for training RLMs used in this repo (specifically the `local` REPL). The implementation uses no sandboxes for simplicity and slots easily your use case, but an ideal setup would use sandboxes for safety. Training logic is isolated to the [`training/`](https://github.com/alexzhang13/rlm/tree/main/training) folder, which exposes `rlm.RLM` as a [`verifiers`](https://github.com/willccbb/verifiers) `Environment` and plugs straight into [`prime-rl`](https://github.com/PrimeIntellect-ai/prime-rl). See the [training README](https://github.com/alexzhang13/rlm/tree/main/training#readme) for the launch command. The harness uses subprocess-isolated local REPL execution (no cloud sandboxes), matching the `local` environment above.
 
