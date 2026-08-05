@@ -13,6 +13,7 @@ from unittest.mock import Mock, patch
 import rlm.core.rlm as rlm_module
 from rlm import RLM
 from rlm.core.types import ModelUsageSummary, UsageSummary
+from tests.mock_lm import MockLM
 
 
 def create_mock_lm(responses: list[str], model_name: str = "mock-model") -> Mock:
@@ -34,6 +35,109 @@ def create_mock_lm(responses: list[str], model_name: str = "mock-model") -> Mock
 def final(content: str) -> str:
     """Render a model response that submits ``content`` as the final answer."""
     return f"```repl\nanswer['content'] = {content!r}\nanswer['ready'] = True\n```"
+
+
+class TestClientFactoryInjection:
+    def test_factory_builds_root_client(self):
+        calls = []
+
+        def client_factory(backend, backend_kwargs):
+            calls.append((backend, dict(backend_kwargs)))
+            return MockLM(
+                model_name=backend_kwargs["model_name"],
+                responses=[final("root answer")],
+            )
+
+        rlm = RLM(
+            backend="custom-runtime",
+            backend_kwargs={"model_name": "root-model"},
+            client_factory=client_factory,
+        )
+
+        result = rlm.completion("root prompt")
+
+        assert result.response == "root answer"
+        assert calls == [("custom-runtime", {"model_name": "root-model"})]
+
+    def test_factory_propagates_to_recursive_child_with_model_override(self):
+        calls = []
+
+        def client_factory(backend, backend_kwargs):
+            calls.append((backend, dict(backend_kwargs)))
+            return MockLM(
+                model_name=backend_kwargs["model_name"],
+                responses=[final("child answer")],
+            )
+
+        parent = RLM(
+            backend="openai",
+            backend_kwargs={"model_name": "root-model"},
+            client_factory=client_factory,
+            max_depth=3,
+        )
+
+        result = parent._subcall("review this", model="review-model")
+
+        assert result.response == "child answer"
+        assert calls == [("openai", {"model_name": "review-model"})]
+
+    def test_factory_is_used_by_max_depth_plain_lm_fallback(self):
+        calls = []
+
+        def client_factory(backend, backend_kwargs):
+            calls.append((backend, dict(backend_kwargs)))
+            return MockLM(
+                model_name=backend_kwargs["model_name"],
+                responses=["plain answer"],
+            )
+
+        parent = RLM(
+            backend="openai",
+            backend_kwargs={"model_name": "root-model"},
+            client_factory=client_factory,
+            max_depth=1,
+        )
+
+        result = parent._subcall("review this", model="review-model")
+
+        assert result.response == "plain answer"
+        assert result.root_model == "review-model"
+        assert calls == [("openai", {"model_name": "review-model"})]
+
+    def test_rlm_query_uses_factory_for_a_distinct_recursive_child(self):
+        calls = []
+
+        def client_factory(backend, backend_kwargs):
+            model = backend_kwargs["model_name"]
+            calls.append((backend, dict(backend_kwargs)))
+            if model == "root-model":
+                return MockLM(
+                    model_name=model,
+                    responses=[
+                        "```repl\nreview = rlm_query('review this', model='review-model')\nprint(review)\n```",
+                        final("root accepted child review"),
+                    ],
+                )
+            return MockLM(
+                model_name=model,
+                responses=[final("child review complete")],
+            )
+
+        rlm = RLM(
+            backend="openai",
+            backend_kwargs={"model_name": "root-model"},
+            client_factory=client_factory,
+            max_depth=3,
+            max_iterations=3,
+        )
+
+        result = rlm.completion("root prompt")
+
+        assert result.response == "root accepted child review"
+        assert calls == [
+            ("openai", {"model_name": "root-model"}),
+            ("openai", {"model_name": "review-model"}),
+        ]
 
 
 class TestSubcallTimeoutPropagation:

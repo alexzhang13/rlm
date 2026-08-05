@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Any
 
 from dotenv import load_dotenv
@@ -5,11 +6,13 @@ from dotenv import load_dotenv
 from rlm.clients.base_lm import BaseLM
 from rlm.core.types import ClientBackend
 
+ClientFactory = Callable[[str, dict[str, Any]], BaseLM]
+
 load_dotenv()
 
 
 def get_client(
-    backend: ClientBackend,
+    backend: ClientBackend | str,
     backend_kwargs: dict[str, Any],
 ) -> BaseLM:
     """
