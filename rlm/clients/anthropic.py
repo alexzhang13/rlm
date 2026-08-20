@@ -44,7 +44,8 @@ class AnthropicClient(BaseLM):
 
         response = self.client.messages.create(**kwargs)
         self._track_cost(response, model)
-        return response.content[0].text
+        texts = [b.text for b in response.content if getattr(b, "type", "") == "text"]
+        return texts[0] if texts else ""
 
     async def acompletion(
         self, prompt: str | list[dict[str, Any]], model: str | None = None
@@ -61,7 +62,8 @@ class AnthropicClient(BaseLM):
 
         response = await self.async_client.messages.create(**kwargs)
         self._track_cost(response, model)
-        return response.content[0].text
+        texts = [b.text for b in response.content if getattr(b, "type", "") == "text"]
+        return texts[0] if texts else ""
 
     def _prepare_messages(
         self, prompt: str | list[dict[str, Any]]
