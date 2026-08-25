@@ -1,5 +1,6 @@
 import os
 from collections import defaultdict
+from collections.abc import Iterator
 from typing import Any
 
 from dotenv import load_dotenv
@@ -19,6 +20,8 @@ class GeminiClient(BaseLM):
     LM Client for running models with the Google Gemini API.
     Uses the official google-genai SDK.
     """
+
+    supports_streaming = True
 
     def __init__(
         self,
@@ -93,6 +96,43 @@ class GeminiClient(BaseLM):
 
         self._track_cost(response, model)
         return response.text
+
+    def stream_completion(
+        self, prompt: str | list[dict[str, Any]], model: str | None = None
+    ) -> Iterator[str]:
+        """Stream the response as text deltas.
+
+        Gemini reports cumulative usage_metadata on chunks, so the last chunk
+        carrying it is the authoritative one. ``_track_cost`` already tolerates
+        it being absent.
+        """
+        contents, system_instruction = self._prepare_contents(prompt)
+
+        model = model or self.model_name
+        if not model:
+            raise ValueError("Model name is required for Gemini client.")
+
+        config = None
+        if system_instruction:
+            config = types.GenerateContentConfig(system_instruction=system_instruction)
+
+        last_chunk = None
+        for chunk in self.client.models.generate_content_stream(
+            model=model,
+            contents=contents,
+            config=config,
+        ):
+            if getattr(chunk, "usage_metadata", None):
+                last_chunk = chunk
+            if chunk.text:
+                yield chunk.text
+
+        if last_chunk is not None:
+            self._track_cost(last_chunk, model)
+        else:
+            self.model_call_counts[model] += 1
+            self.last_prompt_tokens = 0
+            self.last_completion_tokens = 0
 
     def _prepare_contents(
         self, prompt: str | list[dict[str, Any]]

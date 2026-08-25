@@ -1,5 +1,6 @@
 import os
 from collections import defaultdict
+from collections.abc import Iterator
 from typing import Any
 
 import openai
@@ -18,6 +19,8 @@ class AzureOpenAIClient(BaseLM):
     """
     LM Client for running models with the Azure OpenAI API.
     """
+
+    supports_streaming = True
 
     def __init__(
         self,
@@ -111,7 +114,51 @@ class AzureOpenAIClient(BaseLM):
         self._track_cost(response, model)
         return response.choices[0].message.content
 
-    def _track_cost(self, response: openai.ChatCompletion, model: str):
+    def stream_completion(
+        self, prompt: str | list[dict[str, Any]], model: str | None = None
+    ) -> Iterator[str]:
+        """Stream the response as text deltas.
+
+        See ``OpenAIClient.stream_completion``: usage arrives in a final
+        choices-empty chunk requested via ``stream_options``, and a deployment
+        that ignores the option degrades token accounting rather than raising.
+        """
+        if isinstance(prompt, str):
+            messages = [{"role": "user", "content": prompt}]
+        elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
+            messages = prompt
+        else:
+            raise ValueError(f"Invalid prompt type: {type(prompt)}")
+
+        model = model or self.model_name
+        if not model:
+            raise ValueError("Model name is required for Azure OpenAI client.")
+
+        stream = self.client.chat.completions.create(
+            model=model,
+            messages=messages,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+
+        usage_chunk = None
+        for chunk in stream:
+            if getattr(chunk, "usage", None):
+                usage_chunk = chunk
+            if chunk.choices:
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    yield delta
+
+        if usage_chunk is not None:
+            self._track_cost(usage_chunk, model)
+        else:
+            self.model_call_counts[model] += 1
+            self.last_prompt_tokens = 0
+            self.last_completion_tokens = 0
+
+    def _track_cost(self, response: Any, model: str):
+        """Record usage from a ChatCompletion, or from a stream's final usage chunk."""
         self.model_call_counts[model] += 1
 
         usage = getattr(response, "usage", None)

@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from typing import Any
 
 from rlm.core.types import ModelUsageSummary, UsageSummary
@@ -12,6 +13,11 @@ class BaseLM(ABC):
     Base class for all language model routers / clients. When the RLM makes sub-calls, it currently
     does so in a model-agnostic way, so this class provides a base interface for all language models.
     """
+
+    # Streaming is an optional capability. Clients that implement a real
+    # ``stream_completion`` set this to True; everything else inherits the
+    # single-chunk fallback below and keeps working unchanged.
+    supports_streaming: bool = False
 
     def __init__(
         self,
@@ -35,6 +41,23 @@ class BaseLM(ABC):
     @abstractmethod
     async def acompletion(self, prompt: str | dict[str, Any]) -> str:
         raise NotImplementedError
+
+    def stream_completion(
+        self, prompt: str | dict[str, Any], model: str | None = None
+    ) -> Iterator[str]:
+        """Yield the response incrementally as text deltas.
+
+        Not abstract: the default implementation makes one blocking
+        ``completion()`` call and yields the whole response as a single delta,
+        so every client is usable through the streaming interface whether or
+        not it can really stream. Concatenating the deltas always reproduces
+        exactly what ``completion()`` would have returned.
+
+        Clients that override this with a real stream must also set
+        ``supports_streaming = True`` so callers that only benefit from
+        incremental output (e.g. speculative tool calling) can detect it.
+        """
+        yield self.completion(prompt)
 
     @abstractmethod
     def get_usage_summary(self) -> UsageSummary:

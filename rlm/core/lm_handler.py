@@ -6,6 +6,7 @@ Uses a multi-threaded socket server. Protocol: 4-byte length prefix + JSON paylo
 
 import asyncio
 import time
+from collections.abc import Iterator
 from socketserver import StreamRequestHandler, ThreadingTCPServer
 from threading import Thread
 
@@ -225,6 +226,20 @@ class LMHandler:
     def completion(self, prompt: str, model: str | None = None) -> str:
         """Direct completion call (for main process use)."""
         return self.get_client(model).completion(prompt)
+
+    def stream_completion(self, prompt: str, model: str | None = None) -> Iterator[str]:
+        """Direct streaming completion call (for main process use).
+
+        Only the root model streams; environment sub-calls arrive over the
+        socket protocol and are unaffected. Clients without real streaming
+        yield the whole response as one delta, so callers never need to branch.
+        """
+        return self.get_client(model).stream_completion(prompt)
+
+    @property
+    def supports_streaming(self) -> bool:
+        """Whether the default (root) client can really stream token deltas."""
+        return getattr(self.default_client, "supports_streaming", False)
 
     def __enter__(self):
         self.start()
