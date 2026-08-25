@@ -1,4 +1,5 @@
 import time
+import warnings
 from collections.abc import Callable
 from contextlib import contextmanager
 from typing import Any
@@ -79,6 +80,8 @@ class RLM:
         sub_sampling_args: dict[str, Any] | None = None,
         orchestrator: bool = True,
         user_prologue: str | None = None,
+        stream: bool = False,
+        on_token: Callable[[str], None] | None = None,
     ):
         """
         Args:
@@ -113,6 +116,12 @@ class RLM:
             on_subcall_complete: Callback fired when a child RLM completes. Args: (depth, model, duration, error_or_none).
             on_iteration_start: Callback fired when an iteration starts. Args: (depth, iteration_num).
             on_iteration_complete: Callback fired when an iteration completes. Args: (depth, iteration_num, duration).
+            stream: If True, request the root model's response incrementally instead of as one
+                blocking call. The reassembled response is identical either way, so this only
+                matters to consumers of the deltas (on_token, and speculative tool calling).
+                Backends without real streaming fall back to a single delta.
+            on_token: Callback fired for each response delta from the root model. Args: (delta,).
+                Implies stream=True.
         """
         # Sampling args plumbed into backend_kwargs / other_backend_kwargs
         # before the clients are constructed, so they reach the chat-completions
@@ -182,6 +191,13 @@ class RLM:
         self.logger = logger
         self.verbose = VerbosePrinter(enabled=verbose)
 
+        # Root-model streaming. Requesting deltas is opt-in because nothing in
+        # the default loop consumes them: the response is reassembled and the
+        # rest of the pipeline is byte-identical either way.
+        self.stream = stream or on_token is not None
+        self.on_token = on_token
+        self._warned_no_streaming = False
+
         # Event callbacks for live tree display
         self.on_subcall_start = on_subcall_start
         self.on_subcall_complete = on_subcall_complete
@@ -223,6 +239,28 @@ class RLM:
                 self.logger.log_metadata(metadata)
             self.verbose.print_metadata(metadata)
 
+    def _warn_if_streaming_unavailable(self, client: BaseLM) -> None:
+        """Warn once when streaming was asked for but the backend can't do it.
+
+        The call still succeeds: the client yields the whole response as a
+        single delta. But a caller that asked for streaming to get incremental
+        behavior (a live UI, speculative tool calling) silently gets none of
+        it, so say so rather than looking like it worked.
+        """
+        if not self.stream or getattr(client, "supports_streaming", False):
+            return
+        if self._warned_no_streaming:
+            return
+        self._warned_no_streaming = True
+        warnings.warn(
+            f"stream=True but the '{self.backend}' client does not support streaming. "
+            "The response will arrive as a single delta after the full completion, so "
+            "nothing is actually incremental. Streaming-capable backends: openai, vllm, "
+            "openrouter, vercel, anthropic, azure_openai, gemini.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+
     @contextmanager
     def _spawn_completion_context(self, prompt: str | dict[str, Any]):
         """
@@ -233,6 +271,7 @@ class RLM:
         """
         # Create client and wrap in handler
         client: BaseLM = get_client(self.backend, self.backend_kwargs)
+        self._warn_if_streaming_unavailable(client)
 
         # Create other_backend_client if provided (for depth=1 routing)
         other_backend_client: BaseLM | None = None
@@ -644,6 +683,25 @@ class RLM:
         ]
         return new_history
 
+    def _get_response(self, prompt: str | dict[str, Any], lm_handler: LMHandler) -> str:
+        """Get the root model's response, streaming the deltas when enabled.
+
+        The reassembled string is identical to the blocking path; streaming
+        only exists so consumers can observe the response as it is generated.
+        """
+        if not self.stream:
+            return lm_handler.completion(prompt)
+
+        parts: list[str] = []
+        for delta in lm_handler.stream_completion(prompt):
+            parts.append(delta)
+            if self.on_token is not None:
+                try:
+                    self.on_token(delta)
+                except Exception:
+                    pass  # Don't let callback errors break execution
+        return "".join(parts)
+
     def _completion_turn(
         self,
         prompt: str | dict[str, Any],
@@ -655,7 +713,7 @@ class RLM:
         and code execution + tool execution.
         """
         iter_start = time.perf_counter()
-        response = lm_handler.completion(prompt)
+        response = self._get_response(prompt, lm_handler)
         code_block_strs = find_code_blocks(response)
         code_blocks = []
 
@@ -848,6 +906,9 @@ class RLM:
             custom_sub_tools=self.custom_sub_tools,
             # Propagate concurrency settings to children
             max_concurrent_subcalls=self.max_concurrent_subcalls,
+            # Children stream too, but without on_token: deltas from concurrent
+            # children would interleave into one callback with no way to attribute them.
+            stream=self.stream,
             # Propagate callbacks to children for nested tracking
             on_subcall_start=self.on_subcall_start,
             on_subcall_complete=self.on_subcall_complete,
