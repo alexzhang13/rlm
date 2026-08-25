@@ -102,9 +102,7 @@ class GeminiClient(BaseLM):
     ) -> Iterator[str]:
         """Stream the response as text deltas.
 
-        Gemini reports cumulative usage_metadata on chunks, so the last chunk
-        carrying it is the authoritative one. ``_track_cost`` already tolerates
-        it being absent.
+        usage_metadata is cumulative, so the last chunk carrying it wins.
         """
         contents, system_instruction = self._prepare_contents(prompt)
 

@@ -116,12 +116,10 @@ class RLM:
             on_subcall_complete: Callback fired when a child RLM completes. Args: (depth, model, duration, error_or_none).
             on_iteration_start: Callback fired when an iteration starts. Args: (depth, iteration_num).
             on_iteration_complete: Callback fired when an iteration completes. Args: (depth, iteration_num, duration).
-            stream: If True, request the root model's response incrementally instead of as one
-                blocking call. The reassembled response is identical either way, so this only
-                matters to consumers of the deltas (on_token, and speculative tool calling).
+            stream: If True, request the root model's response incrementally. The reassembled
+                response is identical either way, so this only matters to delta consumers.
                 Backends without real streaming fall back to a single delta.
-            on_token: Callback fired for each response delta from the root model. Args: (delta,).
-                Implies stream=True.
+            on_token: Callback fired per root-model delta. Args: (delta,). Implies stream=True.
         """
         # Sampling args plumbed into backend_kwargs / other_backend_kwargs
         # before the clients are constructed, so they reach the chat-completions
@@ -191,9 +189,8 @@ class RLM:
         self.logger = logger
         self.verbose = VerbosePrinter(enabled=verbose)
 
-        # Root-model streaming. Requesting deltas is opt-in because nothing in
-        # the default loop consumes them: the response is reassembled and the
-        # rest of the pipeline is byte-identical either way.
+        # Opt-in: nothing in the default loop consumes deltas, and the
+        # reassembled response is identical either way.
         self.stream = stream or on_token is not None
         self.on_token = on_token
         self._warned_no_streaming = False
@@ -242,10 +239,8 @@ class RLM:
     def _warn_if_streaming_unavailable(self, client: BaseLM) -> None:
         """Warn once when streaming was asked for but the backend can't do it.
 
-        The call still succeeds: the client yields the whole response as a
-        single delta. But a caller that asked for streaming to get incremental
-        behavior (a live UI, speculative tool calling) silently gets none of
-        it, so say so rather than looking like it worked.
+        The call still succeeds as one delta, but nothing is incremental —
+        say so rather than looking like it worked.
         """
         if not self.stream or getattr(client, "supports_streaming", False):
             return
@@ -684,10 +679,9 @@ class RLM:
         return new_history
 
     def _get_response(self, prompt: str | dict[str, Any], lm_handler: LMHandler) -> str:
-        """Get the root model's response, streaming the deltas when enabled.
+        """Get the root model's response, streaming deltas when enabled.
 
-        The reassembled string is identical to the blocking path; streaming
-        only exists so consumers can observe the response as it is generated.
+        The reassembled string matches the blocking path exactly.
         """
         if not self.stream:
             return lm_handler.completion(prompt)
@@ -906,8 +900,7 @@ class RLM:
             custom_sub_tools=self.custom_sub_tools,
             # Propagate concurrency settings to children
             max_concurrent_subcalls=self.max_concurrent_subcalls,
-            # Children stream too, but without on_token: deltas from concurrent
-            # children would interleave into one callback with no way to attribute them.
+            # No on_token: concurrent children's deltas would interleave.
             stream=self.stream,
             # Propagate callbacks to children for nested tracking
             on_subcall_start=self.on_subcall_start,

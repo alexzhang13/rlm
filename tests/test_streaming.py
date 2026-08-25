@@ -1,12 +1,4 @@
-"""Streaming as an optional client capability.
-
-The contract these tests pin down:
-  1. Clients that don't stream still work through the streaming interface.
-  2. Concatenated deltas equal what completion() would have returned.
-  3. Usage accounting survives the streaming path.
-  4. Asking for streaming from a backend that can't do it warns rather than
-     silently pretending.
-"""
+"""Streaming as an optional client capability."""
 
 import warnings
 from types import SimpleNamespace
