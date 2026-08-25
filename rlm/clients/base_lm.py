@@ -14,9 +14,7 @@ class BaseLM(ABC):
     does so in a model-agnostic way, so this class provides a base interface for all language models.
     """
 
-    # Streaming is an optional capability. Clients that implement a real
-    # ``stream_completion`` set this to True; everything else inherits the
-    # single-chunk fallback below and keeps working unchanged.
+    # True only on clients that override stream_completion with a real stream.
     supports_streaming: bool = False
 
     def __init__(
@@ -45,17 +43,10 @@ class BaseLM(ABC):
     def stream_completion(
         self, prompt: str | dict[str, Any], model: str | None = None
     ) -> Iterator[str]:
-        """Yield the response incrementally as text deltas.
+        """Yield the response as text deltas; joining them equals completion().
 
-        Not abstract: the default implementation makes one blocking
-        ``completion()`` call and yields the whole response as a single delta,
-        so every client is usable through the streaming interface whether or
-        not it can really stream. Concatenating the deltas always reproduces
-        exactly what ``completion()`` would have returned.
-
-        Clients that override this with a real stream must also set
-        ``supports_streaming = True`` so callers that only benefit from
-        incremental output (e.g. speculative tool calling) can detect it.
+        Default is a single delta from a blocking call, so every client works
+        here. Overrides must also set ``supports_streaming = True``.
         """
         yield self.completion(prompt)
 

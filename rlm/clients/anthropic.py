@@ -71,9 +71,8 @@ class AnthropicClient(BaseLM):
     ) -> Iterator[str]:
         """Stream the response as text deltas.
 
-        ``messages.stream()`` accumulates the final message alongside the text
-        stream, so usage accounting stays exact — unlike the OpenAI path there
-        is no usage-unavailable fallback.
+        ``messages.stream()`` accumulates the final message, so usage stays
+        exact — no usage-unavailable fallback needed here.
         """
         messages, system = self._prepare_messages(prompt)
 

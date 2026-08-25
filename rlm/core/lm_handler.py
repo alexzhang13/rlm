@@ -230,15 +230,13 @@ class LMHandler:
     def stream_completion(self, prompt: str, model: str | None = None) -> Iterator[str]:
         """Direct streaming completion call (for main process use).
 
-        Only the root model streams; environment sub-calls arrive over the
-        socket protocol and are unaffected. Clients without real streaming
-        yield the whole response as one delta, so callers never need to branch.
+        Only the root model streams; socket sub-calls are unaffected.
         """
         return self.get_client(model).stream_completion(prompt)
 
     @property
     def supports_streaming(self) -> bool:
-        """Whether the default (root) client can really stream token deltas."""
+        """Whether the default (root) client really streams."""
         return getattr(self.default_client, "supports_streaming", False)
 
     def __enter__(self):

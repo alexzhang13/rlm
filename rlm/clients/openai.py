@@ -29,9 +29,7 @@ def _normalize_sampling_args(sampling_args: dict[str, Any]) -> dict[str, Any]:
     if "max_tokens" in args:
         args["max_completion_tokens"] = args.pop("max_tokens")
     args.pop("extra_body", None)
-    # ``stream``/``stream_options`` are decided by the call site (completion vs
-    # stream_completion), not by sampling_args — passing them here would be a
-    # duplicate-kwarg TypeError.
+    # Set by the call site, not sampling_args — else duplicate-kwarg TypeError.
     args.pop("stream", None)
     args.pop("stream_options", None)
     return {k: v for k, v in args.items() if v is not None}
@@ -152,12 +150,8 @@ class OpenAIClient(BaseLM):
     ) -> Iterator[str]:
         """Stream the response as text deltas.
 
-        ``stream_options={"include_usage": True}`` asks for a final
-        choices-empty chunk carrying token usage, since streamed chunks
-        otherwise have none. Endpoints that ignore the option (some vLLM
-        builds, some gateways) still stream correctly; only token accounting
-        for this call degrades, and ``_track_stream_without_usage`` keeps the
-        call count honest rather than raising.
+        ``include_usage`` asks for a final choices-empty chunk with token
+        usage. Endpoints ignoring it still stream; only accounting degrades.
         """
         messages, model, extra_body = self._prepare_request(prompt, model)
 
@@ -185,14 +179,14 @@ class OpenAIClient(BaseLM):
             self._track_stream_without_usage(model)
 
     def _track_stream_without_usage(self, model: str) -> None:
-        """Record a streamed call whose endpoint returned no usage data."""
+        """Record a streamed call whose endpoint returned no usage."""
         self.model_call_counts[model] += 1
         self.last_prompt_tokens = 0
         self.last_completion_tokens = 0
         self.last_cost = None
 
     def _track_cost(self, response: Any, model: str):
-        """Record usage from a ChatCompletion, or from a stream's final usage chunk."""
+        """Takes a ChatCompletion or a stream's final usage chunk."""
         self.model_call_counts[model] += 1
 
         usage = getattr(response, "usage", None)

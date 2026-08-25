@@ -117,12 +117,7 @@ class AzureOpenAIClient(BaseLM):
     def stream_completion(
         self, prompt: str | list[dict[str, Any]], model: str | None = None
     ) -> Iterator[str]:
-        """Stream the response as text deltas.
-
-        See ``OpenAIClient.stream_completion``: usage arrives in a final
-        choices-empty chunk requested via ``stream_options``, and a deployment
-        that ignores the option degrades token accounting rather than raising.
-        """
+        """Stream the response as text deltas. See OpenAIClient.stream_completion."""
         if isinstance(prompt, str):
             messages = [{"role": "user", "content": prompt}]
         elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
@@ -158,7 +153,7 @@ class AzureOpenAIClient(BaseLM):
             self.last_completion_tokens = 0
 
     def _track_cost(self, response: Any, model: str):
-        """Record usage from a ChatCompletion, or from a stream's final usage chunk."""
+        """Takes a ChatCompletion or a stream's final usage chunk."""
         self.model_call_counts[model] += 1
 
         usage = getattr(response, "usage", None)
