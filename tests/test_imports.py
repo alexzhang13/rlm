@@ -73,6 +73,19 @@ class TestClientImports:
 
         assert callable(get_client)
 
+    def test_orcarouter_backend_dispatch(self):
+        """Test that get_client routes the orcarouter backend to OpenAIClient."""
+        pytest.importorskip("openai")
+        from rlm.clients import get_client
+        from rlm.clients.openai import OpenAIClient
+
+        client = get_client(
+            "orcarouter",
+            {"api_key": "sk-test", "model_name": "orcarouter/auto"},
+        )
+        assert isinstance(client, OpenAIClient)
+        assert client.base_url == "https://api.orcarouter.ai/v1"
+
 
 class TestCoreImports:
     """Test core module imports."""
