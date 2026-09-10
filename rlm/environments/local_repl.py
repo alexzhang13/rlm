@@ -19,6 +19,7 @@ from rlm.environments.base_env import (
     RESERVED_TOOL_NAMES,
     NonIsolatedEnv,
     extract_tool_value,
+    get_latest_context,
     validate_custom_tools,
 )
 
@@ -537,16 +538,7 @@ class LocalREPL(NonIsolatedEnv):
                             self._last_final_answer = str(current.get("content", ""))
                     self.locals["answer"] = replacement
             elif name == "context" and "context_0" in self.locals:
-                self.locals["context"] = self.locals[
-                    max(
-                        (
-                            key
-                            for key in self.locals
-                            if key.startswith("context_") and key[8:].isdigit()
-                        ),
-                        key=lambda key: int(key[8:]),
-                    )
-                ]
+                self.locals["context"] = get_latest_context(self.locals)
             elif name == "history" and "history_0" in self.locals and not self.compaction:
                 self.locals["history"] = self.locals["history_0"]
             elif name == "history" and self.compaction:

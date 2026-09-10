@@ -19,6 +19,7 @@ Or use any Python 3.11+ image with: pip install dill requests
 
 import base64
 import copy
+import inspect
 import json
 import os
 import shutil
@@ -37,6 +38,7 @@ from rlm.core.types import REPLResult, RLMChatCompletion
 from rlm.environments.base_env import (
     NonIsolatedEnv,
     extract_tool_value,
+    get_latest_context,
     validate_custom_tools,
 )
 
@@ -281,6 +283,7 @@ try:
 except ImportError:
     import pickle as dill
 
+{inspect.getsource(get_latest_context)}
 PROXY = "http://host.docker.internal:{proxy_port}"
 STATE = "/workspace/state.dill"
 DEPTH = {depth}
@@ -387,10 +390,7 @@ finally:
 
 # Restore scaffold aliases if overwritten by executed code
 if "context_0" in _locals:
-    _locals["context"] = _locals[max(
-        (key for key in _locals if key.startswith("context_") and key[8:].isdigit()),
-        key=lambda key: int(key[8:]),
-    )]
+    _locals["context"] = get_latest_context(_locals)
 {history_alias}
 
 save_state(_locals)

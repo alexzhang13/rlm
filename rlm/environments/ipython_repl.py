@@ -50,6 +50,7 @@ from rlm.environments.base_env import (
     RESERVED_TOOL_NAMES,
     NonIsolatedEnv,
     extract_tool_value,
+    get_latest_context,
     validate_custom_tools,
 )
 from rlm.environments.local_repl import _AnswerDict
@@ -1398,12 +1399,7 @@ class IPythonREPL(NonIsolatedEnv):
                     self._last_final_answer = str(current.get("content", ""))
             ns["answer"] = replacement
         if "context_0" in ns:
-            ns["context"] = ns[
-                max(
-                    (key for key in ns if key.startswith("context_") and key[8:].isdigit()),
-                    key=lambda key: int(key[8:]),
-                )
-            ]
+            ns["context"] = get_latest_context(ns)
         if "history_0" in ns:
             ns["history"] = ns["history_0"]
         # Re-inject custom tools if overwritten

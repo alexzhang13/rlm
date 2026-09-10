@@ -24,6 +24,18 @@ RESERVED_TOOL_NAMES: frozenset[str] = frozenset(
 )
 
 
+def get_latest_context(namespace: dict) -> object:
+    """Return the highest-numbered context stored in a REPL namespace."""
+    prefix = "context_"
+    names = (
+        name
+        for name in namespace
+        if name.startswith(prefix) and name.removeprefix(prefix).isdigit()
+    )
+    latest = max(names, key=lambda name: int(name.removeprefix(prefix)))
+    return namespace[latest]
+
+
 @dataclass
 class ToolInfo:
     """Parsed information about a custom tool."""
