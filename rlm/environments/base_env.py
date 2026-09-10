@@ -298,7 +298,7 @@ class SupportsPersistence(Protocol):
 
     ALIASING BEHAVIOR:
         The unversioned names always point to index 0:
-        - context  -> context_0 (first context)
+        - context  -> latest numbered context
         - history  -> history_0 (first history)
 
     EXAMPLE IMPLEMENTATION:
@@ -335,7 +335,7 @@ class SupportsPersistence(Protocol):
         Storage:
             Must store so executed code can access:
             - context_0, context_1, etc. (versioned)
-            - context (alias to context_0)
+            - context (alias to latest numbered context)
 
         Args:
             context_payload: The context data (string, dict, or list).

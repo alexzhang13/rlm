@@ -1009,10 +1009,9 @@ class IPythonREPL(NonIsolatedEnv):
                     f"    {var_name} = _rlm_json.load(_rlm_f)"
                 )
 
-            # Fold the ``context = context_0`` alias into the same cell to
+            # Fold the latest context alias into the same cell to
             # save a kernel round-trip in subprocess mode.
-            if context_index == 0:
-                code += f"\ncontext = {var_name}"
+            code += f"\ncontext = {var_name}"
 
             result = self.execute_code(code)
             if result.stderr:
@@ -1021,8 +1020,7 @@ class IPythonREPL(NonIsolatedEnv):
             # Shadow for subprocess mode so self.locals can report context_N.
             if self.kernel_mode == "subprocess":
                 self._subprocess_shadow[var_name] = copy.deepcopy(context_payload)
-                if context_index == 0:
-                    self._subprocess_shadow["context"] = self._subprocess_shadow[var_name]
+                self._subprocess_shadow["context"] = self._subprocess_shadow[var_name]
 
             self._context_count = max(self._context_count, context_index + 1)
             return context_index
@@ -1400,7 +1398,12 @@ class IPythonREPL(NonIsolatedEnv):
                     self._last_final_answer = str(current.get("content", ""))
             ns["answer"] = replacement
         if "context_0" in ns:
-            ns["context"] = ns["context_0"]
+            ns["context"] = ns[
+                max(
+                    (key for key in ns if key.startswith("context_") and key[8:].isdigit()),
+                    key=lambda key: int(key[8:]),
+                )
+            ]
         if "history_0" in ns:
             ns["history"] = ns["history_0"]
         # Re-inject custom tools if overwritten

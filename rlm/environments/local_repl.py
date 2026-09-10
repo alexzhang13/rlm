@@ -431,9 +431,8 @@ class LocalREPL(NonIsolatedEnv):
                 f"import json\nwith open(r'{context_path}', 'r') as f:\n    {var_name} = json.load(f)"
             )
 
-        # Alias context_0 as 'context' for backward compatibility
-        if context_index == 0:
-            self.execute_code(f"context = {var_name}")
+        # Alias the latest context as 'context'.
+        self.execute_code(f"context = {var_name}")
 
         self._context_count = max(self._context_count, context_index + 1)
         return context_index
@@ -538,7 +537,16 @@ class LocalREPL(NonIsolatedEnv):
                             self._last_final_answer = str(current.get("content", ""))
                     self.locals["answer"] = replacement
             elif name == "context" and "context_0" in self.locals:
-                self.locals["context"] = self.locals["context_0"]
+                self.locals["context"] = self.locals[
+                    max(
+                        (
+                            key
+                            for key in self.locals
+                            if key.startswith("context_") and key[8:].isdigit()
+                        ),
+                        key=lambda key: int(key[8:]),
+                    )
+                ]
             elif name == "history" and "history_0" in self.locals and not self.compaction:
                 self.locals["history"] = self.locals["history_0"]
             elif name == "history" and self.compaction:

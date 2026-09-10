@@ -387,7 +387,10 @@ finally:
 
 # Restore scaffold aliases if overwritten by executed code
 if "context_0" in _locals:
-    _locals["context"] = _locals["context_0"]
+    _locals["context"] = _locals[max(
+        (key for key in _locals if key.startswith("context_") and key[8:].isdigit()),
+        key=lambda key: int(key[8:]),
+    )]
 {history_alias}
 
 save_state(_locals)
@@ -590,7 +593,7 @@ class DockerREPL(NonIsolatedEnv):
     ) -> int:
         """Add a context as ``context_N`` (auto-incrementing unless given).
 
-        ``context`` aliases ``context_0`` for backward compatibility, matching
+        ``context`` aliases the latest numbered context, matching
         the versioning behavior of the local environment.
         """
         if context_index is None:
@@ -611,8 +614,7 @@ class DockerREPL(NonIsolatedEnv):
                 f"with open('/workspace/{fname}', 'r') as _f:\n"
                 f"    {var_name} = json.load(_f)"
             )
-        if context_index == 0:
-            code += "\ncontext = context_0"
+        code += f"\ncontext = {var_name}"
         self.execute_code(code)
 
         self._context_count = max(self._context_count, context_index + 1)
