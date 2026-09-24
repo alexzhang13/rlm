@@ -248,7 +248,14 @@ try:
         if key not in _globals and not key.startswith("_"):
             _locals[key] = value
 except Exception as e:
+    # combined is mutated in place by exec, so variables assigned before the
+    # exception are present -- salvage them instead of discarding paid-for
+    # work (e.g. sub-call results from a loop that raised late).
+    for key, value in combined.items():
+        if key not in _globals and not key.startswith("_"):
+            _locals[key] = value
     traceback.print_exc(file=stderr_buf)
+    print("\\n(variables assigned before the error were preserved)", file=stderr_buf)
 finally:
     sys.stdout = old_stdout
     sys.stderr = old_stderr
