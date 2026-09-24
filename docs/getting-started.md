@@ -317,6 +317,18 @@ rlm = RLM(
 )
 ```
 
+### OrcaRouter
+
+```python
+rlm = RLM(
+    backend="orcarouter",
+    backend_kwargs={
+        "api_key": os.getenv("ORCAROUTER_API_KEY"),
+        "model_name": "orcarouter/auto",  # Adaptive routing, or use vendor/model
+    },
+)
+```
+
 ### vLLM (Local)
 
 ```python
