@@ -31,6 +31,37 @@ def _normalize_sampling_args(sampling_args: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in args.items() if v is not None}
 
 
+def _extract_content(response: Any) -> str:
+    """Return assistant text from a chat completion; never ``None``.
+
+    OpenAI-compatible servers that expose a reasoning parser (e.g. sglang with
+    ``--reasoning-parser qwen3``, vLLM with a similar split) place the thinking
+    trace in ``message.reasoning_content`` and set ``message.content`` to the
+    post-``</think>`` body. That body can be ``None`` when:
+
+    - generation is truncated while still inside the think block
+      (``finish_reason == "length"``);
+    - the model closes ``</think>`` but emits no further tokens (or only
+      whitespace), which some servers coerce to ``None`` via
+      ``content = text if text else None``;
+    - the model never emits ``</think>`` before EOS, so the parser treats the
+      whole output as reasoning.
+
+    RLM then feeds this string into ``re.finditer`` / message history, so a
+    bare ``None`` crashes the turn. Prefer ``content`` when present; otherwise
+    fall back to ``reasoning_content`` (partial progress is better than a
+    crash); finally return ``""``.
+    """
+    if not response.choices:
+        return ""
+
+    message = response.choices[0].message
+    if message.content:
+        return message.content
+
+    return getattr(message, "reasoning_content", None) or ""
+
+
 def _merge_extra_body(
     hardcoded: dict[str, Any], sampling_args: dict[str, Any] | None
 ) -> dict[str, Any]:
@@ -115,7 +146,7 @@ class OpenAIClient(BaseLM):
             **_normalize_sampling_args(self.sampling_args),
         )
         self._track_cost(response, model)
-        return response.choices[0].message.content
+        return _extract_content(response)
 
     async def acompletion(
         self, prompt: str | list[dict[str, Any]], model: str | None = None
@@ -143,7 +174,7 @@ class OpenAIClient(BaseLM):
             **_normalize_sampling_args(self.sampling_args),
         )
         self._track_cost(response, model)
-        return response.choices[0].message.content
+        return _extract_content(response)
 
     def _track_cost(self, response: openai.ChatCompletion, model: str):
         self.model_call_counts[model] += 1
