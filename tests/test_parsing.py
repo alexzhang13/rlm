@@ -74,6 +74,52 @@ print(result)
         assert "def factorial(n):" in blocks[0]
         assert "return n * factorial(n - 1)" in blocks[0]
 
+    def test_xml_tool_call_block(self):
+        """Claude models may emit native XML tool-use syntax instead of ```repl``` fences."""
+        text = """I'll inspect the context first.
+
+<function_calls>
+<invoke name="repl">
+<parameter name="code">
+print("Length of context:", len(context))
+print(context[:500])
+</parameter>
+</invoke>
+</function_calls>"""
+        blocks = find_code_blocks(text)
+        assert blocks == ['print("Length of context:", len(context))\nprint(context[:500])']
+
+    def test_multiple_xml_tool_call_blocks(self):
+        text = """<function_calls>
+<invoke name="repl">
+<parameter name="code">a = 1</parameter>
+</invoke>
+<invoke name="repl">
+<parameter name="code">
+b = a + 1
+</parameter>
+</invoke>
+</function_calls>"""
+        blocks = find_code_blocks(text)
+        assert blocks == ["a = 1", "b = a + 1"]
+
+    def test_xml_tool_call_for_other_tool_ignored(self):
+        text = """<function_calls>
+<invoke name="search">
+<parameter name="code">x = 1</parameter>
+</invoke>
+</function_calls>"""
+        assert find_code_blocks(text) == []
+
+    def test_fenced_blocks_take_precedence_over_xml(self):
+        text = """```repl
+y = 2
+```
+<invoke name="repl">
+<parameter name="code">x = 1</parameter>
+</invoke>"""
+        assert find_code_blocks(text) == ["y = 2"]
+
 
 class TestAnswerDictFinalAnswer:
     """Tests for the ``answer`` dict completion signal surfaced via REPLResult.final_answer."""
