@@ -39,6 +39,7 @@ modal = ["modal>=0.73.0", "dill>=0.3.7"]
 e2b = ["e2b-code-interpreter>=0.0.11", "dill>=0.3.7"]
 daytona = ["daytona>=0.128.1", "dill>=0.3.7"]
 prime = ["prime-sandboxes>=0.2.0", "dill>=0.3.7"]
+instavm = ["instavm>=0.21.0", "dill>=0.3.7"]
 ipython = ["ipython>=8.0.0", "jupyter_client>=8.0.0", "ipykernel>=6.0.0", "dill>=0.3.7"]
 
 [build-system]
