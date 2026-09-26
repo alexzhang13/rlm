@@ -12,6 +12,7 @@ from rlm.core.types import ModelUsageSummary, UsageSummary
 load_dotenv()
 
 DEFAULT_GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+DEFAULT_GEMINI_API_BASE = os.getenv("GEMINI_API_BASE")
 
 
 class GeminiClient(BaseLM):
@@ -24,6 +25,7 @@ class GeminiClient(BaseLM):
         self,
         api_key: str | None = None,
         model_name: str | None = "gemini-2.5-flash",
+        base_url: str | None = None,
         **kwargs,
     ):
         super().__init__(model_name=model_name, **kwargs)
@@ -36,8 +38,17 @@ class GeminiClient(BaseLM):
                 "Gemini API key is required. Set GEMINI_API_KEY env var or pass api_key."
             )
 
+        # Fall back to GEMINI_API_BASE env var if base_url is not explicitly provided.
+        if base_url is None:
+            base_url = DEFAULT_GEMINI_API_BASE
+
         # Configure HTTP options with timeout
-        http_options = types.HttpOptions(timeout=int(self.timeout * 1000))  # milliseconds
+        http_options = types.HttpOptions(
+            timeout=int(self.timeout * 1000),  # milliseconds
+            **({
+                "base_url": base_url
+            } if base_url is not None else {}),
+        )
         self.client = genai.Client(api_key=api_key, http_options=http_options)
         self.model_name = model_name
 
