@@ -274,8 +274,12 @@ class RLM:
             env_kwargs["depth"] = self.depth + 1  # Environment depth is RLM depth + 1
             # For environments that support recursive RLM calls, pass the subcall
             # callback when max_depth > 1. local/ipython invoke it in-process;
-            # docker invokes it via its host-side proxy (/rlm_query endpoints).
-            if self.environment_type in ("local", "ipython", "docker") and self.max_depth > 1:
+            # docker invokes it via its host-side proxy (/rlm_query endpoints) and
+            # kubernetes via requests over the pod's exec stream.
+            if (
+                self.environment_type in ("local", "ipython", "docker", "kubernetes")
+                and self.max_depth > 1
+            ):
                 env_kwargs["subcall_fn"] = self._subcall
             # Pass custom tools to the environment
             if self.custom_tools is not None:
