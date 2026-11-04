@@ -41,6 +41,11 @@ def get_client(
 
         backend_kwargs.setdefault("base_url", "https://ai-gateway.vercel.sh/v1")
         return OpenAIClient(**backend_kwargs)
+    elif backend == "cheaperinference":
+        from rlm.clients.openai import OpenAIClient
+
+        backend_kwargs.setdefault("base_url", "https://api.cheaperinference.com/v1")
+        return OpenAIClient(**backend_kwargs)
     elif backend == "anthropic":
         from rlm.clients.anthropic import AnthropicClient
 
@@ -55,5 +60,5 @@ def get_client(
         return AzureOpenAIClient(**backend_kwargs)
     else:
         raise ValueError(
-            f"Unknown backend: {backend}. Supported backends: ['openai', 'vllm', 'portkey', 'openrouter', 'anthropic', 'azure_openai', 'gemini', 'vercel']"
+            f"Unknown backend: {backend}. Supported backends: ['openai', 'vllm', 'portkey', 'openrouter', 'anthropic', 'azure_openai', 'gemini', 'vercel', 'cheaperinference']"
         )

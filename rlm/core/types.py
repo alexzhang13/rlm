@@ -7,6 +7,7 @@ ClientBackend = Literal[
     "portkey",
     "openrouter",
     "vercel",
+    "cheaperinference",
     "vllm",
     "anthropic",
     "azure_openai",
