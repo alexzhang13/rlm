@@ -52,12 +52,13 @@ print(answer)
 As an example, suppose you're trying to answer a question about a book. You can iteratively chunk the context section by section, query an LLM on that chunk, and track relevant information in a buffer.
 ```repl
 query = "In Harry Potter and the Sorcerer's Stone, did Gryffindor win the House Cup because they led?"
+buffer = "nothing yet"
 for i, section in enumerate(context):
     if i == len(context) - 1:
-        buffer = llm_query(f"You are on the last section of the book. So far you know that: {{buffers}}. Gather from this last section to answer {{query}}. Here is the section: {{section}}")
+        buffer = llm_query(f"You are on the last section of the book. So far you know that: {{buffer}}. Gather from this last section to answer {{query}}. Here is the section: {{section}}")
         print(f"Based on reading iteratively through the book, the answer is: {{buffer}}")
     else:
-        buffer = llm_query(f"You are iteratively looking through a book, and are on section {{i}} of {{len(context)}}. Gather information to help answer {{query}}. Here is the section: {{section}}")
+        buffer = llm_query(f"You are iteratively looking through a book, and are on section {{i}} of {{len(context)}}. So far you know that: {{buffer}}. Gather information to help answer {{query}}. Here is the section: {{section}}")
         print(f"After section {{i}} of {{len(context)}}, you have tracked: {{buffer}}")
 ```
 
