@@ -119,7 +119,7 @@ backend_kwargs = {
 #### `environment`
 {: .no_toc }
 
-**Type:** `Literal["local", "docker", "modal", "prime", "daytona", "e2b"]`
+**Type:** `Literal["local", "docker", "modal", "prime", "daytona", "e2b", "kubernetes"]`
 **Default:** `"local"`
 
 The execution environment for running generated code.
@@ -132,6 +132,7 @@ The execution environment for running generated code.
 | `prime` | Cloud sandbox via Prime Intellect |
 | `daytona` | Cloud sandbox via Daytona |
 | `e2b` | Cloud sandbox via E2B |
+| `kubernetes` | Pod on a Kubernetes cluster |
 
 ---
 
@@ -163,6 +164,16 @@ environment_kwargs = {
     "app_name": "my-rlm-app",  # Modal app name
     "timeout": 600,            # Sandbox timeout in seconds
     "image": modal.Image...,   # Custom Modal image (optional)
+}
+```
+
+**Kubernetes:**
+```python
+environment_kwargs = {
+    "namespace": "default",       # Namespace for the pod
+    "image": "python:3.11-slim",  # Container image
+    "resources": {"limits": {"cpu": "1", "memory": "2Gi"}},  # Container resources
+    "timeout": 600,               # Pod lifetime in seconds
 }
 ```
 
