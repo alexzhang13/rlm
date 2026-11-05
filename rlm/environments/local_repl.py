@@ -567,8 +567,20 @@ class LocalREPL(NonIsolatedEnv):
                 stdout = stdout_buf.getvalue()
                 stderr = stderr_buf.getvalue()
             except Exception as e:
+                # `combined` is mutated in place by exec, so variables assigned
+                # before the exception are present — salvage them instead of
+                # discarding paid-for work (e.g. sub-call results from a loop
+                # that raised late).
+                for key, value in combined.items():
+                    if key not in self.globals and not key.startswith("_"):
+                        self.locals[key] = value
+                self._restore_scaffold()
                 stdout = stdout_buf.getvalue()
-                stderr = stderr_buf.getvalue() + f"\n{type(e).__name__}: {e}"
+                stderr = (
+                    stderr_buf.getvalue()
+                    + f"\n{type(e).__name__}: {e}"
+                    + "\n(variables assigned before the error were preserved)"
+                )
 
         final_answer = self._last_final_answer
         self._last_final_answer = None
