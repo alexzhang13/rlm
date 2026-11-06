@@ -10,7 +10,8 @@ from rlm.core.types import REPLResult, RLMIteration
 def find_code_blocks(text: str) -> list[str]:
     """
     Find REPL code blocks in text wrapped in triple backticks and return List of content(s).
-    Returns None if no code blocks are found.
+    If there are none, fall back to XML tool-use blocks (`<invoke name="repl">`), which
+    Claude models often emit instead of fences. Returns an empty list if nothing is found.
     """
     pattern = r"```repl\s*\n(.*?)\n```"
     results = []
@@ -18,6 +19,11 @@ def find_code_blocks(text: str) -> list[str]:
     for match in re.finditer(pattern, text, re.DOTALL):
         code_content = match.group(1).strip()
         results.append(code_content)
+
+    if not results:
+        xml_pattern = r'<invoke\s+name="repl">\s*<parameter\s+name="code">(.*?)</parameter>'
+        for match in re.finditer(xml_pattern, text, re.DOTALL):
+            results.append(match.group(1).strip())
 
     return results
 
