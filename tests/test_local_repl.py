@@ -1,6 +1,8 @@
 """Comprehensive tests for LocalREPL environment."""
 
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from rlm.environments.local_repl import LocalREPL
 
@@ -36,6 +38,31 @@ class TestLocalREPLBasic:
         result = repl.execute_code("def broken(")
         assert "SyntaxError" in result.stderr
         repl.cleanup()
+
+
+class TestLocalREPLConcurrentInstances:
+    """Concurrent REPLs must not exchange process-global working directories."""
+
+    def test_parallel_execution_keeps_each_repl_in_its_own_temp_dir(self):
+        repls = [LocalREPL(), LocalREPL()]
+        start = threading.Barrier(len(repls))
+
+        def execute(repl):
+            start.wait(timeout=5)
+            return repl.execute_code(
+                "import os, time\ntime.sleep(0.05)\nobserved_cwd = os.getcwd()"
+            )
+
+        try:
+            with ThreadPoolExecutor(max_workers=len(repls)) as executor:
+                results = list(executor.map(execute, repls))
+
+            for repl, result in zip(repls, results):
+                assert result.stderr == ""
+                assert repl.locals["observed_cwd"] == repl.temp_dir
+        finally:
+            for repl in repls:
+                repl.cleanup()
 
 
 class TestLocalREPLPersistence:

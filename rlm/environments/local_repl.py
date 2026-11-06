@@ -23,6 +23,11 @@ from rlm.environments.base_env import (
 )
 
 
+# LocalREPL execution changes process-global state (cwd and stdout/stderr).
+# Serialize across instances while allowing recursive sub-RLM calls in-thread.
+_LOCAL_REPL_EXECUTION_LOCK = threading.RLock()
+
+
 class _AnswerDict(dict):
     """REPL-visible dict where ``answer["ready"] = True`` signals completion.
 
@@ -551,7 +556,11 @@ class LocalREPL(NonIsolatedEnv):
         # Clear pending LLM calls from previous execution
         self._pending_llm_calls = []
 
-        with self._capture_output() as (stdout_buf, stderr_buf), self._temp_cwd():
+        with (
+            _LOCAL_REPL_EXECUTION_LOCK,
+            self._capture_output() as (stdout_buf, stderr_buf),
+            self._temp_cwd(),
+        ):
             try:
                 combined = {**self.globals, **self.locals}
                 exec(code, combined, combined)
