@@ -7,6 +7,15 @@ from rlm.clients.base_lm import BaseLM
 from rlm.core.types import ModelUsageSummary, UsageSummary
 
 
+def _extract_text(content: list[Any]) -> str:
+    """Return the first text block's content, skipping any thinking blocks
+    that may precede it (e.g. when extended thinking is enabled)."""
+    for block in content:
+        if block.type == "text":
+            return block.text
+    raise ValueError("Anthropic response contained no text block")
+
+
 class AnthropicClient(BaseLM):
     """
     LM Client for running models with the Anthropic API.
@@ -44,7 +53,7 @@ class AnthropicClient(BaseLM):
 
         response = self.client.messages.create(**kwargs)
         self._track_cost(response, model)
-        return response.content[0].text
+        return _extract_text(response.content)
 
     async def acompletion(
         self, prompt: str | list[dict[str, Any]], model: str | None = None
@@ -61,7 +70,7 @@ class AnthropicClient(BaseLM):
 
         response = await self.async_client.messages.create(**kwargs)
         self._track_cost(response, model)
-        return response.content[0].text
+        return _extract_text(response.content)
 
     def _prepare_messages(
         self, prompt: str | list[dict[str, Any]]
