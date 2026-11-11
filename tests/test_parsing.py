@@ -45,6 +45,16 @@ End."""
         blocks = find_code_blocks(text)
         assert blocks == []
 
+    def test_none_text_returns_empty_list(self):
+        """LM clients can return None content (e.g. under tool-use pressure);
+        this must not raise a TypeError."""
+        blocks = find_code_blocks(None)
+        assert blocks == []
+
+    def test_empty_string_returns_empty_list(self):
+        blocks = find_code_blocks("")
+        assert blocks == []
+
     def test_non_repl_code_blocks_ignored(self):
         text = """Python block:
 ```python
