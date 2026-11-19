@@ -42,9 +42,17 @@ class AnthropicClient(BaseLM):
         if system:
             kwargs["system"] = system
 
-        response = self.client.messages.create(**kwargs)
+        # Use streaming to handle long responses (required for max_tokens > 21333)
+        parts: list[str] = []
+        with self.client.messages.stream(**kwargs) as stream:
+            for text in stream.text_stream:
+                parts.append(text)
+            response = stream.get_final_message()
+
+        full_response = "".join(parts)
+
         self._track_cost(response, model)
-        return response.content[0].text
+        return full_response
 
     async def acompletion(
         self, prompt: str | list[dict[str, Any]], model: str | None = None
@@ -59,9 +67,17 @@ class AnthropicClient(BaseLM):
         if system:
             kwargs["system"] = system
 
-        response = await self.async_client.messages.create(**kwargs)
+        # Use streaming to handle long responses (required for max_tokens > 21333)
+        parts: list[str] = []
+        async with self.async_client.messages.stream(**kwargs) as stream:
+            async for text in stream.text_stream:
+                parts.append(text)
+            response = await stream.get_final_message()
+
+        full_response = "".join(parts)
+
         self._track_cost(response, model)
-        return response.content[0].text
+        return full_response
 
     def _prepare_messages(
         self, prompt: str | list[dict[str, Any]]
