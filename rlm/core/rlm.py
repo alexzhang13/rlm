@@ -3,7 +3,7 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from typing import Any
 
-from rlm.clients import BaseLM, get_client
+from rlm.clients import BaseLM, ClientFactory, get_client
 from rlm.core.lm_handler import LMHandler
 from rlm.core.types import (
     ClientBackend,
@@ -48,7 +48,7 @@ class RLM:
 
     def __init__(
         self,
-        backend: ClientBackend = "openai",
+        backend: ClientBackend | str = "openai",
         backend_kwargs: dict[str, Any] | None = None,
         environment: EnvironmentType = "local",
         environment_kwargs: dict[str, Any] | None = None,
@@ -60,7 +60,7 @@ class RLM:
         max_tokens: int | None = None,
         max_errors: int | None = None,
         custom_system_prompt: str | None = None,
-        other_backends: list[ClientBackend] | None = None,
+        other_backends: list[ClientBackend | str] | None = None,
         other_backend_kwargs: list[dict[str, Any]] | None = None,
         logger: RLMLogger | None = None,
         verbose: bool = False,
@@ -78,10 +78,12 @@ class RLM:
         sub_sampling_args: dict[str, Any] | None = None,
         orchestrator: bool = True,
         user_prologue: str | None = None,
+        client_factory: ClientFactory | None = None,
     ):
         """
         Args:
-            backend: The backend to use for the RLM.
+            backend: The backend identifier to use for the RLM. Custom identifiers are
+                allowed when ``client_factory`` is supplied.
             backend_kwargs: The kwargs to pass to the backend.
             environment: The environment to use for the RLM.
             environment_kwargs: The kwargs to pass to the environment.
@@ -112,6 +114,9 @@ class RLM:
             on_subcall_complete: Callback fired when a child RLM completes. Args: (depth, model, duration, error_or_none).
             on_iteration_start: Callback fired when an iteration starts. Args: (depth, iteration_num).
             on_iteration_complete: Callback fired when an iteration completes. Args: (depth, iteration_num, duration).
+            client_factory: Optional backend client constructor. It receives the selected
+                backend and backend kwargs and must return a ``BaseLM``. The same factory
+                is propagated to recursive children and max-depth fallback calls.
         """
         # Sampling args plumbed into backend_kwargs / other_backend_kwargs
         # before the clients are constructed, so they reach the chat-completions
@@ -154,6 +159,7 @@ class RLM:
 
         self.other_backends = other_backends
         self.other_backend_kwargs = other_backend_kwargs
+        self.client_factory = client_factory or get_client
 
         # Custom tools: functions available in the REPL environment
         self.custom_tools = custom_tools
@@ -231,12 +237,14 @@ class RLM:
         When persistent=False (default), creates fresh environment each call.
         """
         # Create client and wrap in handler
-        client: BaseLM = get_client(self.backend, self.backend_kwargs)
+        client: BaseLM = self.client_factory(self.backend, self.backend_kwargs)
 
         # Create other_backend_client if provided (for depth=1 routing)
         other_backend_client: BaseLM | None = None
         if self.other_backends and self.other_backend_kwargs:
-            other_backend_client = get_client(self.other_backends[0], self.other_backend_kwargs[0])
+            other_backend_client = self.client_factory(
+                self.other_backends[0], self.other_backend_kwargs[0]
+            )
 
         lm_handler = LMHandler(client, other_backend_client=other_backend_client)
 
@@ -250,7 +258,7 @@ class RLM:
                 self.other_backend_kwargs[1:],
                 strict=True,
             ):
-                other_client: BaseLM = get_client(backend, kwargs)
+                other_client: BaseLM = self.client_factory(backend, kwargs)
                 lm_handler.register_client(other_client.model_name, other_client)
 
         lm_handler.start()
@@ -699,7 +707,7 @@ class RLM:
         """
         Fallback behavior if the RLM is actually at max depth, and should be treated as an LM.
         """
-        client: BaseLM = get_client(self.backend, self.backend_kwargs)
+        client: BaseLM = self.client_factory(self.backend, self.backend_kwargs)
         response = client.completion(message)
         return response
 
@@ -722,21 +730,24 @@ class RLM:
         """
         next_depth = self.depth + 1
 
-        # Determine which backend/kwargs to use (model override or parent's default)
+        # Determine which backend/kwargs to use. An explicit model stays on the
+        # parent's backend. Without one, the configured recursive child backend is
+        # the default for both child RLMs and max-depth plain calls.
         if model is not None:
+            child_backend = self.backend
             child_backend_kwargs = (self.backend_kwargs or {}).copy()
             child_backend_kwargs["model_name"] = model
+        elif self.other_backends and self.other_backend_kwargs:
+            child_backend = self.other_backends[0]
+            child_backend_kwargs = self.other_backend_kwargs[0]
         else:
+            child_backend = self.backend
             child_backend_kwargs = self.backend_kwargs
         resolved_model = model or (child_backend_kwargs or {}).get("model_name", "unknown")
 
         # If we'd hit/exceed the cap, do a normal LM completion (no REPL)
         if next_depth >= self.max_depth:
-            # Use other_backend if available, otherwise use main backend
-            if self.other_backends and self.other_backend_kwargs:
-                client = get_client(self.other_backends[0], self.other_backend_kwargs[0])
-            else:
-                client = get_client(self.backend, child_backend_kwargs or {})
+            client = self.client_factory(child_backend, child_backend_kwargs or {})
             root_model = model or client.model_name
             start_time = time.perf_counter()
             try:
@@ -806,7 +817,7 @@ class RLM:
 
         # Spawn a child RLM with its own LocalREPL
         child = RLM(
-            backend=self.backend,
+            backend=child_backend,
             backend_kwargs=child_backend_kwargs,
             environment=self.environment_type,
             environment_kwargs=self.environment_kwargs,
@@ -831,6 +842,7 @@ class RLM:
             # Propagate callbacks to children for nested tracking
             on_subcall_start=self.on_subcall_start,
             on_subcall_complete=self.on_subcall_complete,
+            client_factory=self.client_factory,
         )
         try:
             result = child.completion(prompt, root_prompt=None)
