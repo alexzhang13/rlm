@@ -5,12 +5,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
-import { StatsCard } from './StatsCard';
+import { StatsRow } from './StatsRow';
 import { TrajectoryPanel } from './TrajectoryPanel';
 import { ExecutionPanel } from './ExecutionPanel';
 import { IterationTimeline } from './IterationTimeline';
 import { ThemeToggle } from './ThemeToggle';
-import { RLMLogFile } from '@/lib/types';
+import { RLMLogFile, RLMIteration } from '@/lib/types';
 
 interface LogViewerProps {
   logFile: RLMLogFile;
@@ -47,149 +47,261 @@ export function LogViewer({ logFile, onBack }: LogViewerProps) {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background">
-      {/* Top Bar - Compact header */}
-      <header className="border-b border-border bg-card/80 backdrop-blur-sm">
-        <div className="px-6 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={onBack}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                ← Back
-              </Button>
-              <div className="h-5 w-px bg-border" />
-              <div>
-                <h1 className="font-semibold flex items-center gap-2 text-sm">
-                  <span className="text-primary">◈</span>
-                  {logFile.fileName}
-                </h1>
-                <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
-                  {config.root_model ?? 'Unknown model'} • {config.backend ?? 'Unknown backend'} • {config.environment_type ?? 'Unknown env'}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              {metadata.hasErrors && (
-                <Badge variant="destructive" className="text-xs">Has Errors</Badge>
-              )}
-              {metadata.finalAnswer && (
-                <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs">
-                  Completed
-                </Badge>
-              )}
-              <ThemeToggle />
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Question & Answer + Stats Row */}
-      <div className="border-b border-border bg-muted/30 px-6 py-4">
-        <div className="flex gap-6">
-          {/* Question & Answer Summary */}
-          <Card className="flex-1 bg-gradient-to-r from-primary/5 to-accent/5 border-primary/20">
-            <CardContent className="p-4">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1">
-                    Context / Question
-                  </p>
-                  <p className="text-sm font-medium line-clamp-2">
-                    {metadata.contextQuestion}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1">
-                    Final Answer
-                  </p>
-                  <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400 line-clamp-2">
-                    {metadata.finalAnswer || 'Not yet completed'}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Quick Stats */}
-          <div className="flex gap-2">
-            <StatsCard
-              label="Iterations"
-              value={metadata.totalIterations}
-              icon="◎"
-              variant="cyan"
-            />
-            <StatsCard
-              label="Code"
-              value={metadata.totalCodeBlocks}
-              icon="⟨⟩"
-              variant="green"
-            />
-            <StatsCard
-              label="Sub-LM"
-              value={metadata.totalSubLMCalls}
-              icon="◇"
-              variant="magenta"
-            />
-            <StatsCard
-              label="Exec"
-              value={`${metadata.totalExecutionTime.toFixed(2)}s`}
-              icon="⏱"
-              variant="yellow"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Iteration Timeline - Full width scrollable row */}
-      <IterationTimeline
-        iterations={iterations}
-        selectedIteration={selectedIteration}
-        onSelectIteration={setSelectedIteration}
+      <LogViewerHeader
+        fileName={logFile.fileName}
+        config={config}
+        metadata={metadata}
+        onBack={onBack}
       />
 
-      {/* Main Content - Resizable Split View */}
-      <div className="flex-1 min-h-0">
-        <ResizablePanelGroup orientation="horizontal">
-          {/* Left Panel - Prompt & Response */}
-          <ResizablePanel defaultSize={50} minSize={20} maxSize={80}>
-            <div className="h-full border-r border-border">
-              <TrajectoryPanel
-                iterations={iterations}
-                selectedIteration={selectedIteration}
-                onSelectIteration={setSelectedIteration}
-              />
-            </div>
-          </ResizablePanel>
-
-          <ResizableHandle withHandle className="bg-border hover:bg-primary/30 transition-colors" />
-
-          {/* Right Panel - Code Execution & Sub-LM Calls */}
-          <ResizablePanel defaultSize={50} minSize={20} maxSize={80}>
-            <div className="h-full bg-background">
-              <ExecutionPanel
-                iteration={iterations[selectedIteration] || null}
-              />
-            </div>
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      </div>
-
-      {/* Keyboard hint footer */}
-      <div className="border-t border-border bg-muted/30 px-6 py-1.5">
-        <div className="flex items-center justify-center gap-6 text-[10px] text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">←</kbd>
-            <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">→</kbd>
-            Navigate
-          </span>
-          <span className="flex items-center gap-1">
-            <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">Esc</kbd>
-            Back
-          </span>
+      <div className="flex-1 flex overflow-hidden bg-background">
+        
+        <div className="w-[20%] max-w-xs flex-shrink-0">
+          <LogViewerSummary metadata={metadata} />
         </div>
+
+        <div className="flex-1 flex flex-col overflow-hidden bg-background">  
+          <IterationTimeline
+            iterations={iterations}
+            selectedIteration={selectedIteration}
+            onSelectIteration={setSelectedIteration}
+          />
+
+          <SelectedIterationInfo
+            iteration={iterations[selectedIteration]}
+            iterationNumber={selectedIteration + 1}
+          />
+
+          <LogViewerMainContent
+            iterations={iterations}
+            selectedIteration={selectedIteration}
+            onSelectIteration={setSelectedIteration}
+          />
+        </div>
+
+      </div>
+      
+      {/* <LogViewerFooter /> */}
+    </div>
+  );
+}
+
+interface LogViewerHeaderProps {
+  fileName: string;
+  config: RLMLogFile['config'];
+  metadata: RLMLogFile['metadata'];
+  onBack: () => void;
+}
+
+function LogViewerHeader({
+  fileName,
+  config,
+  metadata,
+  onBack,
+}: LogViewerHeaderProps) {
+  return (
+    <header className="border-b border-border bg-card/80 backdrop-blur-sm">
+      <div className="px-6 py-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onBack}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              ← Back
+            </Button>
+            <div className="h-5 w-px bg-border" />
+            <div>
+              <h1 className="font-semibold flex items-center gap-2 text-sm">
+                <span className="text-primary">◈</span>
+                {fileName}
+              </h1>
+              <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
+                {config.root_model ?? 'Unknown model'} •{' '}
+                {config.backend ?? 'Unknown backend'} •{' '}
+                {config.environment_type ?? 'Unknown env'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {metadata.hasErrors && (
+              <Badge variant="destructive" className="text-xs">
+                Has Errors
+              </Badge>
+            )}
+            {metadata.finalAnswer && (
+              <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs">
+                Completed
+              </Badge>
+            )}
+            <ThemeToggle />
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+interface LogViewerSummaryProps {
+  metadata: RLMLogFile['metadata'];
+}
+
+function LogViewerSummary({ metadata }: LogViewerSummaryProps) {
+  return (
+    <div className="h-full border-r border-border bg-muted/30 px-6 py-4 overflow-y-auto">
+
+      <div className="flex flex-col gap-5">
+        <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+            Overview
+        </p>
+        
+        <div className="flex flex-col gap-1">
+          <StatsRow label="Iterations" value={metadata.totalIterations} />
+          <StatsRow label="Code Blocks" value={metadata.totalCodeBlocks} />
+          <StatsRow label="Sub-LM Calls" value={metadata.totalSubLMCalls} />
+          <StatsRow label="Exec time" value={`${metadata.totalExecutionTime.toFixed(2)}s`} />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <StatsRow label="Context / Question" value={""} />
+          <p className="text-xs font-medium"> {metadata.contextQuestion} </p>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <StatsRow label="Final Answer" value={""} />
+          <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400"> {metadata.finalAnswer || 'Not yet completed'} </p>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+interface LogViewerMainContentProps {
+  iterations: RLMLogFile['iterations'];
+  selectedIteration: number;
+  onSelectIteration: (index: number) => void;
+}
+
+function LogViewerMainContent({
+  iterations,
+  selectedIteration,
+  onSelectIteration,
+}: LogViewerMainContentProps) {
+  return (
+    <div className="flex-1 min-h-0">
+      <ResizablePanelGroup orientation="horizontal" className="h-full">
+      
+        <ResizablePanel defaultSize={50} minSize={20} maxSize={80}>
+          <div className="h-full border-r border-border">
+            <TrajectoryPanel
+              iterations={iterations}
+              selectedIteration={selectedIteration}
+              onSelectIteration={onSelectIteration}
+            />
+          </div>
+        </ResizablePanel>
+
+        <ResizableHandle
+          withHandle
+          className="bg-border hover:bg-primary/30 transition-colors"
+        />
+
+        <ResizablePanel defaultSize={50} minSize={20} maxSize={80}>
+          <ExecutionPanel
+            iteration={iterations[selectedIteration] || null}
+          />
+        </ResizablePanel>
+
+      </ResizablePanelGroup>
+    </div>
+  );
+}
+
+interface SelectedIterationInfoProps {
+  iteration: RLMIteration | undefined;
+  iterationNumber: number;
+}
+
+function SelectedIterationInfo({ iteration, iterationNumber }: SelectedIterationInfoProps) {
+  if (!iteration) return null;
+
+  // Calculate stats similar to IterationTimeline
+  let totalSubCalls = 0;
+  let codeExecTime = 0;
+  
+  for (const block of iteration.code_blocks) {
+    if (block.result) {
+      codeExecTime += block.result.execution_time || 0;
+      if (block.result.rlm_calls) {
+        totalSubCalls += block.result.rlm_calls.length;
+      }
+    }
+  }
+  
+  // Use iteration_time if available, otherwise fall back to code execution time
+  const execTime = iteration.iteration_time ?? codeExecTime;
+  
+  // Estimate token counts from prompt (rough estimation)
+  const promptText = iteration.prompt.map(m => m.content).join('');
+  const estimatedInputTokens = Math.round(promptText.length / 4);
+  const estimatedOutputTokens = Math.round(iteration.response.length / 4);
+  
+  const codeBlocks = iteration.code_blocks.length;
+  const inputTokensK = (estimatedInputTokens / 1000).toFixed(1);
+  const outputTokensK = (estimatedOutputTokens / 1000).toFixed(1);
+
+  return (
+    <div className="border-b border-border bg-muted/30 flex-shrink-0">
+      {/* Section header and stats */}
+      <div className="px-4 pt-3 pb-2 flex items-center gap-2">
+        <div className="w-5 h-5 rounded bg-primary/10 flex items-center justify-center">
+          <svg className="w-3 h-3 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        </div>
+        <span className="text-xs font-semibold text-foreground">Iteration {iterationNumber}</span>
+        <div className="flex-1" />
+        <div className="flex items-center gap-4 text-xs">
+          <div className="flex items-center gap-1.5">
+            <span className="font-medium">{execTime.toFixed(2)}s</span>
+          </div>
+          
+          <div className="flex items-center gap-1.5">
+            <span className="text-muted-foreground">Est. Tokens</span>
+            <span className="font-mono">
+              <span className="text-sky-600 dark:text-sky-400">{inputTokensK}k</span>
+              <span className="mx-1">→</span>
+              <span className="text-emerald-600 dark:text-emerald-400">{outputTokensK}k</span>
+            </span>
+          </div>
+          
+          <div className="flex items-center gap-1.5 ml-4">
+            <span className="text-muted-foreground font-mono text-[10px]">
+              {new Date(iteration.timestamp).toLocaleString()}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LogViewerFooter() {
+  return (
+    <div className="border-t border-border bg-muted/30 px-6 py-1.5">
+      <div className="flex items-center justify-center gap-6 text-[10px] text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">←</kbd>
+          <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">→</kbd>
+          Navigate
+        </span>
+        <span className="flex items-center gap-1">
+          <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">Esc</kbd>
+          Back
+        </span>
       </div>
     </div>
   );

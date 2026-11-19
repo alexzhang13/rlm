@@ -77,22 +77,18 @@ export function TrajectoryPanel({
       {/* Header */}
       <div className="px-4 py-3 border-b border-border flex items-center justify-between bg-muted/30 flex-shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center">
-            <span className="text-white text-sm font-bold">◈</span>
-          </div>
           <div>
-            <h2 className="font-semibold text-sm">Conversation</h2>
-            <p className="text-[11px] text-muted-foreground">
-              Iteration {selectedIteration + 1} of {iterations.length}
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1">
+              Conversation
             </p>
           </div>
         </div>
         <div className="flex gap-2">
-          {currentIteration?.code_blocks.length > 0 && (
+          {/* {currentIteration?.code_blocks.length > 0 && (
             <Badge variant="secondary" className="text-[10px]">
               {currentIteration.code_blocks.length} code
             </Badge>
-          )}
+          )} */}
           {currentIteration?.final_answer && (
             <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px]">
               ✓ Answer
