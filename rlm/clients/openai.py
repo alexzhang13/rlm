@@ -15,6 +15,7 @@ DEFAULT_OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DEFAULT_OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 DEFAULT_VERCEL_API_KEY = os.getenv("AI_GATEWAY_API_KEY")
 DEFAULT_PRIME_API_KEY = os.getenv("PRIME_API_KEY")
+DEFAULT_ORCAROUTER_API_KEY = os.getenv("ORCAROUTER_API_KEY")
 DEFAULT_PRIME_INTELLECT_BASE_URL = "https://api.pinference.ai/api/v1/"
 
 
@@ -66,6 +67,8 @@ class OpenAIClient(BaseLM):
                 api_key = DEFAULT_OPENAI_API_KEY
             elif base_url == "https://openrouter.ai/api/v1":
                 api_key = DEFAULT_OPENROUTER_API_KEY
+            elif base_url == "https://api.orcarouter.ai/v1":
+                api_key = DEFAULT_ORCAROUTER_API_KEY
             elif base_url == "https://ai-gateway.vercel.sh/v1":
                 api_key = DEFAULT_VERCEL_API_KEY
             elif base_url == DEFAULT_PRIME_INTELLECT_BASE_URL:

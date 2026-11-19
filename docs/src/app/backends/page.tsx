@@ -64,6 +64,20 @@ export default function BackendsPage() {
 
       <hr className="my-8 border-border" />
 
+      <h2 className="text-2xl font-semibold mb-4">OrcaRouter</h2>
+      <p className="text-muted-foreground mb-4">
+        <a href="https://www.orcarouter.ai" className="text-primary underline font-medium" target="_blank" rel="noopener noreferrer">OrcaRouter</a> is an OpenAI-compatible AI gateway that routes requests at upstream cost across 150+ models from OpenAI, Anthropic, Google Gemini, DeepSeek, and more — with adaptive routing, automatic failover, and observability.
+      </p>
+      <CodeBlock code={`rlm = RLM(
+    backend="orcarouter",
+    backend_kwargs={
+        "api_key": os.getenv("ORCAROUTER_API_KEY"),
+        "model_name": "anthropic/claude-opus-4.8",  # Format: vendor/model, or orcarouter/auto
+    },
+)`} />
+
+      <hr className="my-8 border-border" />
+
       <h2 className="text-2xl font-semibold mb-4">vLLM (Local)</h2>
       <p className="text-muted-foreground mb-4">Local model serving.</p>
       <CodeBlock language="bash" code={`# Start vLLM server

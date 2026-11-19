@@ -6,6 +6,7 @@ ClientBackend = Literal[
     "openai",
     "portkey",
     "openrouter",
+    "orcarouter",
     "vercel",
     "vllm",
     "anthropic",

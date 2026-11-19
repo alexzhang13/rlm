@@ -61,6 +61,7 @@ print(result.response)`} />
                 [<code key="2" className="text-sm">"anthropic"</code>, "Anthropic API"],
                 [<code key="3" className="text-sm">"portkey"</code>, "Portkey AI gateway"],
                 [<code key="4" className="text-sm">"openrouter"</code>, "OpenRouter"],
+                [<code key="5" className="text-sm">"orcarouter"</code>, "OrcaRouter"],
 
                 [<code key="6" className="text-sm">"vllm"</code>, "Local vLLM server"],
               ]}
