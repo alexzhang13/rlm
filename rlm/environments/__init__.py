@@ -22,12 +22,17 @@ def __getattr__(name: str) -> Any:
         from rlm.environments.ipython_repl import IPythonREPL
 
         return IPythonREPL
+    if name == "InstaVMREPL":
+        from rlm.environments.instavm_repl import InstaVMREPL
+
+        return InstaVMREPL
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
     "BaseEnv",
     "IPythonREPL",
+    "InstaVMREPL",
     "LocalREPL",
     "RESERVED_TOOL_NAMES",
     "SupportsCustomTools",
@@ -43,12 +48,14 @@ __all__ = [
 
 
 def get_environment(
-    environment: Literal["local", "ipython", "modal", "docker", "daytona", "prime", "e2b"],
+    environment: Literal[
+        "local", "ipython", "modal", "docker", "daytona", "prime", "e2b", "instavm"
+    ],
     environment_kwargs: dict[str, Any],
 ) -> BaseEnv:
     """
     Routes a specific environment and the args (as a dict) to the appropriate environment if supported.
-    Currently supported environments: ['local', 'ipython', 'modal', 'docker', 'daytona', 'prime', 'e2b']
+    Currently supported environments: ['local', 'ipython', 'modal', 'docker', 'daytona', 'prime', 'e2b', 'instavm']
     """
     if environment == "local":
         return LocalREPL(**environment_kwargs)
@@ -76,7 +83,11 @@ def get_environment(
         from rlm.environments.e2b_repl import E2BREPL
 
         return E2BREPL(**environment_kwargs)
+    elif environment == "instavm":
+        from rlm.environments.instavm_repl import InstaVMREPL
+
+        return InstaVMREPL(**environment_kwargs)
     else:
         raise ValueError(
-            f"Unknown environment: {environment}. Supported: ['local', 'ipython', 'modal', 'docker', 'daytona', 'prime', 'e2b']"
+            f"Unknown environment: {environment}. Supported: ['local', 'ipython', 'modal', 'docker', 'daytona', 'prime', 'e2b', 'instavm']"
         )
