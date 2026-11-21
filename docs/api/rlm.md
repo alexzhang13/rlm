@@ -552,7 +552,7 @@ The following functions are available to model-generated code inside the REPL:
 | `llm_query(prompt, model=None)` | Single plain LM completion. Fast, no REPL or iteration. |
 | `llm_query_batched(prompts, model=None)` | Multiple plain LM completions concurrently. A single failed call doesn't fail the batch — that slot returns `"Error: llm() call failed - <msg>"`, the rest return normally. |
 | `rlm_query(instruction, context, model=None)` | Put the instruction in a child RLM’s model messages and context in its own REPL. Falls back to `llm_query` at max depth. |
-| `rlm_query_batched(prompts, model=None)` | Spawn one child per `(instruction, context)` pair, preserving order. Falls back to `llm_query_batched` at max depth. |
+| `rlm_query_batched(queries, model=None)` | Accept a list of `(instruction, context)` pairs; spawn one child per pair, preserving order. Falls back to `llm_query_batched` at max depth. |
 | `answer` | A dict (`{"content": "", "ready": False}`). Set `answer["content"]` to your final answer and `answer["ready"] = True` to terminate the run. |
 | `SHOW_VARS()` | List all user-created variables in the REPL. |
 | `print(...)` | Print output visible to the model in the next iteration. |

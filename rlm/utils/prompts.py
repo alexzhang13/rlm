@@ -15,7 +15,7 @@ The REPL environment is initialized with:
 2. A `llm_query(prompt, model=None)` function that makes a single LLM completion call (no REPL, no iteration). Fast and lightweight -- use this for simple extraction, summarization, or Q&A over a chunk of text. The sub-LLM can handle around 500K chars.
 3. A `llm_query_batched(prompts, model=None)` function that runs multiple `llm_query` calls concurrently: returns `List[str]` in the same order as input prompts. Much faster than sequential `llm_query` calls for independent queries.
 4. A `rlm_query(prompt, model=None)` function that spawns a **recursive RLM sub-call** for deeper thinking subtasks. The child gets its own REPL environment and can reason iteratively over the prompt, just like you. Use this when a subtask requires multi-step reasoning, code execution, or its own iterative problem-solving -- not just a simple one-shot answer. Falls back to `llm_query` if recursion is not available.
-5. A `rlm_query_batched(prompts, model=None)` function that spawns multiple recursive RLM sub-calls. Each prompt gets its own child RLM. Falls back to `llm_query_batched` if recursion is not available.
+5. A `rlm_query_batched(queries, model=None)` function that takes a list of `(instruction, context)` pairs and spawns a child RLM for each pair. Falls back to `llm_query_batched` if recursion is not available.
 6. A `SHOW_VARS()` function that returns all variables you have created in the REPL. Use this to check what variables exist.
 7. The ability to use `print()` statements to view the output of your REPL code and continue your reasoning.
 8. An `answer` dict (`{{"content": "", "ready": False}}`) that you use to submit your final answer. See "Submitting your final answer" below.
@@ -133,7 +133,7 @@ To use the REPL, you need to write code in ```repl``` blocks; the REPL persists 
 - `llm_query(prompt: str, model: str | None = None) -> str`: a single sub-LLM completion. Use for extraction, summarization, or Q&A over a chunk of text. Sub-LLM context window ≈ 500K chars.
 - `llm_query_batched(prompts: list[str], model=None) -> list[str]`: concurrently call several LLM calls in parallel over a list of prompts; same order out as in.
 - `rlm_query(instruction, context, model=None) -> str`: recursive RLM sub-call with its own REPL and iteration. The instruction goes directly into the child's model messages; context is stored in its REPL as `context`. Pass a focused instruction and the relevant data separately, e.g. `rlm_query("Identify the trend; return up, down, or stable", context=data)`.
-- `rlm_query_batched(prompts, model=None) -> list[str]`: concurrently run a list of `(instruction, context)` pairs, each with its own child REPL; results preserve input order. Both recursive helpers fall back to plain LM calls containing the instruction and context at the depth limit.
+- `rlm_query_batched(queries, model=None) -> list[str]`: `queries` is a list of `(instruction, context)` pairs, e.g. `[("Summarize", doc_a), ("Extract dates", doc_b)]`. Run these concurrently, each with its own child REPL; results preserve input order. Both recursive helpers fall back to plain LM calls containing the instruction and context at the depth limit.
 - `SHOW_VARS() -> str`: list every variable currently in the REPL.
 - `answer`: dict initialized to `{{"content": "", "ready": False}}`. To submit, set `answer["content"]` to the final answer and `answer["ready"] = True` inside a ```repl``` block.
 {custom_tools_section}

@@ -106,8 +106,8 @@ class _SubcallBroker:
     Request types (all carry a ``cell_id`` so the parent can attribute
     completions / final answers to the cell that triggered them even if
     ``subcall_fn`` finishes after that cell has timed out):
-        {"type": "subcall", "prompt": str, "model": str | None, "cell_id": str}
-        {"type": "subcall_batched", "prompts": [str], "model": str | None, "cell_id": str}
+        {"type": "subcall", "instruction": str, "context": str | list | dict, "model": str | None, "cell_id": str}
+        {"type": "subcall_batched", "queries": [(instruction, context)], "model": str | None, "cell_id": str}
         {"type": "answer", "content": str, "cell_id": str}
 
     Responses:
@@ -219,17 +219,17 @@ class _SubcallBroker:
         if req_type == "subcall_batched":
             if self.subcall_fn is None:
                 return {"error": "No subcall_fn configured; rlm_query_batched unavailable"}
-            prompts = data.get("prompts") or []
+            queries = data.get("queries") or []
             model = data.get("model")
-            responses: list[str | None] = [None] * len(prompts)
-            errors: list[str | None] = [None] * len(prompts)
+            responses: list[str | None] = [None] * len(queries)
+            errors: list[str | None] = [None] * len(queries)
             local_completions: list[tuple[int, RLMChatCompletion]] = []
             local_lock = threading.Lock()
 
-            def _one(i: int, prompt: tuple[str, str | list | dict]) -> None:
+            def _one(i: int, query: tuple[str, str | list | dict]) -> None:
                 try:
                     # _run_subcall already gates on the global semaphore.
-                    completion = self._run_subcall(*prompt, model)
+                    completion = self._run_subcall(*query, model)
                     with local_lock:
                         local_completions.append((i, completion))
                     responses[i] = completion.response
@@ -239,9 +239,9 @@ class _SubcallBroker:
             # Per-batch pool size is capped at ``max_concurrent`` for
             # symmetry, but the semaphore inside ``_run_subcall`` is what
             # actually bounds total in-flight subcalls across requests.
-            max_workers = max(1, min(self.max_concurrent, len(prompts) or 1))
+            max_workers = max(1, min(self.max_concurrent, len(queries) or 1))
             with ThreadPoolExecutor(max_workers=max_workers) as ex:
-                futures = [ex.submit(_one, i, p) for i, p in enumerate(prompts)]
+                futures = [ex.submit(_one, i, p) for i, p in enumerate(queries)]
                 for f in as_completed(futures):
                     f.result()
 
@@ -405,20 +405,20 @@ def _build_kernel_bootstrap(
             cc = resp.get("completion") or {{}}
             return cc.get("response", "")
 
-        def rlm_query_batched(prompts, model=None):
-            prompts = list(prompts)
+        def rlm_query_batched(queries, model=None):
+            queries = list(queries)
             if _RLM_SUBCALL_ADDRESS is None:
-                return llm_query_batched([instruction + "\\n\\nContext:\\n" + (context if isinstance(context, str) else _rlm_json.dumps(context)) for instruction, context in prompts], model=model)
+                return llm_query_batched([instruction + "\\n\\nContext:\\n" + (context if isinstance(context, str) else _rlm_json.dumps(context)) for instruction, context in queries], model=model)
             resp = _rlm_request(_RLM_SUBCALL_ADDRESS, {{
-                "type": "subcall_batched", "prompts": prompts, "model": model,
+                "type": "subcall_batched", "queries": queries, "model": model,
                 "cell_id": _RLM_CURRENT_CELL,
             }})
             if not isinstance(resp, dict):
-                return ["Error: RLM query failed - malformed response"] * len(prompts)
+                return ["Error: RLM query failed - malformed response"] * len(queries)
             if resp.get("error"):
                 if "No subcall_fn" in resp["error"]:
-                    return llm_query_batched([instruction + "\\n\\nContext:\\n" + (context if isinstance(context, str) else _rlm_json.dumps(context)) for instruction, context in prompts], model=model)
-                return [f"Error: {{resp['error']}}"] * len(prompts)
+                    return llm_query_batched([instruction + "\\n\\nContext:\\n" + (context if isinstance(context, str) else _rlm_json.dumps(context)) for instruction, context in queries], model=model)
+                return [f"Error: {{resp['error']}}"] * len(queries)
             return list(resp.get("responses") or [])
 
         class _RLMAnswerDict(dict):
@@ -941,33 +941,33 @@ class IPythonREPL(NonIsolatedEnv):
             return f"Error: RLM query failed - {e}"
 
     def _rlm_query_batched(
-        self, prompts: list[tuple[str, str | list | dict]], model: str | None = None
+        self, queries: list[tuple[str, str | list | dict]], model: str | None = None
     ) -> list[str]:
         if self.subcall_fn is None:
-            return self._llm_query_batched([format_rlm_query(*query) for query in prompts], model)
+            return self._llm_query_batched([format_rlm_query(*query) for query in queries], model)
 
-        if len(prompts) <= 1:
+        if len(queries) <= 1:
             results: list[str] = []
-            for prompt in prompts:
+            for query in queries:
                 try:
-                    completion = self._run_inprocess_subcall(*prompt, model)
+                    completion = self._run_inprocess_subcall(*query, model)
                     self._pending_llm_calls.append(completion)
                     results.append(completion.response)
                 except Exception as e:
                     results.append(f"Error: RLM query failed - {e}")
             return results
 
-        max_workers = min(self.max_concurrent_subcalls, len(prompts))
-        results: list[str] = [""] * len(prompts)
+        max_workers = min(self.max_concurrent_subcalls, len(queries))
+        results: list[str] = [""] * len(queries)
         completions: list[tuple[int, RLMChatCompletion]] = []
         lock = threading.Lock()
 
-        def _run(index: int, prompt: tuple[str, str | list | dict]) -> None:
+        def _run(index: int, query: tuple[str, str | list | dict]) -> None:
             try:
                 # Semaphore-gated so that multiple in-flight batched calls
                 # (e.g., from user-spawned threads inside the cell) share
                 # the global concurrency budget.
-                completion = self._run_inprocess_subcall(*prompt, model)
+                completion = self._run_inprocess_subcall(*query, model)
                 with lock:
                     completions.append((index, completion))
                 results[index] = completion.response
@@ -975,7 +975,7 @@ class IPythonREPL(NonIsolatedEnv):
                 results[index] = f"Error: RLM query failed - {e}"
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [executor.submit(_run, i, p) for i, p in enumerate(prompts)]
+            futures = [executor.submit(_run, i, p) for i, p in enumerate(queries)]
             for f in as_completed(futures):
                 f.result()
 
