@@ -72,12 +72,12 @@ def main():
     # Recursive sub-RLM calls + custom tools
     print("\n[3] Recursive sub-RLM (rlm_query) + custom tools")
 
-    def mock_subcall(prompt, model=None):
+    def mock_subcall(instruction, context, model=None):
         # In real use this is RLM._subcall, which spawns a child RLM.
         return RLMChatCompletion(
             root_model=model or "child",
-            prompt=prompt,
-            response=f"child-answer({prompt})",
+            prompt=context,
+            response=f"child-answer({instruction})",
             usage_summary=UsageSummary(model_usage_summaries={}),
             execution_time=0.0,
         )
@@ -89,10 +89,12 @@ def main():
         result = repl.execute_code("print(triple(CONST))")
         print(f"  custom tools triple(CONST) → {result.stdout.strip()}")
 
-        result = repl.execute_code('print(rlm_query("solve subtask"))')
+        result = repl.execute_code('print(rlm_query("solve subtask", context="supporting data"))')
         print(f"  rlm_query → {result.stdout.strip()}")
 
-        result = repl.execute_code('print(rlm_query_batched(["a", "b", "c"]))')
+        result = repl.execute_code(
+            'print(rlm_query_batched([("a", "data a"), ("b", "data b"), ("c", "data c")]))'
+        )
         print(f"  rlm_query_batched → {result.stdout.strip()}")
 
     print("\n" + "=" * 50)

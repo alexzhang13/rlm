@@ -59,7 +59,7 @@ class _FakeSubcall:
         self.calls = []
         self._i = 0
 
-    def __call__(self, prompt: str, model: str | None = None) -> RLMChatCompletion:
+    def __call__(self, prompt: str, context, model: str | None = None) -> RLMChatCompletion:
         self.calls.append((prompt, model))
         response = self.responses[self._i % len(self.responses)]
         self._i += 1
@@ -202,7 +202,7 @@ def test_custom_tool_data(kernel_mode: str):
 def test_rlm_query_dispatches_to_subcall_fn(kernel_mode: str):
     subcall = _FakeSubcall(responses=["child-answer"])
     with IPythonREPL(kernel_mode=kernel_mode, subcall_fn=subcall) as repl:
-        result = repl.execute_code('r = rlm_query("think harder")\nprint(r)')
+        result = repl.execute_code('r = rlm_query("think harder", dict())\nprint(r)')
     assert "child-answer" in result.stdout
     assert len(subcall.calls) == 1
     assert subcall.calls[0][0] == "think harder"
@@ -216,7 +216,7 @@ def test_rlm_query_batched_dispatches(kernel_mode: str):
     subcall = _FakeSubcall(responses=["a", "b", "c"])
     with IPythonREPL(kernel_mode=kernel_mode, subcall_fn=subcall) as repl:
         result = repl.execute_code(
-            'rs = rlm_query_batched(["p1","p2","p3"])\nprint(\',\'.join(rs))'
+            'rs = rlm_query_batched([(p, dict()) for p in ["p1","p2","p3"]])\nprint(\',\'.join(rs))'
         )
     assert "a,b,c" in result.stdout
     assert len(subcall.calls) == 3
@@ -228,7 +228,7 @@ def test_rlm_query_falls_back_when_no_subcall_fn(kernel_mode: str):
     """Without subcall_fn, rlm_query falls through to llm_query (which errors
     cleanly when no LM handler is configured)."""
     with IPythonREPL(kernel_mode=kernel_mode, subcall_fn=None) as repl:
-        result = repl.execute_code('print(rlm_query("hi"))')
+        result = repl.execute_code('print(rlm_query("hi", dict()))')
     # Error either about missing subcall_fn, handler, or kernel address —
     # the contract is: it doesn't crash and surfaces a clear error string.
     assert "Error" in result.stdout
@@ -502,9 +502,9 @@ def test_rlm_calls_do_not_leak_across_cells(kernel_mode: str):
     """Each REPLResult.rlm_calls must reflect only the current cell's calls."""
     subcall = _FakeSubcall(responses=["x"])
     with IPythonREPL(kernel_mode=kernel_mode, subcall_fn=subcall) as repl:
-        r1 = repl.execute_code('rlm_query("a")')
-        r2 = repl.execute_code('rlm_query("b")')
-        r3 = repl.execute_code('rlm_query("c")')
+        r1 = repl.execute_code('rlm_query("a", dict())')
+        r2 = repl.execute_code('rlm_query("b", dict())')
+        r3 = repl.execute_code('rlm_query("c", dict())')
         r4 = repl.execute_code('print("no rlm here")')
     assert len(r1.rlm_calls) == 1
     assert len(r2.rlm_calls) == 1
@@ -615,7 +615,7 @@ def test_stale_subcall_completion_not_misattributed_to_next_cell():
 
     finished = threading.Event()
 
-    def slow_subcall(prompt: str, model: str | None = None) -> RLMChatCompletion:
+    def slow_subcall(prompt: str, context, model: str | None = None) -> RLMChatCompletion:
         # Long enough to outlive cell A's timeout but finish during cell B.
         time.sleep(0.5)
         finished.set()
@@ -640,7 +640,7 @@ def test_stale_subcall_completion_not_misattributed_to_next_cell():
         cell_timeout=0.1,
     ) as repl:
         # Cell A: kicks off rlm_query, times out before subcall_fn finishes.
-        r1 = repl.execute_code('rlm_query("p")')
+        r1 = repl.execute_code('rlm_query("p", dict())')
         assert "TimeoutError" in r1.stderr
         # subcall_fn shouldn't have completed yet.
         assert not finished.is_set()
@@ -667,7 +667,7 @@ def test_stale_final_answer_not_misattributed_to_next_cell():
 
     barrier = threading.Event()
 
-    def slow_subcall(prompt: str, model: str | None = None) -> RLMChatCompletion:
+    def slow_subcall(prompt: str, context, model: str | None = None) -> RLMChatCompletion:
         # Hold the kernel-side rlm_query call long enough that we get
         # to issue cell B before subcall_fn ever returns.
         barrier.wait(timeout=5.0)
@@ -692,7 +692,7 @@ def test_stale_final_answer_not_misattributed_to_next_cell():
         cell_timeout=0.1,
     ) as repl:
         r1 = repl.execute_code(
-            'rlm_query("p")\nanswer["content"] = "late-A"\nanswer["ready"] = True'
+            'rlm_query("p", dict())\nanswer["content"] = "late-A"\nanswer["ready"] = True'
         )
         assert "TimeoutError" in r1.stderr
         # Cell A is over with no final answer captured.
@@ -749,7 +749,7 @@ def test_in_process_scaffold_self_reentry_preserves_outer_state():
         # raises and is caught locally; the outer rlm_query call should
         # still be reflected in ``rlm_calls``.
         result = repl.execute_code(
-            "real = rlm_query('outer')\n"
+            "real = rlm_query('outer', dict())\n"
             "try:\n"
             "    rlm_query.__self__.execute_code('inner')\n"
             "except RuntimeError as e:\n"
@@ -777,7 +777,7 @@ def test_subcall_fn_reentry_into_same_repl_raises(kernel_mode: str):
     seen: list[str] = []
     repl_holder: dict[str, IPythonREPL] = {}
 
-    def reentering_subcall(prompt: str, model: str | None = None) -> RLMChatCompletion:
+    def reentering_subcall(prompt: str, context, model: str | None = None) -> RLMChatCompletion:
         try:
             repl_holder["repl"].execute_code("print('inner')")
         except RuntimeError as e:
@@ -811,7 +811,7 @@ def test_subcall_fn_reentry_into_same_repl_raises(kernel_mode: str):
 
         def runner() -> None:
             try:
-                result_holder.append(repl.execute_code('print(rlm_query("p"))'))
+                result_holder.append(repl.execute_code('print(rlm_query("p", dict()))'))
             except BaseException as e:
                 err_holder.append(e)
 
@@ -836,7 +836,7 @@ def test_concurrent_execute_does_not_lose_rlm_calls(kernel_mode: str):
 
     def worker(repl: IPythonREPL) -> None:
         for _ in range(5):
-            r = repl.execute_code("rlm_query('p')")
+            r = repl.execute_code("rlm_query('p', dict())")
             with lock:
                 counts.append(len(r.rlm_calls))
 
@@ -919,7 +919,7 @@ def test_in_process_subcall_concurrency_is_globally_bounded():
     peak = 0
     cv_lock = threading.Lock()
 
-    def slow_subcall(prompt: str, model: str | None = None) -> RLMChatCompletion:
+    def slow_subcall(prompt: str, context, model: str | None = None) -> RLMChatCompletion:
         nonlocal in_flight, peak
         with cv_lock:
             in_flight += 1
@@ -950,7 +950,7 @@ def test_in_process_subcall_concurrency_is_globally_bounded():
         result = repl.execute_code(
             "import threading\n"
             "def go():\n"
-            "    rlm_query_batched(['p1','p2','p3','p4','p5','p6','p7','p8'])\n"
+            "    rlm_query_batched([(p, dict()) for p in ['p1','p2','p3','p4','p5','p6','p7','p8']])\n"
             "ts = [threading.Thread(target=go) for _ in range(2)]\n"
             "for t in ts: t.start()\n"
             "for t in ts: t.join()\n"
@@ -970,7 +970,7 @@ def test_subcall_concurrency_is_globally_bounded():
     peak = 0
     cv_lock = threading.Lock()
 
-    def slow_subcall(prompt: str, model: str | None = None) -> RLMChatCompletion:
+    def slow_subcall(prompt: str, context, model: str | None = None) -> RLMChatCompletion:
         nonlocal in_flight, peak
         with cv_lock:
             in_flight += 1
@@ -1005,7 +1005,7 @@ def test_subcall_concurrency_is_globally_bounded():
         result = repl.execute_code(
             "import threading\n"
             "def go():\n"
-            "    rlm_query_batched(['p1','p2','p3','p4','p5','p6','p7','p8'])\n"
+            "    rlm_query_batched([(p, dict()) for p in ['p1','p2','p3','p4','p5','p6','p7','p8']])\n"
             "ts = [threading.Thread(target=go) for _ in range(2)]\n"
             "for t in ts: t.start()\n"
             "for t in ts: t.join()\n"

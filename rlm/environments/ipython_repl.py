@@ -53,6 +53,7 @@ from rlm.environments.base_env import (
     validate_custom_tools,
 )
 from rlm.environments.local_repl import _AnswerDict
+from rlm.utils.prompts import format_rlm_query
 
 KernelMode = Literal["in_process", "subprocess"]
 
@@ -117,7 +118,7 @@ class _SubcallBroker:
 
     def __init__(
         self,
-        subcall_fn: Callable[[str, str | None], RLMChatCompletion] | None,
+        subcall_fn: Callable[[str, str | list | dict, str | None], RLMChatCompletion] | None,
         max_concurrent: int = 4,
         host: str = "127.0.0.1",
         port: int = 0,
@@ -170,7 +171,9 @@ class _SubcallBroker:
         self._thread.start()
         return self.address
 
-    def _run_subcall(self, prompt: str, model: str | None) -> RLMChatCompletion:
+    def _run_subcall(
+        self, instruction: str, context: str | list | dict, model: str | None
+    ) -> RLMChatCompletion:
         """Invoke ``subcall_fn`` under the global concurrency semaphore.
 
         Without this gate, kernel-side code that fans out N concurrent
@@ -180,7 +183,7 @@ class _SubcallBroker:
         """
         assert self.subcall_fn is not None
         with self._subcall_semaphore:
-            return self.subcall_fn(prompt, model)
+            return self.subcall_fn(instruction, context, model)
 
     def _dispatch(self, data: dict[str, Any]) -> dict[str, Any]:
         req_type = data.get("type")
@@ -204,7 +207,9 @@ class _SubcallBroker:
             if self.subcall_fn is None:
                 return {"error": "No subcall_fn configured; rlm_query unavailable"}
             try:
-                completion = self._run_subcall(data.get("prompt", ""), data.get("model"))
+                completion = self._run_subcall(
+                    data["instruction"], data["context"], data.get("model")
+                )
                 with self._lock:
                     self._completions_by_cell.setdefault(cell_id, []).append(completion)
                 return {"completion": completion.to_dict()}
@@ -221,10 +226,10 @@ class _SubcallBroker:
             local_completions: list[tuple[int, RLMChatCompletion]] = []
             local_lock = threading.Lock()
 
-            def _one(i: int, prompt: str) -> None:
+            def _one(i: int, prompt: tuple[str, str | list | dict]) -> None:
                 try:
                     # _run_subcall already gates on the global semaphore.
-                    completion = self._run_subcall(prompt, model)
+                    completion = self._run_subcall(*prompt, model)
                     with local_lock:
                         local_completions.append((i, completion))
                     responses[i] = completion.response
@@ -383,11 +388,11 @@ def _build_kernel_bootstrap(
             ccs = resp.get("chat_completions") or []
             return [c.get("response", "") for c in ccs]
 
-        def rlm_query(prompt, model=None):
+        def rlm_query(instruction, context, model=None):
             if _RLM_SUBCALL_ADDRESS is None:
-                return llm_query(prompt, model=model)
+                return llm_query(instruction + "\\n\\nContext:\\n" + (context if isinstance(context, str) else _rlm_json.dumps(context)), model=model)
             resp = _rlm_request(_RLM_SUBCALL_ADDRESS, {{
-                "type": "subcall", "prompt": prompt, "model": model,
+                "type": "subcall", "instruction": instruction, "context": context, "model": model,
                 "cell_id": _RLM_CURRENT_CELL,
             }})
             if not isinstance(resp, dict):
@@ -395,7 +400,7 @@ def _build_kernel_bootstrap(
             if resp.get("error"):
                 # Fall back to a plain LM call if the parent has no subcall_fn
                 if "No subcall_fn" in resp["error"]:
-                    return llm_query(prompt, model=model)
+                    return llm_query(instruction + "\\n\\nContext:\\n" + (context if isinstance(context, str) else _rlm_json.dumps(context)), model=model)
                 return f"Error: {{resp['error']}}"
             cc = resp.get("completion") or {{}}
             return cc.get("response", "")
@@ -403,7 +408,7 @@ def _build_kernel_bootstrap(
         def rlm_query_batched(prompts, model=None):
             prompts = list(prompts)
             if _RLM_SUBCALL_ADDRESS is None:
-                return llm_query_batched(prompts, model=model)
+                return llm_query_batched([instruction + "\\n\\nContext:\\n" + (context if isinstance(context, str) else _rlm_json.dumps(context)) for instruction, context in prompts], model=model)
             resp = _rlm_request(_RLM_SUBCALL_ADDRESS, {{
                 "type": "subcall_batched", "prompts": prompts, "model": model,
                 "cell_id": _RLM_CURRENT_CELL,
@@ -412,7 +417,7 @@ def _build_kernel_bootstrap(
                 return ["Error: RLM query failed - malformed response"] * len(prompts)
             if resp.get("error"):
                 if "No subcall_fn" in resp["error"]:
-                    return llm_query_batched(prompts, model=model)
+                    return llm_query_batched([instruction + "\\n\\nContext:\\n" + (context if isinstance(context, str) else _rlm_json.dumps(context)) for instruction, context in prompts], model=model)
                 return [f"Error: {{resp['error']}}"] * len(prompts)
             return list(resp.get("responses") or [])
 
@@ -524,7 +529,7 @@ class IPythonREPL(NonIsolatedEnv):
         setup_code: str | None = None,
         persistent: bool = False,
         depth: int = 1,
-        subcall_fn: Callable[[str, str | None], RLMChatCompletion] | None = None,
+        subcall_fn: Callable[[str, str | list | dict, str | None], RLMChatCompletion] | None = None,
         custom_tools: dict[str, Any] | None = None,
         custom_sub_tools: dict[str, Any] | None = None,
         kernel_mode: KernelMode = "in_process",
@@ -725,9 +730,9 @@ class IPythonREPL(NonIsolatedEnv):
         # handler threads register themselves as subcall threads — that's
         # what ``execute_code``'s reentry check uses to detect a deadlock
         # (subcall_fn calling back into the parent REPL).
-        broker_subcall_fn: Callable[[str, str | None], RLMChatCompletion] | None = (
-            self._tracked_subcall if self.subcall_fn is not None else None
-        )
+        broker_subcall_fn: (
+            Callable[[str, str | list | dict, str | None], RLMChatCompletion] | None
+        ) = self._tracked_subcall if self.subcall_fn is not None else None
         self._broker = _SubcallBroker(
             subcall_fn=broker_subcall_fn,
             max_concurrent=self.max_concurrent_subcalls,
@@ -890,7 +895,9 @@ class IPythonREPL(NonIsolatedEnv):
         except Exception as e:
             return [f"Error: LM query failed - {e}"] * len(prompts)
 
-    def _tracked_subcall(self, prompt: str, model: str | None) -> RLMChatCompletion:
+    def _tracked_subcall(
+        self, instruction: str, context: str | list | dict, model: str | None
+    ) -> RLMChatCompletion:
         """Invoke ``self.subcall_fn`` and register the calling thread.
 
         ``execute_code`` consults the registered set to detect reentry
@@ -903,12 +910,14 @@ class IPythonREPL(NonIsolatedEnv):
         with self._subcall_threads_lock:
             self._subcall_threads.add(cur)
         try:
-            return self.subcall_fn(prompt, model)
+            return self.subcall_fn(instruction, context, model)
         finally:
             with self._subcall_threads_lock:
                 self._subcall_threads.discard(cur)
 
-    def _run_inprocess_subcall(self, prompt: str, model: str | None) -> RLMChatCompletion:
+    def _run_inprocess_subcall(
+        self, instruction: str, context: str | list | dict, model: str | None
+    ) -> RLMChatCompletion:
         """Invoke ``subcall_fn`` under the per-instance semaphore.
 
         Globally bounds in-flight calls across nested rlm_query /
@@ -917,27 +926,31 @@ class IPythonREPL(NonIsolatedEnv):
         in subprocess mode.
         """
         with self._inprocess_subcall_semaphore:
-            return self._tracked_subcall(prompt, model)
+            return self._tracked_subcall(instruction, context, model)
 
-    def _rlm_query(self, prompt: str, model: str | None = None) -> str:
+    def _rlm_query(
+        self, instruction: str, context: str | list | dict, model: str | None = None
+    ) -> str:
         if self.subcall_fn is None:
-            return self._llm_query(prompt, model)
+            return self._llm_query(format_rlm_query(instruction, context), model)
         try:
-            completion = self._run_inprocess_subcall(prompt, model)
+            completion = self._run_inprocess_subcall(instruction, context, model)
             self._pending_llm_calls.append(completion)
             return completion.response
         except Exception as e:
             return f"Error: RLM query failed - {e}"
 
-    def _rlm_query_batched(self, prompts: list[str], model: str | None = None) -> list[str]:
+    def _rlm_query_batched(
+        self, prompts: list[tuple[str, str | list | dict]], model: str | None = None
+    ) -> list[str]:
         if self.subcall_fn is None:
-            return self._llm_query_batched(prompts, model)
+            return self._llm_query_batched([format_rlm_query(*query) for query in prompts], model)
 
         if len(prompts) <= 1:
             results: list[str] = []
             for prompt in prompts:
                 try:
-                    completion = self._run_inprocess_subcall(prompt, model)
+                    completion = self._run_inprocess_subcall(*prompt, model)
                     self._pending_llm_calls.append(completion)
                     results.append(completion.response)
                 except Exception as e:
@@ -949,12 +962,12 @@ class IPythonREPL(NonIsolatedEnv):
         completions: list[tuple[int, RLMChatCompletion]] = []
         lock = threading.Lock()
 
-        def _run(index: int, prompt: str) -> None:
+        def _run(index: int, prompt: tuple[str, str | list | dict]) -> None:
             try:
                 # Semaphore-gated so that multiple in-flight batched calls
                 # (e.g., from user-spawned threads inside the cell) share
                 # the global concurrency budget.
-                completion = self._run_inprocess_subcall(prompt, model)
+                completion = self._run_inprocess_subcall(*prompt, model)
                 with lock:
                     completions.append((index, completion))
                 results[index] = completion.response

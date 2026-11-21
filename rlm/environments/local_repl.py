@@ -21,6 +21,7 @@ from rlm.environments.base_env import (
     extract_tool_value,
     validate_custom_tools,
 )
+from rlm.utils.prompts import format_rlm_query
 
 
 class _AnswerDict(dict):
@@ -157,7 +158,7 @@ class LocalREPL(NonIsolatedEnv):
         setup_code: str | None = None,
         persistent: bool = False,
         depth: int = 1,
-        subcall_fn: Callable[[str, str | None], RLMChatCompletion] | None = None,
+        subcall_fn: Callable[[str, str | list | dict, str | None], RLMChatCompletion] | None = None,
         custom_tools: dict[str, Any] | None = None,
         custom_sub_tools: dict[str, Any] | None = None,
         compaction: bool = False,
@@ -310,7 +311,9 @@ class LocalREPL(NonIsolatedEnv):
         except Exception as e:
             return [f"Error: LM query failed - {e}"] * len(prompts)
 
-    def _rlm_query(self, prompt: str, model: str | None = None) -> str:
+    def _rlm_query(
+        self, instruction: str, context: str | list | dict, model: str | None = None
+    ) -> str:
         """Spawn a recursive RLM sub-call for deeper thinking on a subtask.
 
         When a subcall callback is available (max_depth > 1), this spawns a child
@@ -318,21 +321,24 @@ class LocalREPL(NonIsolatedEnv):
         Falls back to a plain llm_query if no recursive capability is configured.
 
         Args:
-            prompt: The prompt to send to the child RLM.
+            instruction: The task to put in the child's model messages.
+            context: Data to store in the child's REPL.
             model: Optional model name override for the child.
         """
         if self.subcall_fn is not None:
             try:
-                completion = self.subcall_fn(prompt, model)
+                completion = self.subcall_fn(instruction, context, model)
                 self._pending_llm_calls.append(completion)
                 return completion.response
             except Exception as e:
                 return f"Error: RLM query failed - {e}"
 
         # Fall back to plain LM call if no recursive capability
-        return self._llm_query(prompt, model)
+        return self._llm_query(format_rlm_query(instruction, context), model)
 
-    def _rlm_query_batched(self, prompts: list[str], model: str | None = None) -> list[str]:
+    def _rlm_query_batched(
+        self, prompts: list[tuple[str, str | list | dict]], model: str | None = None
+    ) -> list[str]:
         """Spawn recursive RLM sub-calls for multiple prompts in parallel.
 
         Each prompt gets its own child RLM for deeper thinking. When multiple
@@ -343,7 +349,7 @@ class LocalREPL(NonIsolatedEnv):
         Falls back to llm_query_batched if no recursive capability is configured.
 
         Args:
-            prompts: List of prompts for child RLMs.
+            prompts: List of (instruction, context) pairs for child RLMs.
             model: Optional model name override for the children.
 
         Returns:
@@ -355,7 +361,7 @@ class LocalREPL(NonIsolatedEnv):
                 results = []
                 for prompt in prompts:
                     try:
-                        completion = self.subcall_fn(prompt, model)
+                        completion = self.subcall_fn(*prompt, model)
                         self._pending_llm_calls.append(completion)
                         results.append(completion.response)
                     except Exception as e:
@@ -369,9 +375,9 @@ class LocalREPL(NonIsolatedEnv):
             completions: list[tuple[int, RLMChatCompletion]] = []
             lock = threading.Lock()
 
-            def _run_subcall(index: int, prompt: str) -> None:
+            def _run_subcall(index: int, prompt: tuple[str, str | list | dict]) -> None:
                 try:
-                    completion = self.subcall_fn(prompt, model)
+                    completion = self.subcall_fn(*prompt, model)
                     with lock:
                         completions.append((index, completion))
                     results[index] = completion.response
@@ -394,7 +400,7 @@ class LocalREPL(NonIsolatedEnv):
             return results
 
         # Fall back to plain batched LM call if no recursive capability
-        return self._llm_query_batched(prompts, model)
+        return self._llm_query_batched([format_rlm_query(*query) for query in prompts], model)
 
     def load_context(self, context_payload: dict | list | str):
         """Load context into the environment as context_0 (and 'context' alias)."""

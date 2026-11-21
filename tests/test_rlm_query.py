@@ -26,19 +26,19 @@ class TestRlmQueryWithSubcallFn:
         """rlm_query should use subcall_fn when available."""
         subcall_fn = MagicMock(return_value=_make_completion("child response"))
         repl = LocalREPL(subcall_fn=subcall_fn)
-        result = repl.execute_code("response = rlm_query('hello')")
+        result = repl.execute_code("response = rlm_query('hello', dict())")
         assert result.stderr == ""
         assert repl.locals["response"] == "child response"
-        subcall_fn.assert_called_once_with("hello", None)
+        subcall_fn.assert_called_once_with("hello", {}, None)
         repl.cleanup()
 
     def test_rlm_query_with_model_override(self):
         """rlm_query should pass model to subcall_fn."""
         subcall_fn = MagicMock(return_value=_make_completion("override response"))
         repl = LocalREPL(subcall_fn=subcall_fn)
-        repl.execute_code("response = rlm_query('hello', model='gpt-4')")
+        repl.execute_code("response = rlm_query('hello', dict(), model='gpt-4')")
         assert repl.locals["response"] == "override response"
-        subcall_fn.assert_called_once_with("hello", "gpt-4")
+        subcall_fn.assert_called_once_with("hello", {}, "gpt-4")
         repl.cleanup()
 
     def test_rlm_query_tracks_pending_calls(self):
@@ -46,7 +46,7 @@ class TestRlmQueryWithSubcallFn:
         completion = _make_completion("tracked")
         subcall_fn = MagicMock(return_value=completion)
         repl = LocalREPL(subcall_fn=subcall_fn)
-        result = repl.execute_code("rlm_query('test')")
+        result = repl.execute_code("rlm_query('test', dict())")
         assert len(result.rlm_calls) == 1
         assert result.rlm_calls[0].response == "tracked"
         repl.cleanup()
@@ -55,7 +55,7 @@ class TestRlmQueryWithSubcallFn:
         """rlm_query should return error string if subcall_fn raises."""
         subcall_fn = MagicMock(side_effect=RuntimeError("subcall failed"))
         repl = LocalREPL(subcall_fn=subcall_fn)
-        result = repl.execute_code("response = rlm_query('hello')")
+        result = repl.execute_code("response = rlm_query('hello', dict())")
         assert result.stderr == ""
         assert "Error" in repl.locals["response"]
         assert "subcall failed" in repl.locals["response"]
@@ -68,7 +68,7 @@ class TestRlmQueryWithoutSubcallFn:
     def test_rlm_query_falls_back_to_llm_query(self):
         """Without subcall_fn, rlm_query should fall back to llm_query (which returns error without handler)."""
         repl = LocalREPL()
-        repl.execute_code("response = rlm_query('test')")
+        repl.execute_code("response = rlm_query('test', dict())")
         assert "Error" in repl.locals["response"]
         repl.cleanup()
 
@@ -86,7 +86,7 @@ class TestRlmQueryBatchedWithSubcallFn:
         subcall_fn = MagicMock(side_effect=completions)
         repl = LocalREPL(subcall_fn=subcall_fn)
         result = repl.execute_code(
-            "answers = rlm_query_batched(['q1', 'q2', 'q3'])\nprint(len(answers))"
+            "answers = rlm_query_batched([(p, dict()) for p in ['q1', 'q2', 'q3']])\nprint(len(answers))"
         )
         assert result.stderr == ""
         assert "3" in result.stdout
@@ -99,7 +99,7 @@ class TestRlmQueryBatchedWithSubcallFn:
         completions = [_make_completion(f"resp {i}") for i in range(3)]
         subcall_fn = MagicMock(side_effect=completions)
         repl = LocalREPL(subcall_fn=subcall_fn)
-        result = repl.execute_code("rlm_query_batched(['a', 'b', 'c'])")
+        result = repl.execute_code("rlm_query_batched([(p, dict()) for p in ['a', 'b', 'c']])")
         assert len(result.rlm_calls) == 3
         assert [c.response for c in result.rlm_calls] == ["resp 0", "resp 1", "resp 2"]
         repl.cleanup()
@@ -108,10 +108,12 @@ class TestRlmQueryBatchedWithSubcallFn:
         """rlm_query_batched should pass model to each subcall_fn call."""
         subcall_fn = MagicMock(return_value=_make_completion("ok"))
         repl = LocalREPL(subcall_fn=subcall_fn)
-        repl.execute_code("rlm_query_batched(['q1', 'q2'], model='custom-model')")
+        repl.execute_code(
+            "rlm_query_batched([(p, dict()) for p in ['q1', 'q2']], model='custom-model')"
+        )
         assert subcall_fn.call_count == 2
         for call in subcall_fn.call_args_list:
-            assert call[0][1] == "custom-model"
+            assert call[0][2] == "custom-model"
         repl.cleanup()
 
     def test_batched_partial_failure(self):
@@ -124,7 +126,9 @@ class TestRlmQueryBatchedWithSubcallFn:
             ]
         )
         repl = LocalREPL(subcall_fn=subcall_fn)
-        result = repl.execute_code("answers = rlm_query_batched(['a', 'b', 'c'])")
+        result = repl.execute_code(
+            "answers = rlm_query_batched([(p, dict()) for p in ['a', 'b', 'c']])"
+        )
         assert result.stderr == ""
         answers = repl.locals["answers"]
         assert answers[0] == "ok 1"
@@ -146,9 +150,9 @@ class TestRlmQueryBatchedWithSubcallFn:
         """rlm_query_batched with single prompt should work."""
         subcall_fn = MagicMock(return_value=_make_completion("single"))
         repl = LocalREPL(subcall_fn=subcall_fn)
-        repl.execute_code("answers = rlm_query_batched(['only one'])")
+        repl.execute_code("answers = rlm_query_batched([(p, dict()) for p in ['only one']])")
         assert repl.locals["answers"] == ["single"]
-        subcall_fn.assert_called_once_with("only one", None)
+        subcall_fn.assert_called_once_with("only one", {}, None)
         repl.cleanup()
 
 
@@ -158,7 +162,7 @@ class TestRlmQueryBatchedWithoutSubcallFn:
     def test_batched_falls_back_to_llm_query_batched(self):
         """Without subcall_fn, should fall back to llm_query_batched (error without handler)."""
         repl = LocalREPL()
-        repl.execute_code("answers = rlm_query_batched(['q1', 'q2'])")
+        repl.execute_code("answers = rlm_query_batched([(p, dict()) for p in ['q1', 'q2']])")
         answers = repl.locals["answers"]
         assert len(answers) == 2
         assert all("Error" in a for a in answers)
@@ -196,7 +200,7 @@ class TestRlmQueryBatchedParallel:
         call_times = {}
         lock = threading.Lock()
 
-        def slow_subcall(prompt, model):
+        def slow_subcall(prompt, context, model):
             start = time.monotonic()
             time.sleep(0.2)  # Simulate I/O-bound work
             end = time.monotonic()
@@ -206,7 +210,9 @@ class TestRlmQueryBatchedParallel:
 
         repl = LocalREPL(subcall_fn=slow_subcall, max_concurrent_subcalls=4)
         start = time.monotonic()
-        result = repl.execute_code("answers = rlm_query_batched(['q1', 'q2', 'q3', 'q4'])")
+        result = repl.execute_code(
+            "answers = rlm_query_batched([(p, dict()) for p in ['q1', 'q2', 'q3', 'q4']])"
+        )
         wall_time = time.monotonic() - start
 
         assert result.stderr == ""
@@ -226,7 +232,7 @@ class TestRlmQueryBatchedParallel:
         active_lock = threading.Lock()
         active = [0]
 
-        def tracked_subcall(prompt, model):
+        def tracked_subcall(prompt, context, model):
             with active_lock:
                 active[0] += 1
                 active_count.append(active[0])
@@ -236,7 +242,9 @@ class TestRlmQueryBatchedParallel:
             return _make_completion(f"ok {prompt}")
 
         repl = LocalREPL(subcall_fn=tracked_subcall, max_concurrent_subcalls=max_concurrent)
-        result = repl.execute_code("answers = rlm_query_batched(['a', 'b', 'c', 'd'])")
+        result = repl.execute_code(
+            "answers = rlm_query_batched([(p, dict()) for p in ['a', 'b', 'c', 'd']])"
+        )
         assert result.stderr == ""
         assert max(active_count) <= max_concurrent
         repl.cleanup()
@@ -245,12 +253,14 @@ class TestRlmQueryBatchedParallel:
         """Results must be in the same order as input prompts even with parallel execution."""
         import random
 
-        def varying_delay_subcall(prompt, model):
+        def varying_delay_subcall(prompt, context, model):
             time.sleep(random.uniform(0.01, 0.1))
             return _make_completion(f"result-{prompt}")
 
         repl = LocalREPL(subcall_fn=varying_delay_subcall, max_concurrent_subcalls=4)
-        result = repl.execute_code("answers = rlm_query_batched(['p0', 'p1', 'p2', 'p3'])")
+        result = repl.execute_code(
+            "answers = rlm_query_batched([(p, dict()) for p in ['p0', 'p1', 'p2', 'p3']])"
+        )
         assert result.stderr == ""
         answers = repl.locals["answers"]
         assert answers == ["result-p0", "result-p1", "result-p2", "result-p3"]
@@ -261,7 +271,7 @@ class TestRlmQueryBatchedParallel:
         call_count = [0]
         lock = threading.Lock()
 
-        def sometimes_fail(prompt, model):
+        def sometimes_fail(prompt, context, model):
             with lock:
                 call_count[0] += 1
             if prompt == "fail_me":
@@ -270,7 +280,9 @@ class TestRlmQueryBatchedParallel:
             return _make_completion(f"ok-{prompt}")
 
         repl = LocalREPL(subcall_fn=sometimes_fail, max_concurrent_subcalls=4)
-        result = repl.execute_code("answers = rlm_query_batched(['a', 'fail_me', 'c'])")
+        result = repl.execute_code(
+            "answers = rlm_query_batched([(p, dict()) for p in ['a', 'fail_me', 'c']])"
+        )
         assert result.stderr == ""
         answers = repl.locals["answers"]
         assert answers[0] == "ok-a"
@@ -282,14 +294,16 @@ class TestRlmQueryBatchedParallel:
     def test_batched_pending_calls_ordered(self):
         """Pending LLM calls should be appended in prompt order for deterministic metadata."""
 
-        def delayed_subcall(prompt, model):
+        def delayed_subcall(prompt, context, model):
             # Reverse delay so later prompts finish first
             delay = 0.1 if prompt == "first" else 0.01
             time.sleep(delay)
             return _make_completion(f"resp-{prompt}")
 
         repl = LocalREPL(subcall_fn=delayed_subcall, max_concurrent_subcalls=4)
-        result = repl.execute_code("answers = rlm_query_batched(['first', 'second'])")
+        result = repl.execute_code(
+            "answers = rlm_query_batched([(p, dict()) for p in ['first', 'second']])"
+        )
         assert result.stderr == ""
         assert len(result.rlm_calls) == 2
         assert result.rlm_calls[0].response == "resp-first"
@@ -300,9 +314,9 @@ class TestRlmQueryBatchedParallel:
         """Single prompt should not use ThreadPoolExecutor (no overhead)."""
         subcall_fn = MagicMock(return_value=_make_completion("solo"))
         repl = LocalREPL(subcall_fn=subcall_fn, max_concurrent_subcalls=4)
-        repl.execute_code("answers = rlm_query_batched(['only'])")
+        repl.execute_code("answers = rlm_query_batched([(p, dict()) for p in ['only']])")
         assert repl.locals["answers"] == ["solo"]
-        subcall_fn.assert_called_once_with("only", None)
+        subcall_fn.assert_called_once_with("only", {}, None)
         repl.cleanup()
 
 
@@ -326,7 +340,7 @@ class TestMaxConcurrentSubcallsBounds:
         order = []
         lock = threading.Lock()
 
-        def sequential_subcall(prompt, model):
+        def sequential_subcall(prompt, context, model):
             with lock:
                 order.append(f"start-{prompt}")
             time.sleep(0.05)
@@ -335,7 +349,9 @@ class TestMaxConcurrentSubcallsBounds:
             return _make_completion(f"done-{prompt}")
 
         repl = LocalREPL(subcall_fn=sequential_subcall, max_concurrent_subcalls=1)
-        result = repl.execute_code("answers = rlm_query_batched(['a', 'b', 'c'])")
+        result = repl.execute_code(
+            "answers = rlm_query_batched([(p, dict()) for p in ['a', 'b', 'c']])"
+        )
         assert result.stderr == ""
         answers = repl.locals["answers"]
         assert answers == ["done-a", "done-b", "done-c"]
@@ -351,7 +367,7 @@ class TestMaxConcurrentSubcallsBounds:
         """max_concurrent_subcalls larger than prompt count should work fine."""
         subcall_fn = MagicMock(return_value=_make_completion("ok"))
         repl = LocalREPL(subcall_fn=subcall_fn, max_concurrent_subcalls=100)
-        result = repl.execute_code("answers = rlm_query_batched(['a', 'b'])")
+        result = repl.execute_code("answers = rlm_query_batched([(p, dict()) for p in ['a', 'b']])")
         assert result.stderr == ""
         assert repl.locals["answers"] == ["ok", "ok"]
         assert subcall_fn.call_count == 2
@@ -363,7 +379,7 @@ class TestMaxConcurrentSubcallsBounds:
         active_lock = threading.Lock()
         active = [0]
 
-        def tracked_subcall(prompt, model):
+        def tracked_subcall(prompt, context, model):
             with active_lock:
                 active[0] += 1
                 active_count.append(active[0])
@@ -373,7 +389,9 @@ class TestMaxConcurrentSubcallsBounds:
             return _make_completion(f"ok {prompt}")
 
         repl = LocalREPL(subcall_fn=tracked_subcall, max_concurrent_subcalls=3)
-        result = repl.execute_code("answers = rlm_query_batched(['a', 'b', 'c'])")
+        result = repl.execute_code(
+            "answers = rlm_query_batched([(p, dict()) for p in ['a', 'b', 'c']])"
+        )
         assert result.stderr == ""
         # All 3 should be able to run at once
         assert max(active_count) <= 3
@@ -382,11 +400,13 @@ class TestMaxConcurrentSubcallsBounds:
     def test_batched_all_failures_parallel(self):
         """All subcalls failing in parallel should return all error strings."""
 
-        def always_fail(prompt, model):
+        def always_fail(prompt, context, model):
             raise ValueError(f"fail-{prompt}")
 
         repl = LocalREPL(subcall_fn=always_fail, max_concurrent_subcalls=4)
-        result = repl.execute_code("answers = rlm_query_batched(['x', 'y', 'z'])")
+        result = repl.execute_code(
+            "answers = rlm_query_batched([(p, dict()) for p in ['x', 'y', 'z']])"
+        )
         assert result.stderr == ""
         answers = repl.locals["answers"]
         assert len(answers) == 3
@@ -402,7 +422,7 @@ class TestMaxConcurrentSubcallsBounds:
         active_lock = threading.Lock()
         active = [0]
 
-        def tracked_subcall(prompt, model):
+        def tracked_subcall(prompt, context, model):
             with active_lock:
                 active[0] += 1
                 active_count.append(active[0])
@@ -413,7 +433,9 @@ class TestMaxConcurrentSubcallsBounds:
 
         prompts = [f"p{i}" for i in range(10)]
         repl = LocalREPL(subcall_fn=tracked_subcall, max_concurrent_subcalls=max_concurrent)
-        result = repl.execute_code(f"answers = rlm_query_batched({prompts!r})")
+        result = repl.execute_code(
+            f"answers = rlm_query_batched([(p, dict()) for p in {prompts!r}])"
+        )
         assert result.stderr == ""
         answers = repl.locals["answers"]
         assert len(answers) == 10
@@ -434,13 +456,15 @@ class TestMaxConcurrentSubcallsBounds:
     def test_pending_calls_exclude_failures(self):
         """Failed subcalls should not appear in pending_llm_calls."""
 
-        def fail_second(prompt, model):
+        def fail_second(prompt, context, model):
             if prompt == "bad":
                 raise RuntimeError("boom")
             return _make_completion(f"ok-{prompt}")
 
         repl = LocalREPL(subcall_fn=fail_second, max_concurrent_subcalls=4)
-        result = repl.execute_code("answers = rlm_query_batched(['good1', 'bad', 'good2'])")
+        result = repl.execute_code(
+            "answers = rlm_query_batched([(p, dict()) for p in ['good1', 'bad', 'good2']])"
+        )
         assert result.stderr == ""
         # Only 2 successful completions should be in rlm_calls
         assert len(result.rlm_calls) == 2
@@ -478,7 +502,7 @@ class TestRlmQueryScaffoldRestoration:
         repl = LocalREPL(subcall_fn=subcall_fn)
         repl.execute_code("rlm_query = lambda x: 'hijacked'")
         # After restoration, rlm_query should work normally
-        repl.execute_code("response = rlm_query('test')")
+        repl.execute_code("response = rlm_query('test', dict())")
         assert repl.locals["response"] == "real"
         subcall_fn.assert_called_once()
         repl.cleanup()
@@ -488,6 +512,6 @@ class TestRlmQueryScaffoldRestoration:
         subcall_fn = MagicMock(return_value=_make_completion("real"))
         repl = LocalREPL(subcall_fn=subcall_fn)
         repl.execute_code("rlm_query_batched = 'garbage'")
-        repl.execute_code("answers = rlm_query_batched(['q1'])")
+        repl.execute_code("answers = rlm_query_batched([(p, dict()) for p in ['q1']])")
         assert repl.locals["answers"] == ["real"]
         repl.cleanup()

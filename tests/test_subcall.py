@@ -70,7 +70,7 @@ class TestSubcallTimeoutPropagation:
             # Patch RLM class to capture child creation
             with patch.object(rlm_module, "RLM", CapturingRLM):
                 # Call _subcall which should spawn a child RLM
-                parent._subcall("test prompt")
+                parent._subcall("test prompt", dict())
 
             # Verify child received remaining timeout (approximately 50 seconds)
             assert "max_timeout" in captured_child_params
@@ -103,7 +103,7 @@ class TestSubcallTimeoutPropagation:
             )
 
             with patch.object(rlm_module, "RLM", CapturingRLM):
-                parent._subcall("test prompt")
+                parent._subcall("test prompt", dict())
 
             assert captured_child_params.get("max_timeout") is None
 
@@ -125,7 +125,7 @@ class TestSubcallTimeoutPropagation:
             # Simulate that more time has elapsed than the timeout
             parent._completion_start_time = time.perf_counter() - 15.0
 
-            result = parent._subcall("test prompt")
+            result = parent._subcall("test prompt", dict())
 
             assert "Error: Timeout exhausted" in result.response
 
@@ -158,7 +158,7 @@ class TestSubcallTokensPropagation:
             )
 
             with patch.object(rlm_module, "RLM", CapturingRLM):
-                parent._subcall("test prompt")
+                parent._subcall("test prompt", dict())
 
             assert captured_child_params.get("max_tokens") == 50000
 
@@ -187,7 +187,7 @@ class TestSubcallTokensPropagation:
             )
 
             with patch.object(rlm_module, "RLM", CapturingRLM):
-                parent._subcall("test prompt")
+                parent._subcall("test prompt", dict())
 
             assert captured_child_params.get("max_tokens") is None
 
@@ -220,7 +220,7 @@ class TestSubcallErrorsPropagation:
             )
 
             with patch.object(rlm_module, "RLM", CapturingRLM):
-                parent._subcall("test prompt")
+                parent._subcall("test prompt", dict())
 
             assert captured_child_params.get("max_errors") == 5
 
@@ -249,7 +249,7 @@ class TestSubcallErrorsPropagation:
             )
 
             with patch.object(rlm_module, "RLM", CapturingRLM):
-                parent._subcall("test prompt")
+                parent._subcall("test prompt", dict())
 
             assert captured_child_params.get("max_errors") is None
 
@@ -282,7 +282,7 @@ class TestSubcallModelOverride:
 
             with patch.object(rlm_module, "RLM", CapturingRLM):
                 # Call _subcall with model override
-                parent._subcall("test prompt", model="override-model")
+                parent._subcall("test prompt", dict(), model="override-model")
 
             # Verify child received overridden model in backend_kwargs
             child_backend_kwargs = captured_child_params.get("backend_kwargs", {})
@@ -316,7 +316,7 @@ class TestSubcallModelOverride:
             original_model = parent.backend_kwargs["model_name"]
 
             with patch.object(rlm_module, "RLM", CapturingRLM):
-                parent._subcall("test prompt", model="override-model")
+                parent._subcall("test prompt", dict(), model="override-model")
 
             # Parent's backend_kwargs should be unchanged
             assert parent.backend_kwargs["model_name"] == original_model
@@ -346,7 +346,7 @@ class TestSubcallModelOverride:
 
             with patch.object(rlm_module, "RLM", CapturingRLM):
                 # Call _subcall without model override
-                parent._subcall("test prompt")
+                parent._subcall("test prompt", dict())
 
             # Child should use parent's backend_kwargs
             child_backend_kwargs = captured_child_params.get("backend_kwargs", {})
@@ -373,7 +373,7 @@ class TestSubcallModelOverrideAtLeafDepth:
             )
 
             # Call _subcall with model override - should trigger leaf LM completion
-            result = parent._subcall("test prompt", model="leaf-override-model")
+            result = parent._subcall("test prompt", dict(), model="leaf-override-model")
 
             # Verify get_client was called with overridden model in backend_kwargs
             # The call should be: get_client("openai", {"model_name": "leaf-override-model"})
@@ -413,7 +413,7 @@ class TestSubcallModelOverrideAtLeafDepth:
             )
 
             # Call _subcall without model override
-            parent._subcall("test prompt")
+            parent._subcall("test prompt", dict())
 
             # Verify get_client was called with parent's model
             # The last call should use the parent's backend_kwargs
@@ -459,7 +459,7 @@ class TestSubcallCombinedParameters:
             parent._completion_start_time = time.perf_counter() - 30.0
 
             with patch.object(rlm_module, "RLM", CapturingRLM):
-                parent._subcall("test prompt", model="override-model")
+                parent._subcall("test prompt", dict(), model="override-model")
 
             # Verify all parameters
             assert captured_child_params.get("max_tokens") == 100000

@@ -1,3 +1,4 @@
+import json
 import textwrap
 from typing import Any
 
@@ -130,7 +131,8 @@ To use the REPL, you need to write code in ```repl``` blocks; the REPL persists 
 - `context`: the important, potentially very long information related to the prompt (typically `str` or `list[str]`).
 - `llm_query(prompt: str, model: str | None = None) -> str`: a single sub-LLM completion. Use for extraction, summarization, or Q&A over a chunk of text. Sub-LLM context window ≈ 500K chars.
 - `llm_query_batched(prompts: list[str], model=None) -> list[str]`: concurrently call several LLM calls in parallel over a list of prompts; same order out as in.
-- `rlm_query(prompt, model=None)` / `rlm_query_batched(prompts, model=None)`: recursive RLM sub-calls. Fall back to `llm_query` / `llm_query_batched` when recursion is disabled.
+- `rlm_query(instruction, context, model=None) -> str`: recursive RLM sub-call with its own REPL and iteration. The instruction goes directly into the child's model messages; context is stored in its REPL as `context`. Pass a focused instruction and the relevant data separately, e.g. `rlm_query("Identify the trend; return up, down, or stable", context=data)`.
+- `rlm_query_batched(prompts, model=None) -> list[str]`: concurrently run a list of `(instruction, context)` pairs, each with its own child REPL; results preserve input order. Both recursive helpers fall back to plain LM calls containing the instruction and context at the depth limit.
 - `SHOW_VARS() -> str`: list every variable currently in the REPL.
 - `answer`: dict initialized to `{{"content": "", "ready": False}}`. To submit, set `answer["content"]` to the final answer and `answer["ready"] = True` inside a ```repl``` block.
 {custom_tools_section}
@@ -172,7 +174,7 @@ ORCHESTRATOR_ADDENDUM = "\n\n".join(
             "the small results back in the REPL."
         ),
         (
-            "Sub-LLMs have no REPL; they only see the prompt and the `context` slice you pass "
+            "Plain sub-LLMs called via `llm_query` have no REPL; they only see the prompt and the `context` slice you pass "
             "them. Hand them clean, focused inputs and ask for terse, structured outputs you "
             "can manipulate programmatically."
         ),
@@ -283,3 +285,9 @@ def build_user_prompt(
                 f"(history_0 through history_{history_count - 1})."
             )
     return {"role": "user", "content": prompt}
+
+
+def format_rlm_query(instruction: str, context: str | list | dict) -> str:
+    """Include both inputs when recursion falls back to a plain LM call."""
+    payload = context if isinstance(context, str) else json.dumps(context)
+    return f"{instruction}\n\nContext:\n{payload}"

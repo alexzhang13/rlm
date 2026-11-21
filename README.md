@@ -104,6 +104,20 @@ We also support a Docker-based environment called `DockerREPL` that launches the
 
 `DockerREPL` supports the full feature set of the local environment: single LM calls (`llm_query` / `llm_query_batched`), recursive sub-RLM calls (`rlm_query` / `rlm_query_batched`, including parallel batched sub-calls bounded by `max_concurrent_subcalls`), `custom_tools` / `custom_sub_tools`, `persistent=True` multi-turn sessions (versioned `context_N` / `history_N` reused across `completion()` calls), and `compaction=True` auto-summarization of the running `history`. For isolated environments, custom tools should be passed as Python code strings or JSON-serializable values (host callables cannot cross the process boundary).
 
+### Recursive calls from the REPL
+
+Pass a focused instruction and its data separately:
+
+```python
+result = rlm_query("Identify the trend; return up, down, or stable", context=data)
+results = rlm_query_batched([
+    ("Summarize this document", document_a),
+    ("Extract the key dates", document_b),
+])
+```
+
+With recursion enabled (`max_depth > 1`), each child receives the instruction in its model messages and the data in its own REPL's `context`, using the parent's system prompt. Batch results preserve input order. At the depth limit, both instruction and context are included in a plain LM call. The previous single-prompt invocation must be updated to supply both arguments; `model` remains an optional override.
+
 ### Isolated Environments
 We support several different REPL environments that run on separate, cloud-based machines. Whenever a recursive sub-call is made in these instances, it is requested from the host process.
 

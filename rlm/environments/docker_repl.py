@@ -39,6 +39,7 @@ from rlm.environments.base_env import (
     extract_tool_value,
     validate_custom_tools,
 )
+from rlm.utils.prompts import format_rlm_query
 
 
 class LLMProxyHandler(BaseHTTPRequestHandler):
@@ -55,7 +56,7 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
     depth: int = 1
     # Callback for recursive RLM sub-calls. ``None`` means recursion is not
     # configured, so rlm_query falls back to a plain llm_query.
-    subcall_fn: Callable[[str, str | None], RLMChatCompletion] | None = None
+    subcall_fn: Callable[[str, str | list | dict, str | None], RLMChatCompletion] | None = None
     max_concurrent_subcalls: int = 4
 
     def log_message(self, *args):
@@ -157,12 +158,15 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
     def _handle_rlm_single(self, body: dict) -> dict:
         # No recursive capability configured -> behave like a plain llm_query.
         if self.subcall_fn is None:
-            return self._handle_single(body)
+            return self._handle_single(
+                {**body, "prompt": format_rlm_query(body["instruction"], body["context"])}
+            )
 
-        prompt = body.get("prompt")
+        instruction = body["instruction"]
+        context = body["context"]
         model = body.get("model")
         try:
-            completion = self.subcall_fn(prompt, model)
+            completion = self.subcall_fn(instruction, context, model)
         except Exception as e:
             return {"error": f"RLM query failed - {e}"}
 
@@ -174,7 +178,9 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
 
     def _handle_rlm_batched(self, body: dict) -> dict:
         if self.subcall_fn is None:
-            return self._handle_batched(body)
+            return self._handle_batched(
+                {**body, "prompts": [format_rlm_query(*query) for query in body["prompts"]]}
+            )
 
         prompts = body.get("prompts", [])
         model = body.get("model")
@@ -187,9 +193,9 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
         completions: list[tuple[int, RLMChatCompletion]] = []
         comp_lock = threading.Lock()
 
-        def _run(index: int, prompt: str) -> None:
+        def _run(index: int, prompt: tuple[str, str | list | dict]) -> None:
             try:
-                completion = self.subcall_fn(prompt, model)
+                completion = self.subcall_fn(*prompt, model)
                 with comp_lock:
                     completions.append((index, completion))
                 results[index] = completion.response
@@ -307,9 +313,9 @@ def llm_query_batched(prompts, model=None):
     except Exception as e:
         return [f"Error: {{e}}"] * len(prompts)
 
-def rlm_query(prompt, model=None):
+def rlm_query(instruction, context, model=None):
     try:
-        d = _post("/rlm_query", {{"prompt": prompt, "model": model, "depth": DEPTH}}, _RLM_TIMEOUT)
+        d = _post("/rlm_query", {{"instruction": instruction, "context": context, "model": model, "depth": DEPTH}}, _RLM_TIMEOUT)
         return d.get("response") or f"Error: {{d.get('error')}}"
     except Exception as e:
         return f"Error: {{e}}"
@@ -430,7 +436,7 @@ class DockerREPL(NonIsolatedEnv):
         setup_code: str | None = None,
         persistent: bool = False,
         depth: int = 1,
-        subcall_fn: Callable[[str, str | None], RLMChatCompletion] | None = None,
+        subcall_fn: Callable[[str, str | list | dict, str | None], RLMChatCompletion] | None = None,
         custom_tools: dict[str, Any] | None = None,
         custom_sub_tools: dict[str, Any] | None = None,
         compaction: bool = False,

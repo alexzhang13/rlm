@@ -408,7 +408,7 @@ class TestSubcallLoggerPropagation:
             )
 
             with patch.object(rlm_module, "RLM", CapturingRLM):
-                parent._subcall("test prompt")
+                parent._subcall("test prompt", dict())
 
             # Child should have received a logger
             child_logger = captured_child_params.get("logger")
@@ -442,7 +442,7 @@ class TestSubcallLoggerPropagation:
             )
 
             with patch.object(rlm_module, "RLM", CapturingRLM):
-                parent._subcall("test prompt")
+                parent._subcall("test prompt", dict())
 
             assert captured_child_params.get("logger") is None
 
@@ -462,7 +462,7 @@ class TestSubcallLoggerPropagation:
                 logger=RLMLogger(),
             )
 
-            result = parent._subcall("test prompt")
+            result = parent._subcall("test prompt", dict())
 
             # Leaf completions don't use RLM, so no metadata
             assert result.metadata is None
@@ -485,7 +485,7 @@ class TestSubcallLoggerPropagation:
                 logger=RLMLogger(),
             )
 
-            result = parent._subcall("What is 2+2?")
+            result = parent._subcall("What is 2+2?", dict())
 
             # Child should have returned metadata with trajectory
             assert result.metadata is not None
@@ -524,7 +524,7 @@ class TestSubcallCustomToolsPropagation:
             )
 
             with patch.object(rlm_module, "RLM", CapturingRLM):
-                parent._subcall("test prompt")
+                parent._subcall("test prompt", dict())
 
             assert "double" in captured_child_params.get("custom_tools", {})
             assert "double" in captured_child_params.get("custom_sub_tools", {})
@@ -555,7 +555,7 @@ class TestSubcallCustomToolsPropagation:
             )
 
             with patch.object(rlm_module, "RLM", CapturingRLM):
-                parent._subcall("test prompt")
+                parent._subcall("test prompt", dict())
 
             assert captured_child_params.get("custom_tools") == {}
             assert captured_child_params.get("custom_sub_tools") == {}

@@ -188,33 +188,32 @@ Response flows back over socket
 Returns response string to model code
 ```
 
-### `rlm_query(prompt, model=None)` — Recursive RLM sub-call
+### `rlm_query(instruction, context, model=None)` — Recursive RLM sub-call
 
-Spawns a **child RLM** that gets its own REPL and can reason iteratively
-over the prompt — just like the parent. Use this when the subtask needs
+Spawns a **child RLM** with the instruction in its model messages, context data in its own REPL, and the parent's system prompt. Use this when the subtask needs
 multi-step reasoning, code execution, or its own iterative problem-solving.
 
 Falls back to `llm_query` when recursion is not available (i.e. the current
 depth has reached `max_depth`).
 
 ```
-Model code: answer = rlm_query("Solve this complex problem: ...")
+Model code: answer = rlm_query("Solve this complex problem", context=data)
     │
     ▼
 LocalREPL._rlm_query()
     │  if self.subcall_fn is not None:    ← set when max_depth > 1
-    │      calls self.subcall_fn(prompt, model)
+    │      calls self.subcall_fn(instruction, context, model)
     │  else:
     │      falls back to _llm_query()
     │
     ▼  (when subcall_fn exists)
-RLM._subcall(prompt, model)
+RLM._subcall(instruction, context, model)
     │  next_depth = self.depth + 1
     │  if next_depth >= max_depth:
     │      → plain client.completion() (leaf call, no REPL)
     │  else:
     │      → create child RLM(depth=next_depth, ...)
-    │      → child.completion(prompt)  ← full RLM with its own handler + REPL
+    │      → child.completion(context, root_prompt=instruction)  ← full RLM with its own handler + REPL
     │
     ▼
 Returns RLMChatCompletion to parent
@@ -225,7 +224,7 @@ Returns RLMChatCompletion to parent
 Same semantics as above, but for multiple prompts. `llm_query_batched` sends
 all prompts as a single batched request to the handler, which processes them
 concurrently with `asyncio.gather`. `rlm_query_batched` calls `subcall_fn`
-sequentially for each prompt (each child RLM is a blocking call).
+concurrently for each `(instruction, context)` pair, bounded by `max_concurrent_subcalls`, preserving input order.
 
 **Failure handling is per-prompt.** A single failed call does not fail the
 whole batch — that slot returns the string `"Error: llm() call failed - <msg>"`
@@ -269,12 +268,12 @@ Parent RLM (depth=0)
 │   ├── locals: {context: "parent prompt", ...}
 │   └── subcall_fn = RLM._subcall  ← enables rlm_query()
 │
-└── When model code calls rlm_query("subtask"):
+└── When model code calls rlm_query("subtask", context=data):
     │
     └── Child RLM (depth=1)
         ├── LMHandler #2 on port 52302  ← NEW handler, NEW port
         ├── LocalREPL #2 (depth=2)      ← NEW namespace
-        │   ├── locals: {context: "subtask", ...}
+        │   ├── locals: {context: data, ...}
         │   └── subcall_fn = child._subcall (or None if at max_depth-1)
         │
         └── Runs its own iteration loop, returns RLMChatCompletion
@@ -319,7 +318,7 @@ RLM (depth=0)
  │
  ├─ Iteration 1: LM generates code
  │   │  ```repl
- │   │  answer = rlm_query("What patterns exist in: " + context[:5000])
+ │   │  answer = rlm_query("Find patterns", context=context[:5000])
  │   │  ```
  │   │
  │   └─ LocalREPL.execute_code() runs the code via exec()
