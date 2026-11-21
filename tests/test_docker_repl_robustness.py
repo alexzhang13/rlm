@@ -173,10 +173,12 @@ class TestLLMQuery:
 # =========================================================================== #
 class TestRLMQuery:
     def test_rlm_query_uses_subcall_fn(self):
-        repl = make_repl(subcall_fn=lambda p, m=None: _completion(f"child:{p}"))
+        repl = make_repl(
+            subcall_fn=lambda p, context, m=None: _completion(f"child:{p}:{context['value']}")
+        )
         try:
-            r = repl.execute_code("print(rlm_query('task'))")
-            assert r.stdout.strip() == "child:task", (r.stdout, r.stderr)
+            r = repl.execute_code("print(rlm_query('task', context={'value': 'data'}))")
+            assert r.stdout.strip() == "child:task:data", (r.stdout, r.stderr)
             assert len(r.rlm_calls) == 1
         finally:
             teardown_repl(repl)
@@ -184,13 +186,13 @@ class TestRLMQuery:
     def test_rlm_query_model_override_propagates(self):
         seen = {}
 
-        def sub(p, m=None):
+        def sub(p, context, m=None):
             seen["model"] = m
             return _completion("ok", model=m)
 
         repl = make_repl(subcall_fn=sub)
         try:
-            repl.execute_code("rlm_query('task', model='custom-1')")
+            repl.execute_code("rlm_query('task', dict(), model='custom-1')")
             assert seen["model"] == "custom-1"
         finally:
             teardown_repl(repl)
@@ -199,19 +201,19 @@ class TestRLMQuery:
         """No subcall_fn but a handler -> rlm_query degrades to a plain LM call."""
         repl = make_repl(subcall_fn=None, with_handler=True)
         try:
-            r = repl.execute_code("print(rlm_query('task'))")
-            assert r.stdout.strip() == "echo:task", (r.stdout, r.stderr)
+            r = repl.execute_code("print(rlm_query('task', dict()))")
+            assert r.stdout.strip() == "echo:task\n\nContext:\n{}", (r.stdout, r.stderr)
             assert len(r.rlm_calls) == 1
         finally:
             teardown_repl(repl)
 
     def test_rlm_query_error_is_caught(self):
-        def boom(p, m=None):
+        def boom(p, context, m=None):
             raise RuntimeError("subcall exploded")
 
         repl = make_repl(subcall_fn=boom)
         try:
-            r = repl.execute_code("print(rlm_query('task'))")
+            r = repl.execute_code("print(rlm_query('task', dict()))")
             assert "Error" in r.stdout and "subcall exploded" in r.stdout
             assert r.stderr.strip() == "", "error should be returned as value, not raised"
             assert len(r.rlm_calls) == 0
@@ -219,9 +221,11 @@ class TestRLMQuery:
             teardown_repl(repl)
 
     def test_rlm_query_batched_basic_order_and_tracking(self):
-        repl = make_repl(subcall_fn=lambda p, m=None: _completion(f"c:{p}"))
+        repl = make_repl(subcall_fn=lambda p, context, m=None: _completion(f"c:{p}"))
         try:
-            r = repl.execute_code("print(rlm_query_batched(['p0', 'p1', 'p2']))")
+            r = repl.execute_code(
+                "print(rlm_query_batched([(p, dict()) for p in ['p0', 'p1', 'p2']]))"
+            )
             assert "['c:p0', 'c:p1', 'c:p2']" in r.stdout, (r.stdout, r.stderr)
             assert [c.response for c in r.rlm_calls] == ["c:p0", "c:p1", "c:p2"]
         finally:
@@ -229,7 +233,7 @@ class TestRLMQuery:
 
     def test_rlm_query_batched_empty(self):
         called = []
-        repl = make_repl(subcall_fn=lambda p, m=None: called.append(p) or _completion("x"))
+        repl = make_repl(subcall_fn=lambda p, context, m=None: called.append(p) or _completion("x"))
         try:
             r = repl.execute_code("print(rlm_query_batched([]))")
             assert r.stdout.strip() == "[]"
@@ -239,16 +243,16 @@ class TestRLMQuery:
             teardown_repl(repl)
 
     def test_rlm_query_batched_single(self):
-        repl = make_repl(subcall_fn=lambda p, m=None: _completion(f"c:{p}"))
+        repl = make_repl(subcall_fn=lambda p, context, m=None: _completion(f"c:{p}"))
         try:
-            r = repl.execute_code("print(rlm_query_batched(['only']))")
+            r = repl.execute_code("print(rlm_query_batched([(p, dict()) for p in ['only']]))")
             assert r.stdout.strip() == "['c:only']"
             assert len(r.rlm_calls) == 1
         finally:
             teardown_repl(repl)
 
     def test_rlm_query_batched_order_preserved_under_varying_delays(self):
-        def sub(p, m=None):
+        def sub(p, context, m=None):
             # earlier prompts sleep longer so completion order != input order
             delay = {"p0": 0.3, "p1": 0.2, "p2": 0.1, "p3": 0.0}[p]
             time.sleep(delay)
@@ -256,7 +260,9 @@ class TestRLMQuery:
 
         repl = make_repl(subcall_fn=sub, max_concurrent_subcalls=4)
         try:
-            r = repl.execute_code("print(rlm_query_batched(['p0', 'p1', 'p2', 'p3']))")
+            r = repl.execute_code(
+                "print(rlm_query_batched([(p, dict()) for p in ['p0', 'p1', 'p2', 'p3']]))"
+            )
             assert "['r:p0', 'r:p1', 'r:p2', 'r:p3']" in r.stdout, (r.stdout, r.stderr)
             # tracked metadata also in prompt order
             assert [c.response for c in r.rlm_calls] == ["r:p0", "r:p1", "r:p2", "r:p3"]
@@ -264,14 +270,16 @@ class TestRLMQuery:
             teardown_repl(repl)
 
     def test_rlm_query_batched_partial_failure_excludes_from_tracking(self):
-        def sub(p, m=None):
+        def sub(p, context, m=None):
             if p == "bad":
                 raise ValueError("nope")
             return _completion(f"ok:{p}")
 
         repl = make_repl(subcall_fn=sub, max_concurrent_subcalls=4)
         try:
-            r = repl.execute_code("print(rlm_query_batched(['good1', 'bad', 'good2']))")
+            r = repl.execute_code(
+                "print(rlm_query_batched([(p, dict()) for p in ['good1', 'bad', 'good2']]))"
+            )
             assert "ok:good1" in r.stdout and "ok:good2" in r.stdout
             assert "Error" in r.stdout and "nope" in r.stdout
             # only successful completions tracked, in order
@@ -284,7 +292,7 @@ class TestRLMQuery:
         peak = [0]
         lk = threading.Lock()
 
-        def sub(p, m=None):
+        def sub(p, context, m=None):
             with lk:
                 active[0] += 1
                 peak[0] = max(peak[0], active[0])
@@ -295,7 +303,9 @@ class TestRLMQuery:
 
         repl = make_repl(subcall_fn=sub, max_concurrent_subcalls=2)
         try:
-            r = repl.execute_code("print(len(rlm_query_batched(['a', 'b', 'c', 'd', 'e', 'f'])))")
+            r = repl.execute_code(
+                "print(len(rlm_query_batched([(p, dict()) for p in ['a', 'b', 'c', 'd', 'e', 'f']])))"
+            )
             assert r.stdout.strip() == "6", (r.stdout, r.stderr)
             assert peak[0] <= 2, f"concurrency bound violated: peak={peak[0]}"
             assert len(r.rlm_calls) == 6
@@ -305,7 +315,7 @@ class TestRLMQuery:
     def test_rlm_query_batched_fallback_when_no_subcall(self):
         repl = make_repl(subcall_fn=None, with_handler=True)
         try:
-            r = repl.execute_code("print(rlm_query_batched(['a', 'b']))")
+            r = repl.execute_code("print(rlm_query_batched([(p, dict()) for p in ['a', 'b']]))")
             assert "echo:a" in r.stdout and "echo:b" in r.stdout
             assert len(r.rlm_calls) == 2
         finally:
@@ -315,10 +325,10 @@ class TestRLMQuery:
         """If subcall_fn returns a non-completion object, the container must get
         a structured error promptly (not hang on a dropped connection), and the
         bad result must not be tracked."""
-        repl = make_repl(subcall_fn=lambda p, m=None: 12345)  # no .response attr
+        repl = make_repl(subcall_fn=lambda p, context, m=None: 12345)  # no .response attr
         try:
             t0 = time.monotonic()
-            r = repl.execute_code("print(rlm_query('task'))")
+            r = repl.execute_code("print(rlm_query('task', dict()))")
             dt = time.monotonic() - t0
             assert "Error" in r.stdout, (r.stdout, r.stderr)
             assert dt < 30, f"appears to have hung: {dt:.1f}s"
@@ -327,10 +337,10 @@ class TestRLMQuery:
             teardown_repl(repl)
 
     def test_mixed_llm_and_rlm_calls_tracked_in_order(self):
-        repl = make_repl(subcall_fn=lambda p, m=None: _completion(f"c:{p}"))
+        repl = make_repl(subcall_fn=lambda p, context, m=None: _completion(f"c:{p}"))
         try:
             r = repl.execute_code(
-                "llm_query('first')\nrlm_query_batched(['b', 'c'])\nllm_query('last')"
+                "llm_query('first')\nrlm_query_batched([(p, dict()) for p in ['b', 'c']])\nllm_query('last')"
             )
             responses = [c.response for c in r.rlm_calls]
             assert responses == ["echo:first", "c:b", "c:c", "echo:last"], responses
@@ -352,10 +362,10 @@ class TestScaffoldRestoration:
             teardown_repl(repl)
 
     def test_overwritten_rlm_query_restored_next_cell(self):
-        repl = make_repl(subcall_fn=lambda p, m=None: _completion("real"))
+        repl = make_repl(subcall_fn=lambda p, context, m=None: _completion("real"))
         try:
             repl.execute_code("rlm_query = 'garbage'")
-            r = repl.execute_code("print(rlm_query('x'))")
+            r = repl.execute_code("print(rlm_query('x', dict()))")
             assert r.stdout.strip() == "real", "rlm_query not restored after overwrite"
         finally:
             teardown_repl(repl)
@@ -569,8 +579,8 @@ class TestStateAndOutput:
 # =========================================================================== #
 class TestIsolationAndLifecycle:
     def test_two_repls_isolated_state_and_tracking(self):
-        r1 = make_repl(subcall_fn=lambda p, m=None: _completion("A"))
-        r2 = make_repl(subcall_fn=lambda p, m=None: _completion("B"))
+        r1 = make_repl(subcall_fn=lambda p, context, m=None: _completion("A"))
+        r2 = make_repl(subcall_fn=lambda p, context, m=None: _completion("B"))
         try:
             r1.execute_code("shared = 'from_r1'")
             r2.execute_code("shared = 'from_r2'")
@@ -579,9 +589,9 @@ class TestIsolationAndLifecycle:
             assert o1.stdout.strip() == "from_r1"
             assert o2.stdout.strip() == "from_r2"
             # call tracking is independent
-            t1 = r1.execute_code("rlm_query('x')")
+            t1 = r1.execute_code("rlm_query('x', dict())")
             assert [c.response for c in t1.rlm_calls] == ["A"]
-            t2 = r2.execute_code("rlm_query('x')")
+            t2 = r2.execute_code("rlm_query('x', dict())")
             assert [c.response for c in t2.rlm_calls] == ["B"]
             assert r1.proxy_port != r2.proxy_port
             assert r1.container_id != r2.container_id

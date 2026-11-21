@@ -33,6 +33,7 @@ from rlm.utils.prompts import (
     QueryMetadata,
     build_rlm_system_prompt,
     build_user_prompt,
+    format_rlm_query,
 )
 from rlm.utils.rlm_utils import filter_sensitive_keys
 from rlm.utils.token_utils import count_tokens, get_context_limit
@@ -703,7 +704,9 @@ class RLM:
         response = client.completion(message)
         return response
 
-    def _subcall(self, prompt: str, model: str | None = None) -> RLMChatCompletion:
+    def _subcall(
+        self, instruction: str, context: str | list | dict, model: str | None = None
+    ) -> RLMChatCompletion:
         """
         Handle a subcall from the environment, potentially spawning a child RLM.
 
@@ -712,7 +715,8 @@ class RLM:
         it falls back to a plain LM completion.
 
         Args:
-            prompt: The prompt to process.
+            instruction: The task to put in the child's model messages.
+            context: Data to store in the child's REPL.
             model: Optional model name. If specified, the child RLM will use this model
                 instead of inheriting the parent's default backend.
 
@@ -740,13 +744,13 @@ class RLM:
             root_model = model or client.model_name
             start_time = time.perf_counter()
             try:
-                response = client.completion(prompt)
+                response = client.completion(format_rlm_query(instruction, context))
                 end_time = time.perf_counter()
                 model_usage = client.get_last_usage()
                 usage_summary = UsageSummary(model_usage_summaries={root_model: model_usage})
                 return RLMChatCompletion(
                     root_model=root_model,
-                    prompt=prompt,
+                    prompt=context,
                     response=response,
                     usage_summary=usage_summary,
                     execution_time=end_time - start_time,
@@ -755,7 +759,7 @@ class RLM:
                 end_time = time.perf_counter()
                 return RLMChatCompletion(
                     root_model=root_model,
-                    prompt=prompt,
+                    prompt=context,
                     response=f"Error: LM query failed at max depth - {e}",
                     usage_summary=UsageSummary(model_usage_summaries={}),
                     execution_time=end_time - start_time,
@@ -768,7 +772,7 @@ class RLM:
             if remaining_budget <= 0:
                 return RLMChatCompletion(
                     root_model=resolved_model,
-                    prompt=prompt,
+                    prompt=context,
                     response=(
                         "Error: Budget exhausted "
                         f"(spent ${self._cumulative_cost:.6f} of ${self.max_budget:.6f})"
@@ -785,14 +789,14 @@ class RLM:
             if remaining_timeout <= 0:
                 return RLMChatCompletion(
                     root_model=resolved_model,
-                    prompt=prompt,
+                    prompt=context,
                     response=f"Error: Timeout exhausted ({elapsed:.1f}s of {self.max_timeout:.1f}s)",
                     usage_summary=UsageSummary(model_usage_summaries={}),
                     execution_time=0.0,
                 )
 
         # Resolve the model name for callbacks
-        prompt_preview = prompt[:80] if len(prompt) > 80 else prompt
+        prompt_preview = instruction[:80]
 
         # Fire subcall start callback
         if self.on_subcall_start:
@@ -818,6 +822,7 @@ class RLM:
             max_tokens=self.max_tokens,
             max_errors=self.max_errors,
             custom_system_prompt=self.system_prompt,
+            orchestrator=self.orchestrator,
             other_backends=self.other_backends,
             other_backend_kwargs=self.other_backend_kwargs,
             # Give child its own logger so its trajectory is captured in metadata
@@ -833,7 +838,7 @@ class RLM:
             on_subcall_complete=self.on_subcall_complete,
         )
         try:
-            result = child.completion(prompt, root_prompt=None)
+            result = child.completion(context, root_prompt=instruction)
             # Track child's cost in parent's cumulative cost
             if result.usage_summary and result.usage_summary.total_cost:
                 self._cumulative_cost += result.usage_summary.total_cost
@@ -844,7 +849,7 @@ class RLM:
             error_msg = f"Budget exceeded - {e}"
             return RLMChatCompletion(
                 root_model=resolved_model,
-                prompt=prompt,
+                prompt=context,
                 response=f"Error: Child RLM budget exceeded - {e}",
                 usage_summary=UsageSummary(model_usage_summaries={}),
                 execution_time=time.perf_counter() - subcall_start,
@@ -853,7 +858,7 @@ class RLM:
             error_msg = str(e)
             return RLMChatCompletion(
                 root_model=resolved_model,
-                prompt=prompt,
+                prompt=context,
                 response=f"Error: Child RLM completion failed - {e}",
                 usage_summary=UsageSummary(model_usage_summaries={}),
                 execution_time=time.perf_counter() - subcall_start,
