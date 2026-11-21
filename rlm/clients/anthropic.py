@@ -1,4 +1,5 @@
 from collections import defaultdict
+from collections.abc import Iterator
 from typing import Any
 
 import anthropic
@@ -11,6 +12,8 @@ class AnthropicClient(BaseLM):
     """
     LM Client for running models with the Anthropic API.
     """
+
+    supports_streaming = True
 
     def __init__(
         self,
@@ -62,6 +65,28 @@ class AnthropicClient(BaseLM):
         response = await self.async_client.messages.create(**kwargs)
         self._track_cost(response, model)
         return response.content[0].text
+
+    def stream_completion(
+        self, prompt: str | list[dict[str, Any]], model: str | None = None
+    ) -> Iterator[str]:
+        """Stream the response as text deltas.
+
+        ``messages.stream()`` accumulates the final message, so usage stays
+        exact — no usage-unavailable fallback needed here.
+        """
+        messages, system = self._prepare_messages(prompt)
+
+        model = model or self.model_name
+        if not model:
+            raise ValueError("Model name is required for Anthropic client.")
+
+        kwargs = {"model": model, "max_tokens": self.max_tokens, "messages": messages}
+        if system:
+            kwargs["system"] = system
+
+        with self.client.messages.stream(**kwargs) as stream:
+            yield from stream.text_stream
+            self._track_cost(stream.get_final_message(), model)
 
     def _prepare_messages(
         self, prompt: str | list[dict[str, Any]]

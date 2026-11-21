@@ -51,6 +51,10 @@ def get_environment(
     Currently supported environments: ['local', 'ipython', 'modal', 'docker', 'daytona', 'prime', 'e2b']
     """
     if environment == "local":
+        if environment_kwargs.pop("experimental_spec_ptc", False):
+            from rlm.environments.speculative_repl import SpeculativeLocalREPL
+
+            return SpeculativeLocalREPL(**environment_kwargs)
         return LocalREPL(**environment_kwargs)
     elif environment == "ipython":
         from rlm.environments.ipython_repl import IPythonREPL

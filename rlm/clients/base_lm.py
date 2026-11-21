@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from typing import Any
 
 from rlm.core.types import ModelUsageSummary, UsageSummary
@@ -12,6 +13,9 @@ class BaseLM(ABC):
     Base class for all language model routers / clients. When the RLM makes sub-calls, it currently
     does so in a model-agnostic way, so this class provides a base interface for all language models.
     """
+
+    # True only on clients that override stream_completion with a real stream.
+    supports_streaming: bool = False
 
     def __init__(
         self,
@@ -35,6 +39,16 @@ class BaseLM(ABC):
     @abstractmethod
     async def acompletion(self, prompt: str | dict[str, Any]) -> str:
         raise NotImplementedError
+
+    def stream_completion(
+        self, prompt: str | dict[str, Any], model: str | None = None
+    ) -> Iterator[str]:
+        """Yield the response as text deltas; joining them equals completion().
+
+        Default is a single delta from a blocking call, so every client works
+        here. Overrides must also set ``supports_streaming = True``.
+        """
+        yield self.completion(prompt)
 
     @abstractmethod
     def get_usage_summary(self) -> UsageSummary:

@@ -1,6 +1,6 @@
 """Mock LM for testing without a real model."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any
 
 from rlm.clients.base_lm import BaseLM
@@ -59,3 +59,24 @@ class MockLM(BaseLM):
             total_input_tokens=10,
             total_output_tokens=10,
         )
+
+
+class StreamingMockLM(MockLM):
+    """MockLM that really streams: yields the response in fixed-size chunks.
+
+    Stands in for a streaming-capable backend so the delta path can be tested
+    without a network call.
+    """
+
+    supports_streaming = True
+
+    def __init__(self, *args: Any, chunk_size: int = 5, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self.chunk_size = chunk_size
+
+    def stream_completion(
+        self, prompt: str | dict[str, Any], model: str | None = None
+    ) -> Iterator[str]:
+        response = self.completion(prompt)
+        for i in range(0, len(response), self.chunk_size):
+            yield response[i : i + self.chunk_size]

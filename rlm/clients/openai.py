@@ -1,5 +1,6 @@
 import os
 from collections import defaultdict
+from collections.abc import Iterator
 from typing import Any
 
 import openai
@@ -28,6 +29,9 @@ def _normalize_sampling_args(sampling_args: dict[str, Any]) -> dict[str, Any]:
     if "max_tokens" in args:
         args["max_completion_tokens"] = args.pop("max_tokens")
     args.pop("extra_body", None)
+    # Set by the call site, not sampling_args — else duplicate-kwarg TypeError.
+    args.pop("stream", None)
+    args.pop("stream_options", None)
     return {k: v for k, v in args.items() if v is not None}
 
 
@@ -50,6 +54,8 @@ class OpenAIClient(BaseLM):
     are passed through to the underlying openai.OpenAI and openai.AsyncOpenAI constructors.
     Only model_name is excluded, since it is not a client constructor argument.
     """
+
+    supports_streaming = True
 
     def __init__(
         self,
@@ -91,7 +97,10 @@ class OpenAIClient(BaseLM):
         self.model_total_tokens: dict[str, int] = defaultdict(int)
         self.model_costs: dict[str, float] = defaultdict(float)  # Cost in USD
 
-    def completion(self, prompt: str | list[dict[str, Any]], model: str | None = None) -> str:
+    def _prepare_request(
+        self, prompt: str | list[dict[str, Any]], model: str | None
+    ) -> tuple[list[dict[str, Any]], str, dict[str, Any]]:
+        """Normalize prompt/model/extra_body shared by the completion paths."""
         if isinstance(prompt, str):
             messages = [{"role": "user", "content": prompt}]
         elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
@@ -107,6 +116,11 @@ class OpenAIClient(BaseLM):
         if self.client.base_url == DEFAULT_PRIME_INTELLECT_BASE_URL:
             extra_body["usage"] = {"include": True}
         extra_body = _merge_extra_body(extra_body, self.sampling_args)
+
+        return messages, model, extra_body
+
+    def completion(self, prompt: str | list[dict[str, Any]], model: str | None = None) -> str:
+        messages, model, extra_body = self._prepare_request(prompt, model)
 
         response = self.client.chat.completions.create(
             model=model,
@@ -120,21 +134,7 @@ class OpenAIClient(BaseLM):
     async def acompletion(
         self, prompt: str | list[dict[str, Any]], model: str | None = None
     ) -> str:
-        if isinstance(prompt, str):
-            messages = [{"role": "user", "content": prompt}]
-        elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
-            messages = prompt
-        else:
-            raise ValueError(f"Invalid prompt type: {type(prompt)}")
-
-        model = model or self.model_name
-        if not model:
-            raise ValueError("Model name is required for OpenAI client.")
-
-        extra_body: dict[str, Any] = {}
-        if self.client.base_url == DEFAULT_PRIME_INTELLECT_BASE_URL:
-            extra_body["usage"] = {"include": True}
-        extra_body = _merge_extra_body(extra_body, self.sampling_args)
+        messages, model, extra_body = self._prepare_request(prompt, model)
 
         response = await self.async_client.chat.completions.create(
             model=model,
@@ -145,7 +145,50 @@ class OpenAIClient(BaseLM):
         self._track_cost(response, model)
         return response.choices[0].message.content
 
-    def _track_cost(self, response: openai.ChatCompletion, model: str):
+    def stream_completion(
+        self, prompt: str | list[dict[str, Any]], model: str | None = None
+    ) -> Iterator[str]:
+        """Stream the response as text deltas.
+
+        ``include_usage`` asks for a final choices-empty chunk with token
+        usage. Endpoints ignoring it still stream; only accounting degrades.
+        """
+        messages, model, extra_body = self._prepare_request(prompt, model)
+
+        stream = self.client.chat.completions.create(
+            model=model,
+            messages=messages,
+            stream=True,
+            stream_options={"include_usage": True},
+            extra_body=extra_body,
+            **_normalize_sampling_args(self.sampling_args),
+        )
+
+        usage_chunk = None
+        try:
+            for chunk in stream:
+                if getattr(chunk, "usage", None):
+                    usage_chunk = chunk
+                if chunk.choices:
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        yield delta
+        finally:
+            stream.close()
+            if usage_chunk is not None:
+                self._track_cost(usage_chunk, model)
+            else:
+                self._track_stream_without_usage(model)
+
+    def _track_stream_without_usage(self, model: str) -> None:
+        """Record a streamed call whose endpoint returned no usage."""
+        self.model_call_counts[model] += 1
+        self.last_prompt_tokens = 0
+        self.last_completion_tokens = 0
+        self.last_cost = None
+
+    def _track_cost(self, response: Any, model: str):
+        """Takes a ChatCompletion or a stream's final usage chunk."""
         self.model_call_counts[model] += 1
 
         usage = getattr(response, "usage", None)

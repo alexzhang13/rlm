@@ -2198,7 +2198,7 @@ wheels = [
 
 [[package]]
 name = "rlms"
-version = "0.1.2"
+version = "0.1.3"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
@@ -2235,6 +2235,9 @@ prime = [
     { name = "dill" },
     { name = "prime-sandboxes" },
 ]
+spec-ptc = [
+    { name = "spec-ptc", marker = "python_full_version >= '3.12'" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -2251,7 +2254,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=0.75.0" },
-    { name = "daytona", marker = "extra == 'daytona'", specifier = ">=0.128.1" },
+    { name = "daytona", marker = "extra == 'daytona'", specifier = ">=0.128.1,<1" },
     { name = "dill", marker = "extra == 'daytona'", specifier = ">=0.3.7" },
     { name = "dill", marker = "extra == 'e2b'", specifier = ">=0.3.7" },
     { name = "dill", marker = "extra == 'ipython'", specifier = ">=0.3.7" },
@@ -2270,8 +2273,9 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "requests", specifier = ">=2.32.5" },
     { name = "rich", specifier = ">=13.0.0" },
+    { name = "spec-ptc", marker = "python_full_version >= '3.12' and extra == 'spec-ptc'", specifier = ">=0.1.1,<0.2" },
 ]
-provides-extras = ["modal", "e2b", "daytona", "prime", "ipython"]
+provides-extras = ["spec-ptc", "modal", "e2b", "daytona", "prime", "ipython"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2348,6 +2352,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/a2/87/a6771e1546d97e7e041b6ae58d80074f81b7d5121207425c964ddf5cfdbd/sniffio-1.3.1.tar.gz", hash = "sha256:f4324edc670a0f49750a81b895f35c3adb843cca46f0530f79fc1babb23789dc", size = 20372, upload-time = "2024-02-25T23:20:04.057Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e9/44/75a9c9421471a6c4805dbf2356f7c181a29c1879239abab1ea2cc8f38b40/sniffio-1.3.1-py3-none-any.whl", hash = "sha256:2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2", size = 10235, upload-time = "2024-02-25T23:20:01.196Z" },
+]
+
+[[package]]
+name = "spec-ptc"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "openai", marker = "python_full_version >= '3.12'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/15/14/992df2852404087f065e5370951aa9fa740b5f9a084249ab1367e13a7288/spec_ptc-0.1.1.tar.gz", hash = "sha256:d6b7f1bb0a5cbae56924a8bce23acf5dedd31b6c29b1471b7cbe0e6cf44e73b2", size = 52447, upload-time = "2026-08-24T17:19:07.578Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b3/83/ee5086ec05e8df25ec9519193ed0c9db7c1e83b92ee09f70cad9be6546de/spec_ptc-0.1.1-py3-none-any.whl", hash = "sha256:75936f6c8804057e8506614eea9a1cd62eb904e4b7896f3a2289ccbd73fa653c", size = 38213, upload-time = "2026-08-24T17:19:06.701Z" },
 ]
 
 [[package]]

@@ -1,7 +1,8 @@
 import time
+import warnings
 from collections.abc import Callable
-from contextlib import contextmanager
-from typing import Any
+from contextlib import contextmanager, nullcontext
+from typing import TYPE_CHECKING, Any, cast
 
 from rlm.clients import BaseLM, get_client
 from rlm.core.lm_handler import LMHandler
@@ -37,6 +38,11 @@ from rlm.utils.prompts import (
 )
 from rlm.utils.rlm_utils import filter_sensitive_keys
 from rlm.utils.token_utils import count_tokens, get_context_limit
+
+if TYPE_CHECKING:
+    from spec_ptc import StreamTurn
+
+    from rlm.environments.speculative_repl import SpeculativeLocalREPL
 
 
 class RLM:
@@ -79,6 +85,9 @@ class RLM:
         sub_sampling_args: dict[str, Any] | None = None,
         orchestrator: bool = True,
         user_prologue: str | None = None,
+        stream: bool = False,
+        on_token: Callable[[str], None] | None = None,
+        experimental_spec_ptc: bool = False,
     ):
         """
         Args:
@@ -113,6 +122,12 @@ class RLM:
             on_subcall_complete: Callback fired when a child RLM completes. Args: (depth, model, duration, error_or_none).
             on_iteration_start: Callback fired when an iteration starts. Args: (depth, iteration_num).
             on_iteration_complete: Callback fired when an iteration completes. Args: (depth, iteration_num, duration).
+            stream: If True, request the root model's response incrementally. The reassembled
+                response is identical either way, so this only matters to delta consumers.
+                Backends without real streaming fall back to a single delta.
+            on_token: Callback fired per root-model delta. Args: (delta,). Implies stream=True.
+            experimental_spec_ptc: Experimental speculative LM/recursive tool calls in LocalREPL.
+                Defaults to False; requires Python 3.12+, the spec-ptc extra, and real streaming.
         """
         # Sampling args plumbed into backend_kwargs / other_backend_kwargs
         # before the clients are constructed, so they reach the chat-completions
@@ -182,6 +197,17 @@ class RLM:
         self.logger = logger
         self.verbose = VerbosePrinter(enabled=verbose)
 
+        # Opt-in: nothing in the default loop consumes deltas, and the
+        # reassembled response is identical either way.
+        if experimental_spec_ptc:
+            from rlm.environments.speculative_repl import validate_spec_ptc
+
+            validate_spec_ptc(environment)
+        self.experimental_spec_ptc = experimental_spec_ptc
+        self.stream = stream or on_token is not None or experimental_spec_ptc
+        self.on_token = on_token
+        self._warned_no_streaming = False
+
         # Event callbacks for live tree display
         self.on_subcall_start = on_subcall_start
         self.on_subcall_complete = on_subcall_complete
@@ -189,6 +215,7 @@ class RLM:
         self.on_iteration_complete = on_iteration_complete
 
         # Tracking (cumulative across all calls including children)
+        self._last_completion_usage: UsageSummary = UsageSummary(model_usage_summaries={})
         self._cumulative_cost: float = 0.0
         self._consecutive_errors: int = 0
         self._last_error: str | None = None
@@ -223,6 +250,26 @@ class RLM:
                 self.logger.log_metadata(metadata)
             self.verbose.print_metadata(metadata)
 
+    def _warn_if_streaming_unavailable(self, client: BaseLM) -> None:
+        """Warn once when streaming was asked for but the backend can't do it.
+
+        The call still succeeds as one delta, but nothing is incremental —
+        say so rather than looking like it worked.
+        """
+        if not self.stream or getattr(client, "supports_streaming", False):
+            return
+        if self._warned_no_streaming:
+            return
+        self._warned_no_streaming = True
+        warnings.warn(
+            f"stream=True but the '{self.backend}' client does not support streaming. "
+            "The response will arrive as a single delta after the full completion, so "
+            "nothing is actually incremental. Streaming-capable backends: openai, vllm, "
+            "openrouter, vercel, anthropic, azure_openai, gemini.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+
     @contextmanager
     def _spawn_completion_context(self, prompt: str | dict[str, Any]):
         """
@@ -233,6 +280,9 @@ class RLM:
         """
         # Create client and wrap in handler
         client: BaseLM = get_client(self.backend, self.backend_kwargs)
+        if self.experimental_spec_ptc and not client.supports_streaming:
+            raise ValueError("experimental_spec_ptc requires a streaming-capable LM client")
+        self._warn_if_streaming_unavailable(client)
 
         # Create other_backend_client if provided (for depth=1 routing)
         other_backend_client: BaseLM | None = None
@@ -285,18 +335,33 @@ class RLM:
                 env_kwargs["custom_sub_tools"] = self.custom_sub_tools
             if self.compaction and self.environment_type in ("local", "docker"):
                 env_kwargs["compaction"] = True
+            if self.experimental_spec_ptc:
+                env_kwargs["experimental_spec_ptc"] = True
             env_kwargs["max_concurrent_subcalls"] = self.max_concurrent_subcalls
-            environment: BaseEnv = get_environment(self.environment_type, env_kwargs)
+            try:
+                environment: BaseEnv = get_environment(self.environment_type, env_kwargs)
+            except BaseException:
+                # Optional adapters can reject configuration after the handler starts.
+                lm_handler.stop()
+                raise
 
             if self.persistent:
                 self._persistent_env = environment
 
+        if self.experimental_spec_ptc:
+            lm_handler.additional_usage = cast(
+                "SpeculativeLocalREPL", environment
+            ).recursive_usage_summary
         try:
             yield lm_handler, environment
         finally:
-            lm_handler.stop()
-            if not self.persistent and hasattr(environment, "cleanup"):
-                environment.cleanup()
+            try:
+                if self.experimental_spec_ptc:
+                    self._last_completion_usage = lm_handler.get_usage_summary()
+            finally:
+                lm_handler.stop()
+                if not self.persistent and hasattr(environment, "cleanup"):
+                    environment.cleanup()
 
     def _setup_prompt(
         self,
@@ -644,6 +709,39 @@ class RLM:
         ]
         return new_history
 
+    def _get_response(
+        self,
+        prompt: str | dict[str, Any],
+        lm_handler: LMHandler,
+        speculation: "StreamTurn | None" = None,
+    ) -> str:
+        """Get the root model's response, streaming deltas when enabled.
+
+        The reassembled string matches the blocking path exactly.
+        """
+        if not self.stream:
+            return lm_handler.completion(prompt)
+
+        parts: list[str] = []
+        stream = lm_handler.stream_completion(prompt)
+        try:
+            for delta in stream:
+                parts.append(delta)
+                if speculation is not None:
+                    speculation.feed(delta)
+                if self.on_token is not None:
+                    try:
+                        self.on_token(delta)
+                    except Exception:
+                        pass  # Don't let callback errors break execution
+        finally:
+            close = getattr(stream, "close", None)
+            if close is not None:
+                close()
+        if speculation is not None:
+            speculation.end(timeout=0)
+        return "".join(parts)
+
     def _completion_turn(
         self,
         prompt: str | dict[str, Any],
@@ -655,14 +753,19 @@ class RLM:
         and code execution + tool execution.
         """
         iter_start = time.perf_counter()
-        response = lm_handler.completion(prompt)
-        code_block_strs = find_code_blocks(response)
-        code_blocks = []
+        turn = (
+            cast("SpeculativeLocalREPL", environment).speculation_turn()
+            if self.experimental_spec_ptc
+            else nullcontext()
+        )
+        with turn as speculation:
+            response = self._get_response(prompt, lm_handler, speculation)
+            code_block_strs = find_code_blocks(response)
+            code_blocks = []
 
-        for code_block_str in code_block_strs:
-            code_result: REPLResult = environment.execute_code(code_block_str)
-            code_blocks.append(CodeBlock(code=code_block_str, result=code_result))
-
+            for code_block_str in code_block_strs:
+                code_result: REPLResult = environment.execute_code(code_block_str)
+                code_blocks.append(CodeBlock(code=code_block_str, result=code_result))
         iteration_time = time.perf_counter() - iter_start
         return RLMIteration(
             prompt=prompt,
@@ -848,6 +951,9 @@ class RLM:
             custom_sub_tools=self.custom_sub_tools,
             # Propagate concurrency settings to children
             max_concurrent_subcalls=self.max_concurrent_subcalls,
+            # No on_token: concurrent children's deltas would interleave.
+            stream=self.stream,
+            experimental_spec_ptc=self.experimental_spec_ptc,
             # Propagate callbacks to children for nested tracking
             on_subcall_start=self.on_subcall_start,
             on_subcall_complete=self.on_subcall_complete,
@@ -866,7 +972,9 @@ class RLM:
                 root_model=resolved_model,
                 prompt=context,
                 response=f"Error: Child RLM budget exceeded - {e}",
-                usage_summary=UsageSummary(model_usage_summaries={}),
+                usage_summary=child._last_completion_usage
+                if self.experimental_spec_ptc
+                else UsageSummary(model_usage_summaries={}),
                 execution_time=time.perf_counter() - subcall_start,
             )
         except Exception as e:
@@ -875,7 +983,9 @@ class RLM:
                 root_model=resolved_model,
                 prompt=context,
                 response=f"Error: Child RLM completion failed - {e}",
-                usage_summary=UsageSummary(model_usage_summaries={}),
+                usage_summary=child._last_completion_usage
+                if self.experimental_spec_ptc
+                else UsageSummary(model_usage_summaries={}),
                 execution_time=time.perf_counter() - subcall_start,
             )
         finally:
