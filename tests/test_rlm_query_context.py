@@ -178,3 +178,73 @@ def test_docker_proxy_forwards_context_and_fallback_without_daemon():
             "model": "override",
         }
     )
+
+
+@pytest.mark.parametrize("depth", [0, 2, 3])
+@pytest.mark.parametrize("context", ["a document", ["one", "two"], {"n": 2}])
+def test_completion_at_depth_limit_preserves_instruction_and_result_type(depth, context):
+    client = mock_lm(["leaf answer"])
+    with (
+        patch.object(rlm_module, "get_client", return_value=client),
+        patch.object(rlm_module, "get_environment") as create_environment,
+        RLM(backend_kwargs={"model_name": "mock"}, depth=depth, max_depth=min(depth, 2)) as root,
+    ):
+        result = root.completion(context, root_prompt="Summarize")
+    client.completion.assert_called_once_with(format_rlm_query("Summarize", context))
+    create_environment.assert_not_called()
+    assert isinstance(result, RLMChatCompletion)
+    assert result.response == "leaf answer"
+    assert result.prompt == context
+    assert result.root_model == "mock"
+    assert result.usage_summary.model_usage_summaries["mock"].total_calls == 1
+
+
+@pytest.mark.parametrize("override", [None, "override"])
+def test_leaf_model_override_with_separate_sub_backend(override):
+    leaf_kwargs = {"model_name": "leaf", "sampling_args": {"temperature": 0.2}}
+    client = mock_lm(["leaf answer"])
+    with (
+        patch.object(rlm_module, "get_client", return_value=client) as create_client,
+        RLM(
+            backend_kwargs={"model_name": "root"},
+            depth=1,
+            max_depth=2,
+            other_backends=["openrouter"],
+            other_backend_kwargs=[leaf_kwargs],
+        ) as root,
+    ):
+        result = root._subcall("Summarize", {"n": 2}, model=override)
+    expected_kwargs = {**leaf_kwargs, "model_name": override or "leaf"}
+    create_client.assert_called_once_with("openrouter", expected_kwargs)
+    client.completion.assert_called_once_with(format_rlm_query("Summarize", {"n": 2}))
+    assert result.response == "leaf answer"
+    assert leaf_kwargs["model_name"] == "leaf"
+
+
+def test_completion_at_depth_limit_without_instruction_keeps_original_prompt():
+    client = mock_lm(["leaf answer"])
+    with (
+        patch.object(rlm_module, "get_client", return_value=client),
+        RLM(backend_kwargs={"model_name": "mock"}, max_depth=0) as root,
+    ):
+        result = root.completion("What is 2 + 2?")
+    client.completion.assert_called_once_with("What is 2 + 2?")
+    assert isinstance(result, RLMChatCompletion)
+    assert result.response == "leaf answer"
+
+
+@pytest.mark.parametrize("context", ["a document", ["one", "two"], {"n": 2}, "", [], {}])
+def test_child_repl_preserves_context_types_and_empty_values(context):
+    client = mock_lm(
+        [
+            "```repl\nprint(context)\n```",
+            '```repl\nanswer["content"] = str(context)\nanswer["ready"] = True\n```',
+        ]
+    )
+    with (
+        patch.object(rlm_module, "get_client", return_value=client),
+        RLM(backend_kwargs={"model_name": "mock"}, max_depth=2) as root,
+    ):
+        result = root._subcall("Return the context unchanged.", context)
+    assert result.response == str(context)
+    assert result.prompt == context
