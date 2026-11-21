@@ -338,7 +338,7 @@ class RLM:
             root_prompt: We allow the RLM's root LM to see a (small) prompt that the user specifies. A common example of this
             is if the user is asking the RLM to answer a question, we can pass the question as the root prompt.
         Returns:
-            A final answer as a string.
+            An RLMChatCompletion containing the final answer, usage, and execution time.
         """
         time_start = time.perf_counter()
         self._completion_start_time = time_start
@@ -349,7 +349,7 @@ class RLM:
         self._best_partial_answer = None
         # If we're at max depth, the RLM is an LM, so we fallback to the regular LM.
         if self.depth >= self.max_depth:
-            return self._fallback_answer(prompt)
+            return self._fallback_answer(prompt, root_prompt=root_prompt)
 
         if self.logger:
             self.logger.clear_iterations()
@@ -696,13 +696,25 @@ class RLM:
 
         return response
 
-    def _fallback_answer(self, message: str | dict[str, Any]) -> str:
+    def _fallback_answer(
+        self, message: str | dict[str, Any], root_prompt: str | None = None
+    ) -> RLMChatCompletion:
         """
         Fallback behavior if the RLM is actually at max depth, and should be treated as an LM.
         """
+        start_time = time.perf_counter()
         client: BaseLM = get_client(self.backend, self.backend_kwargs)
-        response = client.completion(message)
-        return response
+        prompt = format_rlm_query(root_prompt, message) if root_prompt is not None else message
+        response = client.completion(prompt)
+        return RLMChatCompletion(
+            root_model=client.model_name,
+            prompt=message,
+            response=response,
+            usage_summary=UsageSummary(
+                model_usage_summaries={client.model_name: client.get_last_usage()}
+            ),
+            execution_time=time.perf_counter() - start_time,
+        )
 
     def _subcall(
         self, instruction: str, context: str | list | dict, model: str | None = None
@@ -738,7 +750,10 @@ class RLM:
         if next_depth >= self.max_depth:
             # Use other_backend if available, otherwise use main backend
             if self.other_backends and self.other_backend_kwargs:
-                client = get_client(self.other_backends[0], self.other_backend_kwargs[0])
+                leaf_kwargs = self.other_backend_kwargs[0].copy()
+                if model is not None:
+                    leaf_kwargs["model_name"] = model
+                client = get_client(self.other_backends[0], leaf_kwargs)
             else:
                 client = get_client(self.backend, child_backend_kwargs or {})
             root_model = model or client.model_name

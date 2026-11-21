@@ -178,6 +178,8 @@ Maximum recursion depth for nested RLM calls. When `max_depth > 1`, the REPL pro
 
 When `depth >= max_depth`, `rlm_query()` falls back to a plain `llm_query()` call (no REPL, no iteration).
 
+Direct `completion()` calls at or beyond the depth limit also use a plain LM call. They include both `root_prompt` (when supplied) and context, and return an `RLMChatCompletion` with usage information.
+
 ```python
 # Enable one level of recursive sub-calls
 rlm = RLM(..., max_depth=2)
