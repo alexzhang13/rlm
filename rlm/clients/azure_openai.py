@@ -137,20 +137,22 @@ class AzureOpenAIClient(BaseLM):
         )
 
         usage_chunk = None
-        for chunk in stream:
-            if getattr(chunk, "usage", None):
-                usage_chunk = chunk
-            if chunk.choices:
-                delta = chunk.choices[0].delta.content
-                if delta:
-                    yield delta
-
-        if usage_chunk is not None:
-            self._track_cost(usage_chunk, model)
-        else:
-            self.model_call_counts[model] += 1
-            self.last_prompt_tokens = 0
-            self.last_completion_tokens = 0
+        try:
+            for chunk in stream:
+                if getattr(chunk, "usage", None):
+                    usage_chunk = chunk
+                if chunk.choices:
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        yield delta
+        finally:
+            stream.close()
+            if usage_chunk is not None:
+                self._track_cost(usage_chunk, model)
+            else:
+                self.model_call_counts[model] += 1
+                self.last_prompt_tokens = 0
+                self.last_completion_tokens = 0
 
     def _track_cost(self, response: Any, model: str):
         """Takes a ChatCompletion or a stream's final usage chunk."""

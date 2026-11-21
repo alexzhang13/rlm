@@ -6,13 +6,14 @@ Uses a multi-threaded socket server. Protocol: 4-byte length prefix + JSON paylo
 
 import asyncio
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from socketserver import StreamRequestHandler, ThreadingTCPServer
 from threading import Thread
 
 from rlm.clients.base_lm import BaseLM
 from rlm.core.comms_utils import LMRequest, LMResponse, socket_recv, socket_send
 from rlm.core.types import RLMChatCompletion, UsageSummary
+from rlm.utils.usage import merge_usage_summaries
 
 
 class LMRequestHandler(StreamRequestHandler):
@@ -159,6 +160,7 @@ class LMHandler:
         other_backend_client: BaseLM | None = None,
         batch_max_concurrent: int = 16,
     ):
+        self.additional_usage: Callable[[], UsageSummary] | None = None
         self.default_client = client
         self.other_backend_client = other_backend_client
         self.clients: dict[str, BaseLM] = {}
@@ -261,4 +263,7 @@ class LMHandler:
         for client in self.clients.values():
             client_summary = client.get_usage_summary()
             merged.update(client_summary.model_usage_summaries)
-        return UsageSummary(model_usage_summaries=merged)
+        summary = UsageSummary(model_usage_summaries=merged)
+        if self.additional_usage is not None:
+            return merge_usage_summaries([summary, self.additional_usage()])
+        return summary

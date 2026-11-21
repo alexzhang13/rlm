@@ -140,7 +140,15 @@ def _openai_client_yielding(chunks):
 
     def fake_create(**kwargs):
         captured.update(kwargs)
-        return iter(chunks)
+
+        class Stream:
+            def __iter__(self):
+                return iter(chunks)
+
+            def close(self):
+                captured["closed"] = True
+
+        return Stream()
 
     client.client.chat.completions.create = fake_create
     return client, captured
@@ -213,3 +221,84 @@ def test_no_warning_when_streaming_not_requested():
         warnings.simplefilter("always")
         rlm._warn_if_streaming_unavailable(MockLM())
     assert caught == []
+
+
+def test_speculation_is_disabled_by_default():
+    rlm = RLM(backend_kwargs={"model_name": "m"})
+    assert rlm.experimental_spec_ptc is False
+    assert rlm.stream is False
+
+
+def test_openai_closes_partial_stream_and_records_the_attempt():
+    client, captured = _openai_client_yielding([_text_chunk("first"), _text_chunk("second")])
+    stream = client.stream_completion("q")
+    assert next(stream) == "first"
+    stream.close()
+    assert captured["closed"] is True
+    assert client.get_last_usage().total_calls == 1
+
+
+def test_root_stream_is_closed_when_consumer_interrupts():
+    closed = []
+
+    class Client(StreamingMockLM):
+        def stream_completion(self, prompt, model=None):
+            try:
+                yield "one"
+                yield "two"
+            finally:
+                closed.append(True)
+
+    def interrupt(delta):
+        raise KeyboardInterrupt
+
+    rlm = RLM(on_token=interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        rlm._get_response("q", LMHandler(Client()))
+    assert closed == [True]
+
+
+@pytest.mark.parametrize("provider", ["azure_openai", "gemini"])
+@pytest.mark.parametrize("finish", [False, True])
+def test_provider_stream_closes_and_counts_call(provider, finish):
+    from unittest.mock import patch
+
+    class Stream:
+        closed = False
+
+        def __iter__(self):
+            for text in ("first", "second"):
+                if provider == "gemini":
+                    yield SimpleNamespace(text=text, usage_metadata=None)
+                else:
+                    yield _text_chunk(text)
+
+        def close(self):
+            self.closed = True
+
+    stream = Stream()
+    if provider == "gemini":
+        from rlm.clients.gemini import GeminiClient
+
+        with patch("rlm.clients.gemini.genai.Client"):
+            client = GeminiClient(api_key="test", model_name="test-model")
+        client.client.models.generate_content_stream.return_value = stream
+    else:
+        from rlm.clients.azure_openai import AzureOpenAIClient
+
+        with (
+            patch("rlm.clients.azure_openai.openai.AzureOpenAI"),
+            patch("rlm.clients.azure_openai.openai.AsyncAzureOpenAI"),
+        ):
+            client = AzureOpenAIClient(
+                api_key="test", model_name="test-model", azure_endpoint="https://example.test"
+            )
+        client.client.chat.completions.create.return_value = stream
+    deltas = client.stream_completion("q")
+    assert next(deltas) == "first"
+    if finish:
+        assert list(deltas) == ["second"]
+    else:
+        deltas.close()
+    assert stream.closed is True
+    assert client.get_last_usage().total_calls == 1
