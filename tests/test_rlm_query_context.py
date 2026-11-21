@@ -84,6 +84,10 @@ def test_core_depth_limit_preserves_both_inputs(context):
 def environment_factory(request):
     if request.param == "local":
         return LocalREPL
+    pytest.importorskip("IPython")
+    if request.param == "subprocess":
+        pytest.importorskip("jupyter_client")
+        pytest.importorskip("ipykernel")
     return partial(IPythonREPL, kernel_mode=request.param)
 
 
