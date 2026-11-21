@@ -337,47 +337,47 @@ class LocalREPL(NonIsolatedEnv):
         return self._llm_query(format_rlm_query(instruction, context), model)
 
     def _rlm_query_batched(
-        self, prompts: list[tuple[str, str | list | dict]], model: str | None = None
+        self, queries: list[tuple[str, str | list | dict]], model: str | None = None
     ) -> list[str]:
-        """Spawn recursive RLM sub-calls for multiple prompts in parallel.
+        """Spawn recursive RLM sub-calls for multiple queries in parallel.
 
-        Each prompt gets its own child RLM for deeper thinking. When multiple
-        prompts are provided, subcalls run concurrently using a thread pool
+        Each query gets its own child RLM for deeper thinking. When multiple
+        queries are provided, subcalls run concurrently using a thread pool
         (bounded by max_concurrent_subcalls) since they are independent and
-        I/O-bound. Results are returned in the same order as input prompts.
+        I/O-bound. Results are returned in the same order as input queries.
 
         Falls back to llm_query_batched if no recursive capability is configured.
 
         Args:
-            prompts: List of (instruction, context) pairs for child RLMs.
+            queries: List of (instruction, context) pairs for child RLMs.
             model: Optional model name override for the children.
 
         Returns:
-            List of responses in the same order as input prompts.
+            List of responses in the same order as input queries.
         """
         if self.subcall_fn is not None:
-            # For 0 or 1 prompts, no need for thread pool overhead
-            if len(prompts) <= 1:
+            # For 0 or 1 queries, no need for thread pool overhead
+            if len(queries) <= 1:
                 results = []
-                for prompt in prompts:
+                for query in queries:
                     try:
-                        completion = self.subcall_fn(*prompt, model)
+                        completion = self.subcall_fn(*query, model)
                         self._pending_llm_calls.append(completion)
                         results.append(completion.response)
                     except Exception as e:
                         results.append(f"Error: RLM query failed - {e}")
                 return results
 
-            # Parallel execution for multiple prompts
-            max_workers = min(self.max_concurrent_subcalls, len(prompts))
+            # Parallel execution for multiple queries
+            max_workers = min(self.max_concurrent_subcalls, len(queries))
             # Pre-allocate result slots to preserve ordering
-            results: list[str] = [""] * len(prompts)
+            results: list[str] = [""] * len(queries)
             completions: list[tuple[int, RLMChatCompletion]] = []
             lock = threading.Lock()
 
-            def _run_subcall(index: int, prompt: tuple[str, str | list | dict]) -> None:
+            def _run_subcall(index: int, query: tuple[str, str | list | dict]) -> None:
                 try:
-                    completion = self.subcall_fn(*prompt, model)
+                    completion = self.subcall_fn(*query, model)
                     with lock:
                         completions.append((index, completion))
                     results[index] = completion.response
@@ -386,13 +386,13 @@ class LocalREPL(NonIsolatedEnv):
 
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = [
-                    executor.submit(_run_subcall, i, prompt) for i, prompt in enumerate(prompts)
+                    executor.submit(_run_subcall, i, query) for i, query in enumerate(queries)
                 ]
                 # Wait for all futures to complete; exceptions are captured inside _run_subcall
                 for future in as_completed(futures):
                     future.result()  # Re-raises unexpected executor errors
 
-            # Append completions in original prompt order for deterministic metadata
+            # Append completions in original query order for deterministic metadata
             completions.sort(key=lambda x: x[0])
             for _, completion in completions:
                 self._pending_llm_calls.append(completion)
@@ -400,7 +400,7 @@ class LocalREPL(NonIsolatedEnv):
             return results
 
         # Fall back to plain batched LM call if no recursive capability
-        return self._llm_query_batched([format_rlm_query(*query) for query in prompts], model)
+        return self._llm_query_batched([format_rlm_query(*query) for query in queries], model)
 
     def load_context(self, context_payload: dict | list | str):
         """Load context into the environment as context_0 (and 'context' alias)."""

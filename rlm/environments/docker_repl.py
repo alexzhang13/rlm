@@ -179,12 +179,12 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
     def _handle_rlm_batched(self, body: dict) -> dict:
         if self.subcall_fn is None:
             return self._handle_batched(
-                {**body, "prompts": [format_rlm_query(*query) for query in body["prompts"]]}
+                {**body, "prompts": [format_rlm_query(*query) for query in body["queries"]]}
             )
 
-        prompts = body.get("prompts", [])
+        queries = body.get("queries", [])
         model = body.get("model")
-        n = len(prompts)
+        n = len(queries)
         if n == 0:
             return {"responses": []}
 
@@ -193,9 +193,9 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
         completions: list[tuple[int, RLMChatCompletion]] = []
         comp_lock = threading.Lock()
 
-        def _run(index: int, prompt: tuple[str, str | list | dict]) -> None:
+        def _run(index: int, query: tuple[str, str | list | dict]) -> None:
             try:
-                completion = self.subcall_fn(*prompt, model)
+                completion = self.subcall_fn(*query, model)
                 with comp_lock:
                     completions.append((index, completion))
                 results[index] = completion.response
@@ -203,15 +203,15 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
                 results[index] = f"Error: RLM query failed - {e}"
 
         if n == 1:
-            _run(0, prompts[0])
+            _run(0, queries[0])
         else:
             max_workers = min(self.max_concurrent_subcalls, n)
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = [executor.submit(_run, i, p) for i, p in enumerate(prompts)]
+                futures = [executor.submit(_run, i, p) for i, p in enumerate(queries)]
                 for future in as_completed(futures):
                     future.result()
 
-        # Record completions in prompt order for deterministic metadata.
+        # Record completions in query order for deterministic metadata.
         completions.sort(key=lambda x: x[0])
         with self.lock:
             for _, completion in completions:
@@ -320,12 +320,12 @@ def rlm_query(instruction, context, model=None):
     except Exception as e:
         return f"Error: {{e}}"
 
-def rlm_query_batched(prompts, model=None):
+def rlm_query_batched(queries, model=None):
     try:
-        d = _post("/rlm_query_batched", {{"prompts": prompts, "model": model, "depth": DEPTH}}, _RLM_TIMEOUT)
-        return d.get("responses") or [f"Error: {{d.get('error')}}"] * len(prompts)
+        d = _post("/rlm_query_batched", {{"queries": queries, "model": model, "depth": DEPTH}}, _RLM_TIMEOUT)
+        return d.get("responses") or [f"Error: {{d.get('error')}}"] * len(queries)
     except Exception as e:
-        return [f"Error: {{e}}"] * len(prompts)
+        return [f"Error: {{e}}"] * len(queries)
 
 def load_state():
     if os.path.exists(STATE):

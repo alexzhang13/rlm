@@ -176,7 +176,7 @@ Depth>1 recursive subcalls are supported. The REPL provides two LM call function
 - **`llm_query(prompt)`** — Always makes a plain, single LM completion. Fast and lightweight. Use for simple extraction, summarization, or Q&A.
 - **`rlm_query(instruction, context)`** — Spawns a child RLM with the instruction in its model messages and context in its own REPL. Use for subtasks that need multi-step thinking or code execution. Falls back to `llm_query` when `depth >= max_depth`.
 
-Both have batched variants for concurrent calls: `llm_query_batched` takes prompts; `rlm_query_batched` takes `(instruction, context)` pairs. At the depth limit, recursive calls include both inputs in the plain LM prompt.
+Both have batched variants for concurrent calls: `llm_query_batched` takes prompts; `rlm_query_batched` takes a list of `(instruction, context)` pairs. At the depth limit, recursive calls include both inputs in the plain LM prompt.
 
 See [Architecture](architecture.md) for details on how handlers, environments, and recursive sub-calls work.
 

@@ -224,7 +224,7 @@ class TestRLMQuery:
         repl = make_repl(subcall_fn=lambda p, context, m=None: _completion(f"c:{p}"))
         try:
             r = repl.execute_code(
-                "print(rlm_query_batched([(p, dict()) for p in ['p0', 'p1', 'p2']]))"
+                "print(rlm_query_batched(queries=[(p, dict()) for p in ['p0', 'p1', 'p2']]))"
             )
             assert "['c:p0', 'c:p1', 'c:p2']" in r.stdout, (r.stdout, r.stderr)
             assert [c.response for c in r.rlm_calls] == ["c:p0", "c:p1", "c:p2"]

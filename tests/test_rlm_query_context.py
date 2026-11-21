@@ -100,7 +100,7 @@ def test_environment_single_and_batch_forward_context(environment_factory):
     with environment_factory(subcall_fn=callback) as environment:
         result = environment.execute_code(
             "print(rlm_query('single', context={'value': 1}, model='override'))\n"
-            "print(rlm_query_batched([('first', {'value': 2}), ('second', {'value': 3})], model='override'))"
+            "print(rlm_query_batched(queries=[('first', {'value': 2}), ('second', {'value': 3})], model='override'))"
         )
     assert result.stderr == ""
     assert "single:1:override" in result.stdout
@@ -152,7 +152,7 @@ def test_docker_proxy_forwards_context_and_fallback_without_daemon():
     single = {"instruction": "task", "context": {"value": 1}, "model": "override"}
     assert handler._handle_rlm_single(single) == {"response": "{'value': 1}"}
     queries = [("first", ["a"]), ("second", "text")]
-    assert handler._handle_rlm_batched({"prompts": queries, "model": "override"}) == {
+    assert handler._handle_rlm_batched({"queries": queries, "model": "override"}) == {
         "responses": ["['a']", "text"]
     }
     callback.assert_has_calls(
@@ -170,7 +170,11 @@ def test_docker_proxy_forwards_context_and_fallback_without_daemon():
     handler._handle_single.assert_called_once_with(
         {**single, "prompt": format_rlm_query("task", {"value": 1})}
     )
-    handler._handle_rlm_batched({"prompts": queries, "model": "override"})
+    handler._handle_rlm_batched({"queries": queries, "model": "override"})
     handler._handle_batched.assert_called_once_with(
-        {"prompts": [format_rlm_query(*q) for q in queries], "model": "override"}
+        {
+            "queries": queries,
+            "prompts": [format_rlm_query(*q) for q in queries],
+            "model": "override",
+        }
     )
