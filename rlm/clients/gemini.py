@@ -114,23 +114,24 @@ class GeminiClient(BaseLM):
         if system_instruction:
             config = types.GenerateContentConfig(system_instruction=system_instruction)
 
+        stream = self.client.models.generate_content_stream(
+            model=model, contents=contents, config=config
+        )
         last_chunk = None
-        for chunk in self.client.models.generate_content_stream(
-            model=model,
-            contents=contents,
-            config=config,
-        ):
-            if getattr(chunk, "usage_metadata", None):
-                last_chunk = chunk
-            if chunk.text:
-                yield chunk.text
-
-        if last_chunk is not None:
-            self._track_cost(last_chunk, model)
-        else:
-            self.model_call_counts[model] += 1
-            self.last_prompt_tokens = 0
-            self.last_completion_tokens = 0
+        try:
+            for chunk in stream:
+                if getattr(chunk, "usage_metadata", None):
+                    last_chunk = chunk
+                if chunk.text:
+                    yield chunk.text
+        finally:
+            stream.close()
+            if last_chunk is not None:
+                self._track_cost(last_chunk, model)
+            else:
+                self.model_call_counts[model] += 1
+                self.last_prompt_tokens = 0
+                self.last_completion_tokens = 0
 
     def _prepare_contents(
         self, prompt: str | list[dict[str, Any]]

@@ -165,18 +165,20 @@ class OpenAIClient(BaseLM):
         )
 
         usage_chunk = None
-        for chunk in stream:
-            if getattr(chunk, "usage", None):
-                usage_chunk = chunk
-            if chunk.choices:
-                delta = chunk.choices[0].delta.content
-                if delta:
-                    yield delta
-
-        if usage_chunk is not None:
-            self._track_cost(usage_chunk, model)
-        else:
-            self._track_stream_without_usage(model)
+        try:
+            for chunk in stream:
+                if getattr(chunk, "usage", None):
+                    usage_chunk = chunk
+                if chunk.choices:
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        yield delta
+        finally:
+            stream.close()
+            if usage_chunk is not None:
+                self._track_cost(usage_chunk, model)
+            else:
+                self._track_stream_without_usage(model)
 
     def _track_stream_without_usage(self, model: str) -> None:
         """Record a streamed call whose endpoint returned no usage."""

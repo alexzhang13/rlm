@@ -21,6 +21,11 @@ from rlm.environments.base_env import (
     extract_tool_value,
     validate_custom_tools,
 )
+from rlm.environments.local_execution import (
+    local_execution,
+    releases_execution,
+    serialized_execution,
+)
 from rlm.utils.prompts import format_rlm_query
 
 
@@ -177,6 +182,7 @@ class LocalREPL(NonIsolatedEnv):
         self.original_cwd = os.getcwd()
         self.temp_dir = tempfile.mkdtemp(prefix=f"repl_env_{uuid.uuid4()}_")
         self._lock = threading.Lock()
+        self._execution_lock = threading.Lock()
         self._context_count: int = 0
         self._history_count: int = 0
         self.compaction = compaction
@@ -256,6 +262,7 @@ class LocalREPL(NonIsolatedEnv):
             return "No variables created yet. Use ```repl``` blocks to create variables."
         return f"Available variables: {available}"
 
+    @releases_execution
     def _llm_query(self, prompt: str, model: str | None = None) -> str:
         """Query the LM with a single plain completion (no REPL, no recursion).
 
@@ -280,6 +287,7 @@ class LocalREPL(NonIsolatedEnv):
         except Exception as e:
             return f"Error: LM query failed - {e}"
 
+    @releases_execution
     def _llm_query_batched(self, prompts: list[str], model: str | None = None) -> list[str]:
         """Query the LM with multiple prompts concurrently (no REPL, no recursion).
 
@@ -311,6 +319,7 @@ class LocalREPL(NonIsolatedEnv):
         except Exception as e:
             return [f"Error: LM query failed - {e}"] * len(prompts)
 
+    @releases_execution
     def _rlm_query(
         self, instruction: str, context: str | list | dict, model: str | None = None
     ) -> str:
@@ -336,6 +345,7 @@ class LocalREPL(NonIsolatedEnv):
         # Fall back to plain LM call if no recursive capability
         return self._llm_query(format_rlm_query(instruction, context), model)
 
+    @releases_execution
     def _rlm_query_batched(
         self, queries: list[tuple[str, str | list | dict]], model: str | None = None
     ) -> list[str]:
@@ -550,6 +560,7 @@ class LocalREPL(NonIsolatedEnv):
             elif name == "history" and self.compaction:
                 self.locals["history"] = self._compaction_history
 
+    @serialized_execution
     def execute_code(self, code: str) -> REPLResult:
         """Execute code in the persistent namespace and return result."""
         start_time = time.perf_counter()
@@ -557,7 +568,11 @@ class LocalREPL(NonIsolatedEnv):
         # Clear pending LLM calls from previous execution
         self._pending_llm_calls = []
 
-        with self._capture_output() as (stdout_buf, stderr_buf), self._temp_cwd():
+        with (
+            local_execution(),
+            self._capture_output() as (stdout_buf, stderr_buf),
+            self._temp_cwd(),
+        ):
             try:
                 combined = {**self.globals, **self.locals}
                 exec(code, combined, combined)
