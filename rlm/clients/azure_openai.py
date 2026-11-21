@@ -117,7 +117,7 @@ class AzureOpenAIClient(BaseLM):
     def stream_completion(
         self, prompt: str | list[dict[str, Any]], model: str | None = None
     ) -> Iterator[str]:
-        """Stream the response as text deltas. See OpenAIClient.stream_completion."""
+        """Yield response text as it arrives. See OpenAIClient.stream_completion."""
         if isinstance(prompt, str):
             messages = [{"role": "user", "content": prompt}]
         elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):

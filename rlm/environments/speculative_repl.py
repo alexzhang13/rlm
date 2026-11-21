@@ -1,4 +1,4 @@
-"""Experimental spec-ptc adapter. Only this module knows the library's lifecycle."""
+"""Experimental spec-ptc adapter for LocalREPL."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def validate_spec_ptc(environment: str) -> None:
 
 
 class QueryResponse(str):
-    """A string in the shadow; its completion is recorded only when really consumed."""
+    """Carry completion metadata; log it only when real execution uses the result."""
 
     calls: tuple[RLMChatCompletion, ...]
 
@@ -152,7 +152,7 @@ class SpeculativeLocalREPL(LocalREPL):
         from spec_ptc import SpecSession, ToolRegistry
 
         registry = ToolRegistry()
-        # Existing functions and custom tools must never run in the shadow.
+        # The trial execution must not call saved functions or custom tools.
         namespace = {**self.globals, **self.locals}
         for name, value in namespace.items():
             if callable(value):
@@ -172,13 +172,11 @@ class SpeculativeLocalREPL(LocalREPL):
             def key(args, kwargs, signature=signature):
                 bound = signature.bind(*args, **kwargs)
                 bound.apply_defaults()
-                # Context dict order is observable in Python; the library's
-                # default sort_keys hash would erase it.
+                # Preserve context dict order when matching calls.
                 return json.dumps(bound.arguments, default=repr)
 
             def speculate(*args, _spec, function=function, **kwargs):
-                # The library's character-pressure gate can delay a worker after
-                # eviction. Do not start an API call that is already discarded.
+                # Skip discarded work that was waiting for the input-size limit.
                 if _spec.state == "evicted":
                     raise CancelledError("speculation evicted before tool execution")
                 return function(*args, **kwargs)
@@ -221,13 +219,12 @@ class SpeculativeLocalREPL(LocalREPL):
         try:
             yield turn
         finally:
-            # Stop shadow dispatches before taking the final work/accounting snapshot.
+            # Stop the trial execution before totaling usage.
             turn.shadow.abort("real turn finished")
             turn.shadow.finish()
             turn.shadow.join()
             session.end_turn()
-            # Eviction cannot cancel synchronous LM calls. Drain them before the
-            # LM handler goes away and before reporting usage, including wasted calls.
+            # Wait for running calls before closing the handler or reporting usage.
             for speculation in session.store.all:
                 speculation.done.wait()
             metrics = {

@@ -62,11 +62,7 @@ class MockLM(BaseLM):
 
 
 class StreamingMockLM(MockLM):
-    """MockLM that really streams: yields the response in fixed-size chunks.
-
-    Stands in for a streaming-capable backend so the delta path can be tested
-    without a network call.
-    """
+    """Yield fixed-size text pieces without network calls."""
 
     supports_streaming = True
 

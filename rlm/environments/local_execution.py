@@ -1,4 +1,4 @@
-"""Coordinate LocalREPL's process-wide stdout/cwd across recursive workers."""
+"""Protect stdout and the working directory across LocalREPL workers."""
 
 import os
 import sys
@@ -17,7 +17,7 @@ T = TypeVar("T")
 def serialized_execution(
     function: Callable[Concatenate[Any, P], T],
 ) -> Callable[Concatenate[Any, P], T]:
-    """Own the whole cell before acquiring process-wide execution state."""
+    """Lock the REPL before the shared process lock to prevent deadlocks."""
 
     @wraps(function)
     def call(owner: Any, *args: P.args, **kwargs: P.kwargs) -> T:
@@ -44,7 +44,7 @@ def local_execution() -> Iterator[None]:
 
 @contextmanager
 def tool_execution() -> Iterator[None]:
-    """Park stdout/cwd while a tool waits, allowing children to acquire execution."""
+    """Restore host stdout/directory and unlock while waiting for child work."""
     held = getattr(EXECUTION_STATE, "held", 0)
     if not held:
         yield

@@ -122,10 +122,10 @@ class RLM:
             on_subcall_complete: Callback fired when a child RLM completes. Args: (depth, model, duration, error_or_none).
             on_iteration_start: Callback fired when an iteration starts. Args: (depth, iteration_num).
             on_iteration_complete: Callback fired when an iteration completes. Args: (depth, iteration_num, duration).
-            stream: If True, request the root model's response incrementally. The reassembled
-                response is identical either way, so this only matters to delta consumers.
-                Backends without real streaming fall back to a single delta.
-            on_token: Callback fired per root-model delta. Args: (delta,). Implies stream=True.
+            stream: If True, receive root-model text as it arrives. Without streaming support,
+                receive the full response at once.
+            on_token: Called with each piece of root-model text (possibly multiple tokens).
+                Implies stream=True.
             experimental_spec_ptc: Experimental speculative LM/recursive tool calls in LocalREPL.
                 Defaults to False; requires Python 3.12+, the spec-ptc extra, and real streaming.
         """
@@ -197,8 +197,6 @@ class RLM:
         self.logger = logger
         self.verbose = VerbosePrinter(enabled=verbose)
 
-        # Opt-in: nothing in the default loop consumes deltas, and the
-        # reassembled response is identical either way.
         if experimental_spec_ptc:
             from rlm.environments.speculative_repl import validate_spec_ptc
 
@@ -251,11 +249,7 @@ class RLM:
             self.verbose.print_metadata(metadata)
 
     def _warn_if_streaming_unavailable(self, client: BaseLM) -> None:
-        """Warn once when streaming was asked for but the backend can't do it.
-
-        The call still succeeds as one delta, but nothing is incremental —
-        say so rather than looking like it worked.
-        """
+        """Warn once when the client must return the full response at once."""
         if not self.stream or getattr(client, "supports_streaming", False):
             return
         if self._warned_no_streaming:
@@ -263,8 +257,7 @@ class RLM:
         self._warned_no_streaming = True
         warnings.warn(
             f"stream=True but the '{self.backend}' client does not support streaming. "
-            "The response will arrive as a single delta after the full completion, so "
-            "nothing is actually incremental. Streaming-capable backends: openai, vllm, "
+            "The full response will arrive at once. Streaming-capable backends: openai, vllm, "
             "openrouter, vercel, anthropic, azure_openai, gemini.",
             RuntimeWarning,
             stacklevel=3,
@@ -715,10 +708,7 @@ class RLM:
         lm_handler: LMHandler,
         speculation: "StreamTurn | None" = None,
     ) -> str:
-        """Get the root model's response, streaming deltas when enabled.
-
-        The reassembled string matches the blocking path exactly.
-        """
+        """Return the full response, forwarding streamed text as it arrives."""
         if not self.stream:
             return lm_handler.completion(prompt)
 
@@ -951,7 +941,7 @@ class RLM:
             custom_sub_tools=self.custom_sub_tools,
             # Propagate concurrency settings to children
             max_concurrent_subcalls=self.max_concurrent_subcalls,
-            # No on_token: concurrent children's deltas would interleave.
+            # Keep concurrent children's text out of the root callback.
             stream=self.stream,
             experimental_spec_ptc=self.experimental_spec_ptc,
             # Propagate callbacks to children for nested tracking

@@ -69,10 +69,9 @@ class AnthropicClient(BaseLM):
     def stream_completion(
         self, prompt: str | list[dict[str, Any]], model: str | None = None
     ) -> Iterator[str]:
-        """Stream the response as text deltas.
+        """Yield response text as it arrives.
 
-        ``messages.stream()`` accumulates the final message, so usage stays
-        exact — no usage-unavailable fallback needed here.
+        Read token usage from the final message after the stream finishes.
         """
         messages, system = self._prepare_messages(prompt)
 
