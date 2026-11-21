@@ -12,23 +12,23 @@ rlm = RLM(
 
 The flag defaults to `False`. It enables real model streaming and requires `environment="local"`. Unsupported environments and clients without streaming raise a clear error. Normal RLM usage still supports Python 3.11 and does not import spec-ptc.
 
-The [spec-ptc library](https://github.com/alexzhang13/spec-ptc) executes a discarded shadow of streamed `repl` code. It can start `llm_query`, `llm_query_batched`, `rlm_query`, and `rlm_query_batched` early. Normal execution claims matching results in FIFO order, preserving fresh samples for repeated identical calls. Recursive batches retain their `(instruction, context)` pairs, and children inherit the flag and normal depth limits.
+The [spec-ptc library](https://github.com/alexzhang13/spec-ptc) runs a temporary trial copy of `repl` code while the model generates it. It can start `llm_query`, `llm_query_batched`, `rlm_query`, and `rlm_query_batched` early. Normal execution reuses matching results in call order; repeated identical calls still receive separate samples. Recursive batches retain their `(instruction, context)` pairs, and children inherit the flag and normal depth limits.
 
 Custom tools and saved Python callables run only during real execution. Recursive calls are speculated only when their child tools contain no callables; otherwise those recursive calls run normally. Use `custom_sub_tools={}` to keep parent custom tools out of children. Generated child code can still perform effects through ordinary Python: speculative recursive tasks must themselves be suitable for early execution. LocalREPL and the library's shadow are not security sandboxes. Subcall callbacks describe actual executions and can therefore fire for speculative children that are later discarded.
 
 Speculation can increase calls and cost when generated code changes or is discarded. All completed speculative work, including unclaimed recursive work, is included in usage accounting. Budget and timeout checks remain at RLM iteration boundaries; they are not a hard cap on already dispatched work. In-flight synchronous calls cannot be forcibly cancelled and are drained before turn teardown. Work still waiting for admission is skipped if it has already been evicted. This can delay cancellation/error cleanup until the underlying client call returns or times out.
 
-The library also limits in-flight string arguments to 120,000 characters by default; this can serialize long-prompt batches. `spec_max_inflight_chars` makes that tradeoff configurable. Recursive concurrency uses `max_concurrent_subcalls`. Plain speculative work defaults to 16 workers, matching the normal LM batch handler. To configure early work or observe reuse:
+The library also limits in-flight string arguments to 120,000 characters by default; this can serialize long-prompt batches. `spec_max_inflight_chars` makes that tradeoff configurable. Recursive concurrency uses `max_concurrent_subcalls`. Plain speculative work defaults to 16 workers, matching the normal LM batch handler. The dispatch limit counts tool invocations, not individual API calls inside a batch. To configure early work or observe reuse:
 
 ```python
 rlm = RLM(
     ...,
     experimental_spec_ptc=True,
     environment_kwargs={
-        "spec_max_inflight_chars": 120000,  # library prefill-pressure budget
-        "spec_max_inflight": 16,            # worker pool size
-        "spec_max_dispatches_per_turn": 16,  # default 64 dispatches, not an API-call cap
-        "speculation_observer": print,      # dispatch/hit/miss/eviction counts per turn
+        "spec_max_inflight_chars": 120000,  # input characters across running tools
+        "spec_max_inflight": 16,            # tool worker threads
+        "spec_max_dispatches_per_turn": 16,  # tools started early; default 64
+        "speculation_observer": print,      # started/reused/missed/discarded counts
     },
 )
 ```
@@ -73,5 +73,6 @@ Live smoke-test attempts through the configured OpenAI-compatible endpoint retur
 
 - Full CPython 3.12 suite with spec-ptc 0.1.1, IPython, and Docker: 525 passed, 7 skipped.
 - Full CPython 3.11 suite without spec-ptc: 487 passed, 8 skipped.
+- Repeated all 67 streaming, speculation, and concurrency tests three times; every run passed. Reran all eight workload examples with matching answers across modes.
 - Integration coverage includes all four query helpers, model arguments, FIFO multiplicity, dependent calls, multi-block turns, persistence, depth boundaries, custom-tool gating, isolated stdout/relative files, concurrent cells on one REPL, budget accounting (including failed and discarded child work), stream interruption, and eviction of work waiting for character-budget admission.
 - Ruff, formatting, pre-commit, and lockfile checks pass.

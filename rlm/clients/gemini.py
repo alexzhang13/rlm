@@ -100,9 +100,9 @@ class GeminiClient(BaseLM):
     def stream_completion(
         self, prompt: str | list[dict[str, Any]], model: str | None = None
     ) -> Iterator[str]:
-        """Stream the response as text deltas.
+        """Yield response text as it arrives.
 
-        usage_metadata is cumulative, so the last chunk carrying it wins.
+        Token counts are cumulative; use the last reported counts.
         """
         contents, system_instruction = self._prepare_contents(prompt)
 

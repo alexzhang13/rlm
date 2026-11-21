@@ -148,10 +148,10 @@ class OpenAIClient(BaseLM):
     def stream_completion(
         self, prompt: str | list[dict[str, Any]], model: str | None = None
     ) -> Iterator[str]:
-        """Stream the response as text deltas.
+        """Yield response text as it arrives.
 
-        ``include_usage`` asks for a final choices-empty chunk with token
-        usage. Endpoints ignoring it still stream; only accounting degrades.
+        ``include_usage`` requests a final token-count message. Without it,
+        record the call but leave token usage unknown.
         """
         messages, model, extra_body = self._prepare_request(prompt, model)
 

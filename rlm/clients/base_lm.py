@@ -43,10 +43,10 @@ class BaseLM(ABC):
     def stream_completion(
         self, prompt: str | dict[str, Any], model: str | None = None
     ) -> Iterator[str]:
-        """Yield the response as text deltas; joining them equals completion().
+        """Yield pieces of response text; join them for the full response.
 
-        Default is a single delta from a blocking call, so every client works
-        here. Overrides must also set ``supports_streaming = True``.
+        The default yields the full response after a blocking call.
+        Streaming implementations must set ``supports_streaming = True``.
         """
         yield self.completion(prompt)
 
