@@ -1,4 +1,5 @@
 import { CodeBlock } from "@/components/CodeBlock";
+import Link from "next/link";
 import { Table } from "@/components/Table";
 
 export default function APIPage() {
@@ -43,7 +44,16 @@ print(result.response)`} />
     other_backend_kwargs: list[dict] | None = None,
     logger: RLMLogger | None = None,
     verbose: bool = False,
+    stream: bool = False,
+    on_token: Callable[[str], None] | None = None,
+    experimental_spec_ptc: bool = False,
 )`} />
+
+        <p className="mt-6 text-muted-foreground">
+          Use <code>stream=True</code> to receive text as it arrives, or <code>on_token</code> to
+          handle each piece of text. For experimental early execution of LM and recursive calls,
+          see <Link href="/experimental/spec-ptc" className="text-primary hover:underline">speculative tool calling</Link>.
+        </p>
 
         <div className="mt-8 space-y-10">
           {/* backend */}

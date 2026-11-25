@@ -44,6 +44,12 @@ export default function Home() {
         </div>
       </div>
 
+      <p className="mb-8 text-muted-foreground">
+        Experimental <a href="https://github.com/alexzhang13/spec-ptc" className="text-primary hover:underline">spec-ptc</a>{" "}
+        support starts LM and recursive calls while the model generates code. See the{" "}
+        <Link href="/experimental/spec-ptc" className="text-primary hover:underline">setup and usage guide</Link>.
+      </p>
+
       <div className="my-12">
         <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-2xl p-8 shadow-lg">
           <div className="flex items-center gap-3 mb-6">
