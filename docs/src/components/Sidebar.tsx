@@ -9,6 +9,7 @@ import { useState } from "react";
 const navigation = [
   { name: "Recursive Language Models", href: "/" },
   { name: "Using the RLM Client", href: "/api" },
+  { name: "Speculative tool calling (experimental)", href: "/experimental/spec-ptc" },
   { name: "LM Backends", href: "/backends" },
   {
     name: "REPL Environments",
