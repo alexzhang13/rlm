@@ -41,7 +41,7 @@ We now also include a [verifiers](https://github.com/PrimeIntellect-ai/verifiers
 
 ## Experimental speculative tool calling
 
-[spec-ptc](https://github.com/alexzhang13/spec-ptc) can start LM and recursive RLM calls while the model generates code. Enable it with `RLM(experimental_spec_ptc=True)` (disabled by default; LocalREPL, Python 3.12+, `pip install 'rlms[spec-ptc]'`). See the [usage guide](https://alexzhang13.github.io/rlm/experimental/spec-ptc/).
+[spec-ptc](https://github.com/alexzhang13/spec-ptc) starts LM and recursive RLM calls while the model is still generating code. Opt in with `experimental_spec_ptc=True`; see the [usage guide](https://alexzhang13.github.io/rlm/experimental/spec-ptc/).
 
 ## Quick Setup
 > [!NOTE]
